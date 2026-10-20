@@ -1,0 +1,104 @@
+# RAG Project
+
+Sistema **RAG (Retrieval-Augmented Generation)** multi-cliente para hacer preguntas en lenguaje natural sobre tus documentos y obtener respuestas **con las fuentes citadas**.
+
+- 📄 **Todo tipo de documentos:** PDF (también escaneados, con OCR), Word, PowerPoint, Excel, CSV, HTML, Markdown, texto e imágenes.
+- 🏢 **Multi-cliente con permisos:** cada organización está aislada a nivel de base de datos (Row Level Security de PostgreSQL), con roles *administrador / editor / lector* y colecciones con acceso por usuario.
+- 🔎 **Búsqueda híbrida:** semántica (pgvector) + palabras clave (texto completo de PostgreSQL), combinadas con *Reciprocal Rank Fusion*.
+- 🆓 **Coste cero en modelos:** embeddings **locales** (gratis, privados, sin límites) y LLMs **gratuitos de OpenRouter** con cambio automático de modelo si uno falla.
+- 🐳 **Todo en Docker:** un solo `docker compose up`.
+
+```
+Pregunta ─▶ embedding local ─▶ búsqueda híbrida (solo en lo que el usuario puede ver)
+         ─▶ fragmentos relevantes + pregunta ─▶ LLM gratuito (OpenRouter) ─▶ respuesta con citas [1][2]
+```
+
+---
+
+## Inicio rápido
+
+Requisitos: **Docker** con Docker Compose v2, unos **8 GB de RAM** libres y una clave gratuita de [OpenRouter](https://openrouter.ai/keys).
+
+```bash
+git clone <este-repositorio> rag-project && cd rag-project
+cp .env.example .env
+#   Edita .env: contraseñas, JWT_SECRET, SEED_ADMIN_EMAIL/PASSWORD y OPENROUTER_API_KEY
+docker compose up -d --build
+```
+
+Abre **http://localhost:8000** e inicia sesión con `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`.
+
+> El primer arranque tarda unos minutos: se descargan las imágenes (~3 GB, sobre todo Docling) y el modelo de embeddings (~1 GB).
+> Comprueba el estado con `curl http://localhost:8000/api/health`.
+
+Guía completa paso a paso: **[docs/instalacion.md](docs/instalacion.md)**.
+
+---
+
+## Cómo se usa
+
+1. **Organizaciones (superadministrador):** crea una organización por cliente, con su primer administrador.
+2. **Documentos (administrador/editor):** crea colecciones (carpetas) y arrastra archivos. Se procesan en segundo plano: *En cola → Procesando → Listo*.
+3. **Usuarios (administrador):** crea editores y lectores y dales acceso a las colecciones que correspondan.
+4. **Chat (todos):** pregunta. La respuesta cita las fuentes `[1]`, que puedes desplegar para ver el fragmento original o descargar el documento.
+
+---
+
+## Documentación
+
+| Documento | Contenido |
+|---|---|
+| [docs/investigacion-rag.md](docs/investigacion-rag.md) | Qué es un RAG, cómo funciona, técnicas y la investigación previa a este proyecto |
+| [docs/arquitectura.md](docs/arquitectura.md) | Componentes, flujos de ingesta y consulta, modelo de datos |
+| [docs/permisos.md](docs/permisos.md) | Organizaciones, roles, colecciones y cómo garantiza el aislamiento la base de datos |
+| [docs/instalacion.md](docs/instalacion.md) | Instalación paso a paso y configuración de OpenRouter |
+| [docs/operacion.md](docs/operacion.md) | Copias de seguridad, cambio de modelos, calibración, problemas frecuentes y producción |
+| [docs/api.md](docs/api.md) | Referencia de la API HTTP |
+| [docs/desarrollo.md](docs/desarrollo.md) | Desarrollo local, pruebas y estructura del código |
+| [docs/decisiones.md](docs/decisiones.md) | Decisiones técnicas y por qué (TypeScript vs Python, pgvector, etc.) |
+
+---
+
+## Tecnologías
+
+| Pieza | Tecnología |
+|---|---|
+| API y worker | TypeScript, Node.js 22, [Hono](https://hono.dev) |
+| Base de datos | PostgreSQL 17 + [pgvector](https://github.com/pgvector/pgvector) (HNSW) + Row Level Security |
+| Cola de trabajos | [pg-boss](https://github.com/timgit/pg-boss) (sobre PostgreSQL, sin Redis) |
+| Lectura de documentos | [Docling](https://github.com/docling-project/docling-serve) (OCR, tablas, Office…) |
+| Embeddings | [Text Embeddings Inference](https://github.com/huggingface/text-embeddings-inference) + `intfloat/multilingual-e5-base` |
+| LLM | Modelos `:free` de [OpenRouter](https://openrouter.ai) con respaldo automático |
+| Interfaz | React 19 + Vite, servida por nginx |
+
+## Estructura
+
+```
+rag-project/
+├── docker-compose.yml        # todo el sistema
+├── .env.example              # configuración (cópialo a .env)
+├── apps/
+│   ├── api/                  # API + worker (TypeScript)
+│   │   ├── src/
+│   │   │   ├── db/           # conexión, migraciones SQL (esquema + RLS)
+│   │   │   ├── auth/         # contraseñas, JWT, middleware de roles
+│   │   │   ├── ingest/       # extracción (Docling), fragmentación, embeddings, pipeline
+│   │   │   ├── rag/          # búsqueda híbrida, prompt, cliente OpenRouter
+│   │   │   ├── routes/       # endpoints HTTP
+│   │   │   ├── server.ts     # arranque de la API
+│   │   │   └── worker.ts     # arranque del worker de ingesta
+│   │   └── test/             # pruebas unitarias y de integración (RLS)
+│   └── web/                  # interfaz React
+├── scripts/smoke-test.mjs    # prueba de punta a punta contra un sistema en marcha
+└── docs/                     # documentación
+```
+
+## ⚠️ Importante sobre los modelos gratuitos
+
+- **Límites:** OpenRouter permite **50 peticiones/día** con modelos gratuitos, o **1.000/día** si alguna vez compraste ≥ 10 USD de créditos (los créditos no se gastan con modelos gratis). El sistema también limita las preguntas por organización (`TENANT_DAILY_QUESTION_LIMIT`).
+- **Privacidad:** algunos proveedores gratuitos pueden registrar o usar los textos enviados. En cada pregunta se envían **fragmentos de los documentos** al LLM. Revisa la configuración de privacidad de tu cuenta de OpenRouter antes de usar documentos confidenciales ([docs/instalacion.md](docs/instalacion.md#3-clave-y-privacidad-en-openrouter)).
+- Los **embeddings** y la **lectura de documentos** son 100 % locales: esos datos nunca salen de tu servidor.
+
+## Licencia
+
+Uso privado del propietario del repositorio.
