@@ -19,9 +19,9 @@ Exporta las variables para los procesos locales (las URLs apuntan a `localhost` 
 
 ```bash
 set -a; . ./.env; set +a
-export DATABASE_URL="postgres://rag_owner:${POSTGRES_PASSWORD}@localhost:5432/rag"
-export APP_DATABASE_URL="postgres://rag_app:${APP_DB_PASSWORD}@localhost:5432/rag"
-export EMBEDDINGS_URL=http://localhost:8080 DOCLING_URL=http://localhost:5001 STORAGE_DIR=./data/uploads
+export DATABASE_URL="postgres://rag_owner:${POSTGRES_PASSWORD}@localhost:15432/rag"
+export APP_DATABASE_URL="postgres://rag_app:${APP_DB_PASSWORD}@localhost:15432/rag"
+export EMBEDDINGS_URL=http://localhost:18080 DOCLING_URL=http://localhost:15001 STORAGE_DIR=./data/uploads
 ```
 
 En tres terminales (con esas variables):

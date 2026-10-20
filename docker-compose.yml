@@ -19,7 +19,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
-      - "127.0.0.1:${DB_PORT:-5432}:5432" # solo accesible desde esta máquina
+      - "127.0.0.1:${DB_PORT:-15432}:5432" # solo accesible desde esta máquina
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U rag_owner -d rag"]
       interval: 5s
@@ -34,7 +34,7 @@ services:
     volumes:
       - hf-cache:/data # el modelo se descarga una sola vez
     ports:
-      - "127.0.0.1:${EMBEDDINGS_PORT:-8080}:80"
+      - "127.0.0.1:${EMBEDDINGS_PORT:-18080}:80"
 
   # Conversión de documentos (PDF, Office, HTML, imágenes con OCR…) a Markdown.
   docling:
@@ -45,7 +45,7 @@ services:
       DOCLING_SERVE_MAX_DOCUMENT_TIMEOUT: ${DOCLING_TIMEOUT_SECONDS:-900}
       DOCLING_SERVE_ENABLE_UI: "false"
     ports:
-      - "127.0.0.1:${DOCLING_PORT:-5001}:5001"
+      - "127.0.0.1:${DOCLING_PORT:-15001}:5001"
 
   # API HTTP (Hono + TypeScript). Aplica migraciones al arrancar.
   api:

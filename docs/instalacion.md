@@ -12,6 +12,17 @@
 
 Uso medido con el sistema en reposo: embeddings ≈ 3,2 GB, Docling ≈ 1,3 GB y el resto < 200 MB. Docling usa más memoria mientras convierte PDF grandes.
 
+### Windows
+
+- Instala **Docker Desktop** con el motor **WSL 2** y ábrelo antes de usar `docker`. Si `docker version` no muestra la sección *Server*, el motor no está en marcha: abre Docker Desktop y espera a *Engine running*. Si no arranca, ejecuta `wsl --update` y `wsl --shutdown` en PowerShell y vuelve a abrirlo.
+- Docker (WSL 2) usa por defecto la mitad de la RAM. Con 16 GB o menos, crea `C:\Users\<usuario>\.wslconfig` con estas líneas y ejecuta `wsl --shutdown`:
+  ```ini
+  [wsl2]
+  memory=8GB
+  ```
+- En PowerShell: `Copy-Item .env.example .env` y `notepad .env`. Para generar secretos: `[Convert]::ToBase64String((1..48 | ForEach-Object { Get-Random -Max 256 }))`. Usa `curl.exe` en lugar de `curl`.
+- Si aparece `ports are not available ... Intento de acceso a un socket no permitido`, el puerto está ocupado o reservado por Windows: cambia `WEB_PORT`, `DB_PORT`, `EMBEDDINGS_PORT` o `DOCLING_PORT` en `.env`.
+
 ## 2. Configuración (`.env`)
 
 ```bash

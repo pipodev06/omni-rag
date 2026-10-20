@@ -36,9 +36,9 @@
 | `web` | `apps/web/Dockerfile` (nginx) | Interfaz y proxy a la API | `:8000` |
 | `api` | `apps/api/Dockerfile` | API HTTP; aplica migraciones al arrancar | interno |
 | `worker` | igual que `api` (`node dist/worker.js`) | Ingesta en segundo plano | interno |
-| `db` | `pgvector/pgvector:pg17` | Base de datos y cola | `127.0.0.1:5432` |
-| `embeddings` | `text-embeddings-inference:cpu-1.8` | Texto → vector | `127.0.0.1:8080` |
-| `docling` | `docling-serve-cpu:v1.37.0` | Archivo → Markdown | `127.0.0.1:5001` |
+| `db` | `pgvector/pgvector:pg17` | Base de datos y cola | `127.0.0.1:15432` |
+| `embeddings` | `text-embeddings-inference:cpu-1.8` | Texto → vector | `127.0.0.1:18080` |
+| `docling` | `docling-serve-cpu:v1.37.0` | Archivo → Markdown | `127.0.0.1:15001` |
 
 Los puertos marcados como `127.0.0.1` solo son accesibles desde la propia máquina (para depurar).
 
