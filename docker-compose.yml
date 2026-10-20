@@ -1,0 +1,102 @@
+# =====================================================================
+# RAG multi-cliente — todo el sistema con un solo comando:
+#     cp .env.example .env   (y edítalo)
+#     docker compose up -d --build
+# Luego abre http://localhost:8000
+# Ver docs/instalacion.md para más detalles.
+# =====================================================================
+name: rag
+
+services:
+  # Base de datos: PostgreSQL 17 con la extensión pgvector.
+  db:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: rag_owner
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en .env}
+      POSTGRES_DB: rag
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:${DB_PORT:-15432}:5432" # solo accesible desde esta máquina
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rag_owner -d rag"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Embeddings locales (gratis, privados, sin límite de uso) con Hugging Face TEI.
+  embeddings:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.8
+    restart: unless-stopped
+    command: ["--model-id", "${EMBEDDING_MODEL:-intfloat/multilingual-e5-base}", "--max-client-batch-size", "64"]
+    volumes:
+      - hf-cache:/data # el modelo se descarga una sola vez
+    ports:
+      - "127.0.0.1:${EMBEDDINGS_PORT:-18080}:80"
+
+  # Conversión de documentos (PDF, Office, HTML, imágenes con OCR…) a Markdown.
+  docling:
+    image: quay.io/docling-project/docling-serve-cpu:v1.37.0
+    restart: unless-stopped
+    environment:
+      DOCLING_SERVE_ENG_LOC_NUM_WORKERS: ${DOCLING_WORKERS:-2}
+      DOCLING_SERVE_MAX_DOCUMENT_TIMEOUT: ${DOCLING_TIMEOUT_SECONDS:-900}
+      DOCLING_SERVE_ENABLE_UI: "false"
+    ports:
+      - "127.0.0.1:${DOCLING_PORT:-15001}:5001"
+
+  # API HTTP (Hono + TypeScript). Aplica migraciones al arrancar.
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment: &backend-env
+      DATABASE_URL: postgres://rag_owner:${POSTGRES_PASSWORD}@db:5432/rag
+      APP_DATABASE_URL: postgres://rag_app:${APP_DB_PASSWORD}@db:5432/rag
+      EMBEDDINGS_URL: http://embeddings:80
+      DOCLING_URL: http://docling:5001
+      STORAGE_DIR: /data/uploads
+    volumes:
+      - uploads:/data/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # Worker: procesa los documentos subidos en segundo plano.
+  worker:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    command: ["node", "dist/worker.js"]
+    env_file: .env
+    environment: *backend-env
+    volumes:
+      - uploads:/data/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+      embeddings:
+        condition: service_started
+      docling:
+        condition: service_started
+
+  # Interfaz web (React) servida por nginx, que además redirige /api a la API.
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8000}:80"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
+  hf-cache:
+  uploads:

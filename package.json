@@ -1,0 +1,18 @@
+{
+  "name": "rag-project",
+  "private": true,
+  "version": "0.1.0",
+  "description": "RAG multi-cliente con TypeScript, PostgreSQL + pgvector, Docling, embeddings locales y LLMs gratuitos de OpenRouter",
+  "packageManager": "pnpm@10.28.0",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "dev:api": "pnpm --filter @rag/api dev",
+    "dev:worker": "pnpm --filter @rag/api dev:worker",
+    "dev:web": "pnpm --filter @rag/web dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "migrate": "pnpm --filter @rag/api migrate",
+    "seed": "pnpm --filter @rag/api seed"
+  }
+}
