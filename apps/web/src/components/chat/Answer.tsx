@@ -4,12 +4,10 @@ import remarkGfm from "remark-gfm";
 import { Check, ChevronDown, Copy, Download, Eye, FileText } from "lucide-react";
 import { toast } from "sonner";
 import type { Source } from "@/api";
+import { pagesLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-
-export const pagesLabel = (s: Pick<Source, "pageStart" | "pageEnd">) =>
-  s.pageStart === null ? "" : s.pageEnd !== null && s.pageEnd !== s.pageStart ? `págs. ${s.pageStart}–${s.pageEnd}` : `pág. ${s.pageStart}`;
 
 /** Marca de cita [n] dentro del texto, clicable y con el nombre de la fuente al pasar el ratón. */
 function CitationChip({ n, source, onClick }: { n: number; source?: Source; onClick: () => void }) {

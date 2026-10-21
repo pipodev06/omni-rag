@@ -1,4 +1,5 @@
 import { closeDb } from "./db/client.js";
+import { MAINTENANCE_QUEUE, runMaintenance } from "./maintenance.js";
 import { migrate } from "./db/migrate.js";
 import { ingestDocument, markIngestError } from "./ingest/pipeline.js";
 import { getBoss, INGEST_QUEUE, INGEST_RETRY_LIMIT, stopBoss, type IngestJob } from "./queue.js";
@@ -29,6 +30,15 @@ async function main() {
       if (willRetry) throw err; // pg-boss lo reintentará
       return { error: message };
     }
+  });
+
+  // Mantenimiento diario (03:15 UTC): limpia datos caducados.
+  await boss.createQueue(MAINTENANCE_QUEUE);
+  await boss.schedule(MAINTENANCE_QUEUE, "15 3 * * *");
+  await boss.work(MAINTENANCE_QUEUE, async () => {
+    const result = await runMaintenance();
+    console.log("[mantenimiento]", JSON.stringify(result));
+    return result;
   });
 
   console.log(`[worker] escuchando la cola "${INGEST_QUEUE}" (concurrencia ${concurrency})`);

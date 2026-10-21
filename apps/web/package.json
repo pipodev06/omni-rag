@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "doctor": "npx -y react-doctor@0.9.18 . -y --no-supply-chain"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.3.0",
@@ -41,5 +42,19 @@
     "typescript": "^7.0.2",
     "vite": "^8.3.4",
     "vitest": "^5.0.5"
+  },
+  "reactDoctor": {
+    "ignore": {
+      "overrides": [
+        {
+          "files": [
+            "src/components/ui/**"
+          ],
+          "rules": [
+            "react-doctor/only-export-components"
+          ]
+        }
+      ]
+    }
   }
 }

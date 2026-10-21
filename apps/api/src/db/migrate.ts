@@ -21,6 +21,7 @@ const GRANTS = `
     conversations, messages, usage_events, answer_cache, message_feedback
   TO rag_app;
   GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO rag_app;
+  GRANT SELECT ON audit_log TO rag_app;
   REVOKE ALL ON FUNCTION app_can_access_collection(uuid) FROM PUBLIC;
   GRANT EXECUTE ON FUNCTION app_can_access_collection(uuid) TO rag_app;
 `;

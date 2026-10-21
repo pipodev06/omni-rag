@@ -97,6 +97,7 @@ export function MembersDialog({ open, onOpenChange, collection, onSaved }: {
     enabled: open,
   });
   const users = (data?.users ?? []).filter((u) => u.role !== "admin");
+  const selectedSet = new Set(selected);
 
   useEffect(() => {
     if (open) setSelected(collection.memberIds);
@@ -135,7 +136,7 @@ export function MembersDialog({ open, onOpenChange, collection, onSaved }: {
               {users.map((u) => (
                 <label key={u.id} className="flex cursor-pointer items-center gap-3 rounded-lg p-2 hover:bg-muted">
                   <Checkbox
-                    checked={selected.includes(u.id)}
+                    checked={selectedSet.has(u.id)}
                     onCheckedChange={(v) => setSelected((s) => (v ? [...s, u.id] : s.filter((x) => x !== u.id)))}
                   />
                   <Avatar className="size-8">

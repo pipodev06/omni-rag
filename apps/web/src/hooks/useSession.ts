@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { api, ApiError, type Session } from "@/api";
 
@@ -27,6 +27,26 @@ export function useSession() {
   }, [qc]);
 
   return query;
+}
+
+/**
+ * Cierra la sesión en la interfaz. Primero se marca "sin sesión" y después se
+ * descartan los datos del usuario anterior. No usar `qc.clear()`: borraría la
+ * consulta de sesión que están observando las rutas, y unas verían la sesión
+ * vieja y otras ninguna (bucle infinito entre /login y /chat).
+ */
+export function clearSession(qc: QueryClient) {
+  qc.setQueryData(["session"], null);
+  qc.removeQueries({ predicate: (q) => q.queryKey[0] !== "session" });
+}
+
+/**
+ * Cambia de organización (entrar o salir del modo soporte). Se recarga la
+ * página entera para que nada (datos en memoria, avisos en tiempo real) se
+ * quede con la organización anterior.
+ */
+export function switchOrganization(to = "/chat") {
+  window.location.assign(to);
 }
 
 /** Usuario actual (solo usar dentro de páginas protegidas). */

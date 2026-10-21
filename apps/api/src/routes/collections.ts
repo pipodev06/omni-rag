@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
+import { audit } from "../lib/audit.js";
 import { withTenant } from "../db/client.js";
 import { requireAuth, requireRole, tenantCtx, type AppEnv } from "../auth/middleware.js";
 import { invalidateCollections } from "../rag/cache.js";
@@ -42,6 +43,7 @@ collectionRoutes.post("/", requireRole("admin"), async (c) => {
     INSERT INTO collections (tenant_id, name, description)
     VALUES (${ctx.tenantId}, ${body.name}, ${body.description})
     RETURNING id`).catch(uniqueName);
+  await audit(c, "collection.created", { targetType: "collection", targetId: row!.id, details: { name: body.name } });
   return c.json({ id: row!.id }, 201);
 });
 
@@ -54,6 +56,7 @@ collectionRoutes.patch("/:id", requireRole("admin"), async (c) => {
                            description = coalesce(${body.description ?? null}, description)
      WHERE id = ${id} RETURNING id`).catch(uniqueName);
   if (!row) throw notFound("Colección no encontrada");
+  await audit(c, "collection.updated", { targetType: "collection", targetId: id, details: body });
   return c.json({ ok: true });
 });
 
@@ -70,6 +73,7 @@ collectionRoutes.delete("/:id", requireRole("admin"), async (c) => {
   });
   // Los trozos y documentos se borran en cascada; aquí se borran los archivos.
   await Promise.all(docs.map((d) => removeStored(`${ctx.tenantId}/${d.id}`)));
+  await audit(c, "collection.deleted", { targetType: "collection", targetId: id, details: { deletedDocuments: docs.length } });
   return c.json({ ok: true, deletedDocuments: docs.length });
 });
 
@@ -92,5 +96,6 @@ collectionRoutes.put("/:id/members", requireRole("admin"), async (c) => {
     if (err.code === "23503") throw badRequest("Algún usuario no existe");
     throw err;
   });
+  await audit(c, "collection.members_updated", { targetType: "collection", targetId: id, details: { members: userIds.length } });
   return c.json({ ok: true });
 });

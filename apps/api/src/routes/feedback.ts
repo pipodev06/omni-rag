@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
+import { audit } from "../lib/audit.js";
 import { withTenant } from "../db/client.js";
 import { requireAuth, requireRole, tenantCtx, type AppEnv } from "../auth/middleware.js";
 import { invalidateForMessage } from "../rag/cache.js";
@@ -96,11 +97,13 @@ qualityRoutes.patch("/feedback/:id", async (c) => {
   const [row] = await withTenant(tenantCtx(c), (tx) => tx`
     UPDATE message_feedback SET resolved = ${resolved}, updated_at = now() WHERE id = ${id} RETURNING id`);
   if (!row) throw notFound("Valoración no encontrada");
+  await audit(c, "quality.feedback_resolved", { targetType: "feedback", targetId: id, details: { resolved } });
   return c.json({ ok: true });
 });
 
 /** Vacía la caché de respuestas de la organización. */
 qualityRoutes.delete("/cache", async (c) => {
   const rows = await withTenant(tenantCtx(c), (tx) => tx`DELETE FROM answer_cache RETURNING id`);
+  await audit(c, "quality.cache_cleared", { details: { deleted: rows.length } });
   return c.json({ ok: true, deleted: rows.length });
 });

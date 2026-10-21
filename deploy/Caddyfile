@@ -1,0 +1,18 @@
+# =====================================================================
+# Caddy: HTTPS automático con Let's Encrypt delante de la web.
+# Se activa con COMPOSE_PROFILES=https y DOMAIN=tu-dominio.com en .env
+# (ver docs/produccion.md). No hay que tocar este archivo.
+# =====================================================================
+{$DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+
+	reverse_proxy web:80 {
+		# Las respuestas del chat y los avisos en tiempo real llegan en streaming.
+		flush_interval -1
+	}
+}

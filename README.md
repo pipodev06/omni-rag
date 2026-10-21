@@ -11,6 +11,9 @@ Sistema **RAG (Retrieval-Augmented Generation)** multi-cliente para hacer pregun
 - 🔔 **Tiempo real:** el estado de los documentos se actualiza al instante y avisa cuando un documento está listo.
 - ✨ **Resumen y preguntas sugeridas** por documento, y opción de preguntar solo sobre un documento concreto.
 - 🆓 **Coste cero en modelos:** embeddings **locales** (gratis, privados, sin límites) y LLMs **gratuitos de OpenRouter** con cambio automático de modelo si uno falla.
+- ✉️ **Invitaciones y recuperación de contraseña** por email (o con enlace para copiar si no hay correo configurado).
+- 📜 **Auditoría:** registro de accesos, cambios de usuarios, permisos y documentos, visible para los administradores.
+- 🔒 **Listo para producción solo con `.env`:** HTTPS automático con Caddy al poner tu dominio, copias de seguridad diarias y mantenimiento automático.
 - 🐳 **Todo en Docker:** un solo `docker compose up`.
 
 ```
@@ -22,7 +25,7 @@ Pregunta ─▶ embedding local ─▶ búsqueda híbrida (solo en lo que el usu
 
 ## Inicio rápido
 
-Requisitos: **Docker** con Docker Compose v2, unos **10 GB de RAM** libres para Docker (8 GB si desactivas el re-ranker) y una clave gratuita de [OpenRouter](https://openrouter.ai/keys).
+Requisitos: **Docker** con Docker Compose v2, **8 GB de RAM** para Docker (pico medido ≈ 6,9 GB; ver [requisitos](docs/requisitos.md)), CPU x86-64 de 4 núcleos y una clave gratuita de [OpenRouter](https://openrouter.ai/keys).
 
 ```bash
 git clone <este-repositorio> rag-project && cd rag-project
@@ -38,13 +41,15 @@ Abre **http://localhost:8000** e inicia sesión con `SEED_ADMIN_EMAIL` / `SEED_A
 
 Guía completa paso a paso: **[docs/instalacion.md](docs/instalacion.md)**.
 
+**¿Publicarlo con tu dominio?** No hay que tocar código: pon `DOMAIN=rag.tuempresa.com`, `COMPOSE_PROFILES=https` y `WEB_BIND=127.0.0.1` en `.env` y vuelve a arrancar. Caddy obtiene el certificado HTTPS solo. Ver **[docs/produccion.md](docs/produccion.md)**.
+
 ---
 
 ## Cómo se usa
 
-1. **Organizaciones (superadministrador):** crea una organización por cliente, con su primer administrador.
+1. **Organizaciones (superadministrador):** crea una organización por cliente, con su primer administrador. Con **Entrar como soporte** accedes a cualquiera de ellas con tu propio usuario (queda en su auditoría).
 2. **Documentos (administrador/editor):** crea colecciones (carpetas) y arrastra archivos. Se procesan en segundo plano: *En cola → Procesando → Listo*.
-3. **Usuarios (administrador):** crea editores y lectores y dales acceso a las colecciones que correspondan.
+3. **Usuarios (administrador):** invita editores y lectores por email (o crea su contraseña tú) y dales acceso a las colecciones que correspondan. En **Auditoría** ves quién hizo qué.
 4. **Chat (todos):** pregunta. La respuesta cita las fuentes `[1]`; despliégalas y pulsa **Ver en el documento** para abrir el PDF en la página citada con el texto resaltado.
 5. **Resumen:** en Documentos, abre un archivo → pestaña **Resumen** → *Generar resumen*. Sus preguntas sugeridas aparecen en el chat, y *Preguntar sobre este documento* limita la conversación a ese archivo.
 
@@ -57,8 +62,10 @@ Guía completa paso a paso: **[docs/instalacion.md](docs/instalacion.md)**.
 | [docs/investigacion-rag.md](docs/investigacion-rag.md) | Qué es un RAG, cómo funciona, técnicas y la investigación previa a este proyecto |
 | [docs/arquitectura.md](docs/arquitectura.md) | Componentes, flujos de ingesta y consulta, modelo de datos |
 | [docs/permisos.md](docs/permisos.md) | Organizaciones, roles, colecciones y cómo garantiza el aislamiento la base de datos |
+| [docs/requisitos.md](docs/requisitos.md) | RAM, CPU y disco medidos; perfiles para 6/8/16 GB y qué VPS contratar |
 | [docs/instalacion.md](docs/instalacion.md) | Instalación paso a paso y configuración de OpenRouter |
-| [docs/operacion.md](docs/operacion.md) | Copias de seguridad, cambio de modelos, calibración, problemas frecuentes y producción |
+| [docs/produccion.md](docs/produccion.md) | Publicar con dominio y HTTPS, correo SMTP y copias fuera del servidor |
+| [docs/operacion.md](docs/operacion.md) | Copias de seguridad, usuarios e invitaciones, auditoría, cambio de modelos, calibración y problemas frecuentes |
 | [docs/api.md](docs/api.md) | Referencia de la API HTTP |
 | [docs/desarrollo.md](docs/desarrollo.md) | Desarrollo local, pruebas y estructura del código |
 | [docs/decisiones.md](docs/decisiones.md) | Decisiones técnicas y por qué (TypeScript vs Python, pgvector, etc.) |
@@ -77,6 +84,8 @@ Guía completa paso a paso: **[docs/instalacion.md](docs/instalacion.md)**.
 | Re-ranking | TEI + `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1` (multilingüe, ~0,6 s por pregunta en CPU) |
 | Caché | Tabla `answer_cache` en PostgreSQL (sin Redis) |
 | LLM | Modelos `:free` de [OpenRouter](https://openrouter.ai) con respaldo automático |
+| HTTPS | [Caddy](https://caddyserver.com) con certificados automáticos de Let's Encrypt (perfil `https`) |
+| Correo | SMTP con nodemailer (opcional; Mailpit para pruebas locales) |
 | Interfaz | React 19 + Vite, [shadcn/ui](https://ui.shadcn.com) (Radix + Tailwind CSS 4), iconos [Lucide](https://lucide.dev), TanStack Query, React Router; servida por nginx |
 
 ## Estructura
@@ -97,6 +106,7 @@ rag-project/
 │   │   │   └── worker.ts     # arranque del worker de ingesta
 │   │   └── test/             # pruebas unitarias y de integración (RLS)
 │   └── web/                  # interfaz React (shadcn/ui + Tailwind)
+├── deploy/                   # Caddyfile y script de copias de seguridad
 ├── scripts/smoke-test.mjs    # prueba de punta a punta contra un sistema en marcha
 └── docs/                     # documentación
 ```

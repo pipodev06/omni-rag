@@ -30,19 +30,20 @@ services:
   embeddings:
     image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.8
     restart: unless-stopped
-    command: ["--model-id", "${EMBEDDING_MODEL:-intfloat/multilingual-e5-base}", "--max-client-batch-size", "64"]
+    # Lotes de 4096 tokens: misma calidad, ~2,3 GB de RAM en vez de ~3,2 GB.
+    command: ["--model-id", "${EMBEDDING_MODEL:-intfloat/multilingual-e5-base}", "--max-batch-tokens", "4096", "--max-client-batch-size", "32"]
     volumes:
       - hf-cache:/data # el modelo se descarga una sola vez
     ports:
       - "127.0.0.1:${EMBEDDINGS_PORT:-18080}:80"
 
   # Re-ranker local (cross-encoder multilingüe): reordena los resultados de la
-  # búsqueda leyendo pregunta y fragmento juntos. ~2 GB de RAM, ~0,6 s por pregunta en CPU.
+  # búsqueda leyendo pregunta y fragmento juntos. ~1,6 GB de RAM, ~0,6 s por pregunta en CPU.
   # Para desactivarlo: RERANKER_URL= (vacío) y RERANKER_REPLICAS=0 en .env.
   reranker:
     image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.8
     restart: unless-stopped
-    command: ["--model-id", "${RERANKER_MODEL:-cross-encoder/mmarco-mMiniLMv2-L12-H384-v1}", "--max-batch-tokens", "8192", "--max-client-batch-size", "64"]
+    command: ["--model-id", "${RERANKER_MODEL:-cross-encoder/mmarco-mMiniLMv2-L12-H384-v1}", "--max-batch-tokens", "4096", "--max-client-batch-size", "32"]
     volumes:
       - hf-cache:/data
     deploy:
@@ -53,7 +54,9 @@ services:
     image: quay.io/docling-project/docling-serve-cpu:v1.37.0
     restart: unless-stopped
     environment:
-      DOCLING_SERVE_ENG_LOC_NUM_WORKERS: ${DOCLING_WORKERS:-2}
+      # Cada conversión simultánea puede usar ~3 GB con PDFs grandes.
+      # 1 = cabe en 8 GB; súbelo solo si tienes RAM de sobra (ver docs/requisitos.md).
+      DOCLING_SERVE_ENG_LOC_NUM_WORKERS: ${DOCLING_WORKERS:-1}
       DOCLING_SERVE_MAX_DOCUMENT_TIMEOUT: ${DOCLING_TIMEOUT_SECONDS:-900}
       DOCLING_SERVE_ENABLE_UI: "false"
     ports:
@@ -105,11 +108,58 @@ services:
       dockerfile: apps/web/Dockerfile
     restart: unless-stopped
     ports:
-      - "${WEB_PORT:-8000}:80"
+      # En producción con Caddy, pon WEB_BIND=127.0.0.1 para que solo se entre por HTTPS.
+      - "${WEB_BIND:-0.0.0.0}:${WEB_PORT:-8000}:80"
     depends_on:
       - api
 
+  # Copias de seguridad automáticas en ./backups (base de datos + archivos).
+  backup:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    entrypoint: ["sh", "/backup.sh"]
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-24}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-7}
+    volumes:
+      - ./deploy/backup.sh:/backup.sh:ro
+      - uploads:/uploads:ro
+      - ./backups:/backups
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # HTTPS automático (Let's Encrypt). Solo con COMPOSE_PROFILES=https y DOMAIN definido.
+  caddy:
+    image: caddy:2.11-alpine
+    profiles: ["https"]
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - web
+
+  # Servidor de correo de PRUEBAS: captura los emails sin enviarlos.
+  # Bandeja en http://localhost:8025. Solo con COMPOSE_PROFILES=correo-pruebas.
+  mailpit:
+    image: axllent/mailpit:v1.31
+    profiles: ["correo-pruebas"]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${MAILPIT_PORT:-8025}:8025"
+
 volumes:
+  caddy-data:
+  caddy-config:
   pgdata:
   hf-cache:
   uploads:
