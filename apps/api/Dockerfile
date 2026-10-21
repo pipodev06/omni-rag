@@ -1,5 +1,5 @@
 # --- Etapa 1: dependencias y compilación ---------------------------------
-FROM node:22-alpine AS build
+FROM node:26-alpine AS build
 WORKDIR /app
 RUN corepack enable
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
@@ -11,7 +11,7 @@ RUN pnpm --filter @rag/api build \
  && pnpm --filter @rag/api deploy --prod --legacy /out
 
 # --- Etapa 2: imagen final mínima ----------------------------------------
-FROM node:22-alpine
+FROM node:26-alpine
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=build /out ./
