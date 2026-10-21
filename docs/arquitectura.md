@@ -4,7 +4,12 @@
 
 ```
                          Navegador
-                             │  http://localhost:8000
+                             │  http://localhost:8000  (local)
+                             │  https://tu-dominio     (producción)
+                             ▼
+                ┌──────────────────────────┐
+                │ caddy (solo con DOMAIN)  │  HTTPS automático
+                └────────────┬─────────────┘
                              ▼
                 ┌──────────────────────────┐
                 │ web (nginx + React)      │  sirve la interfaz y
@@ -46,6 +51,11 @@
 | `embeddings` | `text-embeddings-inference:cpu-1.8` | Texto → vector | `127.0.0.1:18080` |
 | `reranker` | `text-embeddings-inference:cpu-1.8` | Reordena candidatos (cross-encoder) | interno |
 | `docling` | `docling-serve-cpu:v1.37.0` | Archivo → Markdown | `127.0.0.1:15001` |
+| `backup` | `pgvector/pgvector:pg17` + `deploy/backup.sh` | Copia diaria de la base de datos y los archivos en `./backups` | — |
+| `caddy` | `caddy:2.11-alpine` (perfil `https`) | HTTPS con certificado automático delante de `web` | `:80`, `:443` |
+| `mailpit` | `axllent/mailpit` (perfil `correo-pruebas`) | Buzón falso para probar correos en local | `127.0.0.1:8025` |
+
+`caddy` y `mailpit` solo arrancan si su perfil está en `COMPOSE_PROFILES` (`.env`). En producción, `WEB_BIND=127.0.0.1` hace que a `web` solo se llegue a través de Caddy.
 
 Los puertos marcados como `127.0.0.1` solo son accesibles desde la propia máquina (para depurar).
 
@@ -117,18 +127,19 @@ Server-Sent Events: meta (fuentes) → token… → done (fuentes citadas, model
 ## Modelo de datos
 
 ```
-tenants ─┬─< users ──────────────┐
+tenants ─┬─< users ─< user_tokens (invitación / restablecer)
          ├─< collections ─┬─< collection_members >─ users
          │                └─< documents ─< chunks (embedding vector(768), tsv tsvector)
          ├─< conversations ─< messages (sources jsonb) ─── message_feedback (👍/👎)
          ├─< answer_cache (embedding, collection_ids[])
-         └─< usage_events
+         ├─< usage_events
+         └─< audit_log
 ```
 
 | Tabla | Contenido |
 |---|---|
 | `tenants` | Organizaciones (clientes); límite diario opcional |
-| `users` | Usuarios con rol `admin`/`editor`/`viewer`; `is_superadmin` para el dueño de la plataforma |
+| `users` | Usuarios con rol `admin`/`editor`/`viewer`; `is_superadmin` para el dueño de la plataforma; `support_for` marca la cuenta de soporte del superadministrador en cada organización |
 | `collections` | Carpetas de documentos |
 | `collection_members` | Qué editores/lectores ven cada colección |
 | `documents` | Archivo subido, estado de procesamiento, nº de páginas y trozos |
@@ -137,6 +148,8 @@ tenants ─┬─< users ──────────────┐
 | `usage_events` | Una fila por respuesta: `question` (LLM, con tokens) o `cache_hit` (desde caché) |
 | `answer_cache` | Respuestas reutilizables, con su alcance (colecciones) y el embedding de la pregunta |
 | `message_feedback` | Valoraciones 👍/👎 con copia de pregunta, respuesta y fuentes para los administradores |
+| `user_tokens` | Enlaces de invitación y de restablecer contraseña: solo se guarda el hash SHA-256, de un solo uso y con caducidad. La API normal (`rag_app`) no tiene acceso |
+| `audit_log` | Registro de acciones (accesos, usuarios, colecciones, documentos, calidad, organizaciones) con usuario, IP y detalles |
 
 `documents` incluye además `summary`, `suggested_questions`, `summary_model` y `summary_at` (resumen generado bajo demanda).
 
@@ -149,6 +162,9 @@ Todas las tablas llevan `tenant_id` y claves foráneas **compuestas** `(id, tena
 ## Seguridad
 
 - **Contraseñas** con bcrypt (12 rondas). El login limita a 10 intentos cada 15 minutos por IP y email, y tarda lo mismo exista o no el email.
+- **Enlaces de invitación y restablecimiento** aleatorios (256 bits), guardados como hash, de un solo uso y con caducidad (`INVITE_EXPIRES_HOURS`, `RESET_EXPIRES_MINUTES`). "¿Olvidaste la contraseña?" responde lo mismo exista o no el email.
+- **HTTPS** con Caddy y cabecera HSTS; la cookie se marca `Secure` automáticamente cuando la petición llega por HTTPS (`COOKIE_SECURE=auto`).
+- **Auditoría** de las acciones importantes en `audit_log`, borrada tras `AUDIT_RETENTION_DAYS`.
 - **Sesión** con JWT (HS256) en una cookie `httpOnly` + `SameSite=Lax`; también se acepta `Authorization: Bearer` para scripts. En cada petición se comprueba en la base de datos que el usuario y su organización siguen activos y cuál es su rol actual.
 - **Aislamiento** por Row Level Security (ver [permisos.md](permisos.md)).
 - **Inyección de instrucciones:** el prompt indica al modelo que el contenido de los documentos son datos, no órdenes.

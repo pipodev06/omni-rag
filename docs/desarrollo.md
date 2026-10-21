@@ -37,6 +37,7 @@ pnpm dev:web      # interfaz en http://localhost:5173 (redirige /api a :3001)
 ```bash
 pnpm typecheck    # TypeScript en api y web
 pnpm test         # pruebas unitarias (no necesitan servicios)
+pnpm --filter @rag/web run doctor   # React Doctor: revisa la interfaz (objetivo 100/100)
 ```
 
 Pruebas de integración de Row Level Security (necesitan PostgreSQL con pgvector; usan organizaciones temporales y las borran al terminar):
@@ -56,6 +57,7 @@ Prueba de punta a punta contra un sistema en marcha: ver [instalacion.md §6](in
 | `apps/api/test/misc.test.ts` | Limitador de intentos de login |
 | `apps/api/test/cache.test.ts` | Normalización de preguntas, números/códigos, clave de alcance y re-ranking |
 | `apps/api/test/summary.test.ts` | Interpretación de la respuesta JSON del resumen y límite de texto enviado |
+| `apps/api/test/tokens.test.ts` | Hash de los enlaces y construcción de URLs de invitación/restablecimiento |
 | `apps/web/src/lib/highlight.test.ts` | Localización del texto citado en la capa de texto de un PDF |
 | `apps/api/test/rls.integration.test.ts` | Aislamiento en la base de datos (se omite sin `RUN_DB_TESTS=1`) |
 
@@ -85,6 +87,11 @@ La integración continua (`.github/workflows/ci.yml`) ejecuta todo lo anterior, 
 | `rag/cache.ts` | Caché de respuestas: búsqueda, guardado e invalidación |
 | `rag/summary.ts` | Prompt e interpretación del resumen con preguntas sugeridas |
 | `lib/documentEvents.ts` | Escucha `LISTEN document_events` y reparte los avisos |
+| `lib/audit.ts` | Registro de auditoría (`audit(c, acción, …)`); nunca lanza errores |
+| `lib/mailer.ts` | Envío de correos por SMTP (opcional) con plantilla HTML |
+| `lib/tokens.ts` | Enlaces de invitación y restablecimiento (crear, validar, enviar) |
+| `lib/request.ts` | IP del cliente, detección de HTTPS y cookie `Secure` |
+| `maintenance.ts` | Limpieza diaria: auditoría antigua, enlaces caducados y caché vencida |
 | `routes/*` | Endpoints HTTP |
 | `scripts/*` | Primer administrador, `seed` y `reindex` |
 
@@ -99,7 +106,9 @@ Estructura de `apps/web/src`:
 | `api.ts` | Cliente de la API, streaming del chat y subida con progreso |
 | `index.css` | Tema: variables de color (claro/oscuro), tipografía y radios |
 | `components/ui/` | Componentes de shadcn/ui (generados; se pueden editar) |
-| `components/` | Piezas propias: `AppLayout` (barra lateral), `common` (cabeceras, estados vacíos, iconos de archivo), `ConfirmProvider`, `chat/`, `documents/` |
+| `components/` | Piezas propias: `AppLayout` (barra lateral), `common` (cabeceras, estados vacíos, iconos de archivo), `ConfirmProvider`, `LinkResultDialog`, `AccessModeTabs`, `chat/` (lista de conversaciones, mensajes, bienvenida, caja de texto), `documents/` (tabla, barra de colección, visor) |
+| `hooks/` | `useSession`, `useDocuments`, `useChatSuggestions`… |
+| `lib/` | Utilidades puras: `format` (páginas), `messages` (claves de mensajes), `highlight` (citas en PDF), `theme` |
 | `pages/` | Una página por sección |
 
 **Cambiar el color de marca:** edita `--primary` y `--ring` en `src/index.css`, tanto en `:root` (modo claro) como en `.dark` (modo oscuro). Los valores están en formato `oklch`. Un conversor como <https://oklch.com> sirve para pasar de HEX a `oklch`.
@@ -127,4 +136,5 @@ Tras añadirlo, revisa que los imports apunten a `@/lib/utils`.
 - Reescritura de preguntas ambiguas con el LLM (gasta cupo).
 - Ingesta desde URLs, Google Drive o correo.
 - Proveedor LLM configurable por organización (p. ej. modelos de pago sin retención de datos para clientes con documentos confidenciales).
-- Invitaciones por email y recuperación de contraseña.
+- Inicio de sesión con Google/Microsoft (OIDC) para organizaciones que lo pidan.
+- Copias de seguridad cifradas y enviadas automáticamente a S3.

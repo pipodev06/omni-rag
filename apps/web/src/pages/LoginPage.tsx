@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { useLocation, useNavigate } from "react-router";
+import { Link } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { FileSearch, Loader2, Lock, Mail, Quote, ShieldCheck } from "lucide-react";
 import { api, errorMessage } from "@/api";
@@ -20,8 +20,6 @@ export function LoginPage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const qc = useQueryClient();
-  const navigate = useNavigate();
-  const from = (useLocation().state as { from?: string } | null)?.from ?? "/chat";
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -29,8 +27,8 @@ export function LoginPage() {
     setError("");
     try {
       await api.post("/auth/login", { email, password });
-      await qc.invalidateQueries({ queryKey: ["session"] });
-      navigate(from, { replace: true });
+      // Al cargar la sesión, la ruta /login lleva sola a la página que se quería ver.
+      await qc.refetchQueries({ queryKey: ["session"] });
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -73,7 +71,11 @@ export function LoginPage() {
                 {busy ? "Entrando…" : "Entrar"}
               </Button>
             </div>
-            <p className="text-center text-xs text-muted-foreground">¿Olvidaste la contraseña? Pide a tu administrador que la restablezca.</p>
+            <p className="text-center text-sm">
+              <Link to="/recuperar" className="text-primary hover:underline">
+                ¿Olvidaste la contraseña?
+              </Link>
+            </p>
           </form>
         </div>
       </div>

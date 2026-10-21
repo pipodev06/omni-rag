@@ -6,7 +6,8 @@ import { api, errorMessage, timeAgo, type Source } from "@/api";
 import { cn } from "@/lib/utils";
 import { EmptyState, Page, PageHeader } from "@/components/common";
 import { useConfirm } from "@/components/ConfirmProvider";
-import { AnswerMarkdown, pagesLabel } from "@/components/chat/Answer";
+import { AnswerMarkdown } from "@/components/chat/Answer";
+import { pagesLabel } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -130,6 +131,58 @@ function FeedbackCard({ item, onResolve }: { item: FeedbackItem; onResolve: (res
   );
 }
 
+/** Indicadores: satisfacción, pendientes, uso de la caché. */
+function QualityStats({ data }: { data: Quality | undefined }) {
+  if (!data) {
+    return (
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {[0, 1, 2, 3].map((i) => (
+          <Skeleton key={i} className="h-28" />
+        ))}
+      </div>
+    );
+  }
+  const s = data.summary;
+  const rated = s.positive + s.negative;
+  const satisfaction = rated ? `${Math.round((s.positive / rated) * 100)} %` : "—";
+  const answered = data.usage.questions + data.usage.cacheHits;
+  const cacheRate = answered ? `${Math.round((data.usage.cacheHits / answered) * 100)} %` : "—";
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <Tile icon={ThumbsUp} label="Satisfacción" value={satisfaction} hint={`${s.positive} 👍 · ${s.negative} 👎`} className="text-success" />
+      <Tile icon={ThumbsDown} label="Pendientes de revisar" value={nf.format(s.pendingNegative)} hint="Respuestas con 👎 sin revisar" className="text-destructive" />
+      <Tile icon={Zap} label="Respondidas desde caché" value={cacheRate} hint={`${nf.format(data.usage.cacheHits)} de ${nf.format(answered)} respuestas, sin gastar cupo`} />
+      <Tile icon={CircleCheck} label="Respuestas en caché" value={nf.format(data.cache.entries)} hint="Se borran al cambiar los documentos" />
+    </div>
+  );
+}
+
+/** Lista de valoraciones, o su estado de carga / vacío. */
+function FeedbackList({ loading, items, filter, onResolve }: {
+  loading: boolean;
+  items: FeedbackItem[];
+  filter: Filter;
+  onResolve: (item: FeedbackItem, resolved: boolean) => void;
+}) {
+  if (loading) return <Skeleton className="h-32 w-full" />;
+  if (items.length === 0) {
+    return (
+      <EmptyState
+        icon={filter === "pending" ? CircleCheck : Inbox}
+        title={filter === "pending" ? "Todo revisado" : "Sin valoraciones"}
+        description={filter === "pending" ? "No hay respuestas con 👎 pendientes de revisar." : "Cuando los usuarios valoren respuestas, aparecerán aquí."}
+      />
+    );
+  }
+  return (
+    <>
+      {items.map((item) => (
+        <FeedbackCard key={item.id} item={item} onResolve={(r) => onResolve(item, r)} />
+      ))}
+    </>
+  );
+}
+
 export function QualityPage() {
   const [filter, setFilter] = useState<Filter>("pending");
   const qc = useQueryClient();
@@ -164,12 +217,6 @@ export function QualityPage() {
     }
   };
 
-  const s = data?.summary;
-  const rated = (s?.positive ?? 0) + (s?.negative ?? 0);
-  const satisfaction = rated ? `${Math.round(((s?.positive ?? 0) / rated) * 100)} %` : "—";
-  const answered = (data?.usage.questions ?? 0) + (data?.usage.cacheHits ?? 0);
-  const cacheRate = answered ? `${Math.round(((data?.usage.cacheHits ?? 0) / answered) * 100)} %` : "—";
-
   return (
     <Page>
       <PageHeader
@@ -182,20 +229,7 @@ export function QualityPage() {
         }
       />
 
-      {isLoading || !data ? (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {[0, 1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-28" />
-          ))}
-        </div>
-      ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Tile icon={ThumbsUp} label="Satisfacción" value={satisfaction} hint={`${s!.positive} 👍 · ${s!.negative} 👎`} className="text-success" />
-          <Tile icon={ThumbsDown} label="Pendientes de revisar" value={nf.format(s!.pendingNegative)} hint="Respuestas con 👎 sin revisar" className="text-destructive" />
-          <Tile icon={Zap} label="Respondidas desde caché" value={cacheRate} hint={`${nf.format(data.usage.cacheHits)} de ${nf.format(answered)} respuestas, sin gastar cupo`} />
-          <Tile icon={CircleCheck} label="Respuestas en caché" value={nf.format(data.cache.entries)} hint="Se borran al cambiar los documentos" />
-        </div>
-      )}
+      <QualityStats data={data} />
 
       <Tabs value={filter} onValueChange={(v) => setFilter(v as Filter)} className="mt-6">
         <TabsList>
@@ -207,17 +241,7 @@ export function QualityPage() {
       </Tabs>
 
       <div className="mt-4 space-y-3">
-        {isLoading ? (
-          <Skeleton className="h-32 w-full" />
-        ) : data?.items.length === 0 ? (
-          <EmptyState
-            icon={filter === "pending" ? CircleCheck : Inbox}
-            title={filter === "pending" ? "Todo revisado" : "Sin valoraciones"}
-            description={filter === "pending" ? "No hay respuestas con 👎 pendientes de revisar." : "Cuando los usuarios valoren respuestas, aparecerán aquí."}
-          />
-        ) : (
-          data?.items.map((item) => <FeedbackCard key={item.id} item={item} onResolve={(r) => void resolve(item, r)} />)
-        )}
+        <FeedbackList loading={isLoading} items={data?.items ?? []} filter={filter} onResolve={(item, r) => void resolve(item, r)} />
       </div>
     </Page>
   );

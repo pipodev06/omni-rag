@@ -8,7 +8,7 @@ import { userRoutes } from "./routes/users.js";
 import { collectionRoutes } from "./routes/collections.js";
 import { documentRoutes } from "./routes/documents.js";
 import { chatRoutes } from "./routes/chat.js";
-import { platformRoutes, usageRoutes } from "./routes/admin.js";
+import { auditRoutes, platformRoutes, usageRoutes } from "./routes/admin.js";
 import { healthRoutes } from "./routes/health.js";
 import { feedbackRoutes, qualityRoutes } from "./routes/feedback.js";
 
@@ -27,6 +27,7 @@ export function createApp() {
   api.route("/platform", platformRoutes);
   api.route("/messages", feedbackRoutes);
   api.route("/quality", qualityRoutes);
+  api.route("/audit", auditRoutes);
   api.route("/", chatRoutes); // /chat, /search, /conversations
   app.route("/api", api);
 

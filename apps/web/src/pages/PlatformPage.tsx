@@ -1,9 +1,11 @@
 import { useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Building2, EllipsisVertical, Gauge, Loader2, Plus, Power } from "lucide-react";
+import { Building2, EllipsisVertical, Gauge, LifeBuoy, Loader2, Plus, Power } from "lucide-react";
 import { toast } from "sonner";
-import { api, errorMessage, timeAgo } from "@/api";
-import { useCurrentUser } from "@/hooks/useSession";
+import { api, errorMessage, timeAgo, type LinkResult } from "@/api";
+import { LinkResultDialog } from "@/components/LinkResultDialog";
+import { AccessModeTabs, type AccessMode } from "@/components/AccessModeTabs";
+import { switchOrganization, useCurrentUser } from "@/hooks/useSession";
 import { cn } from "@/lib/utils";
 import { EmptyState, Page, PageHeader } from "@/components/common";
 import { useConfirm } from "@/components/ConfirmProvider";
@@ -37,23 +39,28 @@ interface TenantRow {
 const slugify = (s: string) =>
   s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60);
 
-function NewTenantDialog({ open, onOpenChange, onCreated }: { open: boolean; onOpenChange: (o: boolean) => void; onCreated: () => void }) {
+function NewTenantDialog({ open, onOpenChange, onCreated }: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  onCreated: (link: LinkResult | null, email: string) => void;
+}) {
   const empty = { name: "", slug: "", adminName: "", adminEmail: "", adminPassword: "" };
   const [form, setForm] = useState(empty);
+  const [mode, setMode] = useState<AccessMode>("invite");
   const [busy, setBusy] = useState(false);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setBusy(true);
     try {
-      await api.post("/platform/tenants", {
+      const r = await api.post<{ inviteUrl: string | null; emailSent: boolean }>("/platform/tenants", {
         name: form.name,
         slug: form.slug,
-        admin: { name: form.adminName, email: form.adminEmail, password: form.adminPassword },
+        admin: { name: form.adminName, email: form.adminEmail, password: mode === "password" ? form.adminPassword : undefined },
       });
-      toast.success(`Organización «${form.name}» creada`, { description: "Comparte las credenciales con su administrador." });
+      toast.success(`Organización «${form.name}» creada`);
+      onCreated(r.inviteUrl ? { kind: "invite", url: r.inviteUrl, emailSent: r.emailSent } : null, form.adminEmail);
       setForm(empty);
-      onCreated();
       onOpenChange(false);
     } catch (err) {
       toast.error(errorMessage(err));
@@ -92,8 +99,10 @@ function NewTenantDialog({ open, onOpenChange, onCreated }: { open: boolean; onO
               <Input id="t-aemail" type="email" value={form.adminEmail} onChange={(e) => setForm({ ...form, adminEmail: e.target.value })} required />
             </div>
             <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="t-apass">Contraseña inicial</Label>
-              <Input id="t-apass" value={form.adminPassword} onChange={(e) => setForm({ ...form, adminPassword: e.target.value })} minLength={10} placeholder="Mín. 10 caracteres" required />
+              <AccessModeTabs value={mode} onChange={setMode} />
+              {mode === "password" && (
+                <Input id="t-apass" value={form.adminPassword} onChange={(e) => setForm({ ...form, adminPassword: e.target.value })} minLength={10} placeholder="Contraseña inicial (mín. 10 caracteres)" required aria-label="Contraseña inicial" />
+              )}
             </div>
           </div>
           <DialogFooter>
@@ -164,6 +173,7 @@ export function PlatformPage() {
   const confirm = useConfirm();
   const [newOpen, setNewOpen] = useState(false);
   const [limitTenant, setLimitTenant] = useState<TenantRow | null>(null);
+  const [linkResult, setLinkResult] = useState<{ result: LinkResult; email: string } | null>(null);
   const { data, isLoading } = useQuery({
     queryKey: ["tenants"],
     queryFn: () => api.get<{ tenants: TenantRow[] }>("/platform/tenants"),
@@ -184,6 +194,22 @@ export function PlatformPage() {
       await api.patch(`/platform/tenants/${t.id}`, { isActive: !t.isActive });
       toast.success(t.isActive ? "Organización desactivada" : "Organización activada");
       refresh();
+    } catch (err) {
+      toast.error(errorMessage(err));
+    }
+  };
+
+  const enter = async (t: TenantRow) => {
+    const ok = await confirm({
+      title: `¿Entrar en «${t.name}» como soporte?`,
+      description:
+        "Verás sus documentos, usuarios y conversaciones con permisos de administrador. La entrada y lo que hagas quedan registrados en su auditoría. Para volver, usa el aviso de arriba.",
+      confirmText: "Entrar",
+    });
+    if (!ok) return;
+    try {
+      await api.post(`/platform/tenants/${t.id}/enter`);
+      switchOrganization("/chat");
     } catch (err) {
       toast.error(errorMessage(err));
     }
@@ -251,6 +277,11 @@ export function PlatformPage() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
+                        {t.slug !== myTenant.slug && t.isActive && (
+                          <DropdownMenuItem onSelect={() => void enter(t)}>
+                            <LifeBuoy /> Entrar como soporte
+                          </DropdownMenuItem>
+                        )}
                         <DropdownMenuItem onSelect={() => setLimitTenant(t)}>
                           <Gauge /> Límite diario
                         </DropdownMenuItem>
@@ -271,7 +302,15 @@ export function PlatformPage() {
           </Table>
         </div>
       )}
-      <NewTenantDialog open={newOpen} onOpenChange={setNewOpen} onCreated={refresh} />
+      <NewTenantDialog
+        open={newOpen}
+        onOpenChange={setNewOpen}
+        onCreated={(link, email) => {
+          refresh();
+          if (link) setLinkResult({ result: link, email });
+        }}
+      />
+      <LinkResultDialog result={linkResult?.result ?? null} email={linkResult?.email} onClose={() => setLinkResult(null)} />
       <LimitDialog tenant={limitTenant} onOpenChange={(o) => !o && setLimitTenant(null)} onSaved={refresh} />
     </Page>
   );

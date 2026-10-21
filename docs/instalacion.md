@@ -5,20 +5,22 @@
 | Recurso | Mínimo | Recomendado |
 |---|---|---|
 | Docker + Docker Compose v2 | Docker 24+ | la última versión |
-| RAM libre para Docker | 8 GB (sin re-ranker) | 10–12 GB |
-| Disco | 8 GB | 20 GB + el tamaño de tus documentos |
-| CPU | 4 núcleos | 8 núcleos (la ingesta y el OCR van más rápido) |
-| Internet | Para descargar imágenes y el modelo la primera vez, y para OpenRouter | |
+| RAM para Docker | 6 GB (sin re-ranker) | **8 GB** (configuración por defecto) |
+| Disco | 20 GB | 40 GB + 2–3 veces el tamaño de tus documentos |
+| CPU | 4 núcleos x86-64 | 4–8 núcleos |
+| Internet | Para descargar imágenes y modelos la primera vez, y para OpenRouter | |
 
-Uso medido con el sistema en reposo: embeddings ≈ 3,2 GB, re-ranker ≈ 1,9 GB, Docling ≈ 1,3 GB y el resto < 200 MB. Docling usa más memoria mientras convierte PDF grandes. Con poca RAM puedes desactivar el re-ranker (ver [operacion.md](operacion.md#re-ranking)).
+Medido con todo en marcha: ≈ 5,2 GB en reposo y ≈ 6,9 GB de pico (procesando un PDF de 30 páginas mientras se pregunta). Detalle por servicio, perfiles para 6/8/16 GB y recomendaciones de VPS en **[requisitos.md](requisitos.md)**.
 
 ### Windows
 
 - Instala **Docker Desktop** con el motor **WSL 2** y ábrelo antes de usar `docker`. Si `docker version` no muestra la sección *Server*, el motor no está en marcha: abre Docker Desktop y espera a *Engine running*. Si no arranca, ejecuta `wsl --update` y `wsl --shutdown` en PowerShell y vuelve a abrirlo.
-- Docker (WSL 2) usa por defecto la mitad de la RAM. Con 16 GB o menos, crea `C:\Users\<usuario>\.wslconfig` con estas líneas y ejecuta `wsl --shutdown`:
+- Docker (WSL 2) usa por defecto la mitad de la RAM. Para fijar 8 GB (suficiente para la configuración por defecto), crea `C:\Users\<usuario>\.wslconfig` con estas líneas y ejecuta `wsl --shutdown`:
   ```ini
   [wsl2]
-  memory=10GB
+  memory=8GB
+  swap=4GB
+  processors=4
   ```
 - En PowerShell: `Copy-Item .env.example .env` y `notepad .env`. Para generar secretos: `[Convert]::ToBase64String((1..48 | ForEach-Object { Get-Random -Max 256 }))`. Usa `curl.exe` en lugar de `curl`.
 - Si aparece `ports are not available ... Intento de acceso a un socket no permitido`, el puerto está ocupado o reservado por Windows: cambia `WEB_PORT`, `DB_PORT`, `EMBEDDINGS_PORT` o `DOCLING_PORT` en `.env`.
@@ -103,10 +105,18 @@ node scripts/smoke-test.mjs --url http://localhost:8000 \
 
 Crea dos organizaciones temporales, sube los archivos, comprueba el aislamiento entre ellas y los permisos de un lector, y hace una pregunta real al LLM (gasta 1 petición de OpenRouter; usa `--skip-chat true` para evitarlo). Al terminar desactiva las organizaciones de prueba.
 
-## 7. Acceso desde otras máquinas / HTTPS
+## 7. Probar los correos en local (opcional)
 
-Por defecto la web escucha en el puerto `8000` de todas las interfaces. Para usarla en red o en internet:
+Para ver los correos de invitación y de "¿Olvidaste la contraseña?" sin enviarlos de verdad, activa Mailpit en `.env`:
 
-- Pon delante un proxy con HTTPS (Caddy, Traefik, nginx + Let's Encrypt) que apunte a `:8000`.
-- Pon `COOKIE_SECURE=true` y `APP_PUBLIC_URL=https://tu-dominio`.
-- Revisa la lista de [operacion.md → Producción](operacion.md#lista-para-producción).
+```
+COMPOSE_PROFILES=correo-pruebas
+SMTP_HOST=mailpit
+SMTP_PORT=1025
+```
+
+`docker compose up -d` y abre la bandeja en <http://localhost:8025>. Sin correo configurado todo funciona igual: al invitar a alguien verás el enlace para copiarlo.
+
+## 8. Publicarlo con tu dominio y HTTPS
+
+Cuando tengas un servidor y un dominio, solo hay que cambiar `.env` (`DOMAIN`, `COMPOSE_PROFILES=https`…): **[produccion.md](produccion.md)**.

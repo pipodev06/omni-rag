@@ -19,10 +19,26 @@ const schema = z.object({
 
   JWT_SECRET: z.string().min(32, "JWT_SECRET debe tener al menos 32 caracteres"),
   JWT_EXPIRES_IN: z.string().default("12h"),
-  COOKIE_SECURE: z
+  // "auto": cookie segura cuando la web se sirve por HTTPS (p. ej. detrás de Caddy).
+  COOKIE_SECURE: z.enum(["auto", "true", "false"]).default("auto"),
+
+  // Dominio público (p. ej. rag.miempresa.com). Vacío = uso local.
+  DOMAIN: z.string().trim().default(""),
+
+  // Correo saliente (invitaciones y recuperación de contraseña). Vacío = desactivado:
+  // los enlaces se muestran al administrador para que los envíe él.
+  SMTP_HOST: z.string().trim().default(""),
+  SMTP_PORT: z.coerce.number().int().positive().default(587),
+  SMTP_SECURE: z
     .enum(["true", "false"])
     .default("false")
     .transform((v) => v === "true"),
+  SMTP_USER: z.string().default(""),
+  SMTP_PASSWORD: z.string().default(""),
+  SMTP_FROM: z.string().default("RAG Project <no-reply@localhost>"),
+  INVITE_EXPIRES_HOURS: z.coerce.number().positive().default(72),
+  RESET_EXPIRES_MINUTES: z.coerce.number().positive().default(60),
+  AUDIT_RETENTION_DAYS: z.coerce.number().int().positive().default(365),
 
   STORAGE_DIR: z.string().default("./data/uploads"),
   MAX_UPLOAD_MB: z.coerce.number().positive().default(50),
@@ -52,7 +68,9 @@ const schema = z.object({
     ),
   LLM_TEMPERATURE: z.coerce.number().min(0).max(2).default(0.2),
   LLM_MAX_TOKENS: z.coerce.number().int().positive().default(2048),
-  APP_PUBLIC_URL: z.string().default("http://localhost:8000"),
+  // URL pública para los enlaces de los correos. Vacío = https://DOMAIN, o
+  // http://localhost:8000 si no hay dominio.
+  APP_PUBLIC_URL: z.string().trim().default(""),
   APP_NAME: z.string().default("RAG Project"),
 
   RETRIEVAL_TOP_K: z.coerce.number().int().positive().default(6),
@@ -92,7 +110,12 @@ function load(): Config {
     const issues = parsed.error.issues.map((i) => `  - ${i.path.join(".")}: ${i.message}`).join("\n");
     throw new Error(`Configuración inválida:\n${issues}`);
   }
-  return parsed.data;
+  const data = parsed.data;
+  if (!data.APP_PUBLIC_URL) {
+    data.APP_PUBLIC_URL = data.DOMAIN && data.DOMAIN !== "localhost" ? `https://${data.DOMAIN}` : "http://localhost:8000";
+  }
+  data.APP_PUBLIC_URL = data.APP_PUBLIC_URL.replace(/\/$/, "");
+  return data;
 }
 
 export const config = load();

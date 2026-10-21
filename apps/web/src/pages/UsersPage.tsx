@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { EllipsisVertical, KeyRound, Loader2, Search, UserPlus, UserRoundCheck, UserRoundX, Users } from "lucide-react";
+import { EllipsisVertical, KeyRound, Link2, Loader2, Search, Send, UserPlus, UserRoundCheck, UserRoundX, Users } from "lucide-react";
 import { toast } from "sonner";
 import {
   api,
@@ -10,12 +10,15 @@ import {
   ROLE_LABELS,
   timeAgo,
   type Collection,
+  type LinkResult,
   type Role,
   type TenantUser,
 } from "@/api";
 import { useCurrentUser } from "@/hooks/useSession";
 import { cn } from "@/lib/utils";
 import { EmptyState, Page, PageHeader } from "@/components/common";
+import { LinkResultDialog } from "@/components/LinkResultDialog";
+import { AccessModeTabs, type AccessMode } from "@/components/AccessModeTabs";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -57,22 +60,32 @@ function NewUserDialog({ open, onOpenChange, collections, onCreated }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   collections: Collection[];
-  onCreated: () => void;
+  onCreated: (link: LinkResult | null, email: string) => void;
 }) {
   const empty = { email: "", name: "", password: "", role: "viewer" as Role };
   const [form, setForm] = useState(empty);
+  const [mode, setMode] = useState<AccessMode>("invite");
   const [collectionIds, setCollectionIds] = useState<string[]>([]);
+  const selectedCollections = new Set(collectionIds);
   const [busy, setBusy] = useState(false);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setBusy(true);
     try {
-      await api.post("/users", { ...form, collectionIds: form.role === "admin" ? [] : collectionIds });
-      toast.success(`Usuario ${form.email} creado`, { description: "Comparte con él su email y contraseña inicial." });
+      const r = await api.post<{ inviteUrl: string | null; emailSent: boolean }>("/users", {
+        ...form,
+        password: mode === "password" ? form.password : undefined,
+        collectionIds: form.role === "admin" ? [] : collectionIds,
+      });
+      if (r.inviteUrl) {
+        onCreated({ kind: "invite", url: r.inviteUrl, emailSent: r.emailSent }, form.email);
+      } else {
+        toast.success(`Usuario ${form.email} creado`, { description: "Comparte con él su email y contraseña inicial." });
+        onCreated(null, form.email);
+      }
       setForm(empty);
       setCollectionIds([]);
-      onCreated();
       onOpenChange(false);
     } catch (err) {
       toast.error(errorMessage(err));
@@ -87,7 +100,7 @@ function NewUserDialog({ open, onOpenChange, collections, onCreated }: {
         <form onSubmit={submit} className="space-y-5">
           <DialogHeader>
             <DialogTitle>Nuevo usuario</DialogTitle>
-            <DialogDescription>Podrá entrar con este email y la contraseña inicial, y cambiarla después.</DialogDescription>
+            <DialogDescription>Invítalo por email (recomendado) o define tú una contraseña inicial.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
@@ -98,11 +111,16 @@ function NewUserDialog({ open, onOpenChange, collections, onCreated }: {
               <Label htmlFor="u-email">Email</Label>
               <Input id="u-email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="u-pass">Contraseña inicial</Label>
-              <Input id="u-pass" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} minLength={10} placeholder="Mín. 10 caracteres" required />
+            <div className="space-y-2 sm:col-span-2">
+              <Label>Acceso</Label>
+              <AccessModeTabs value={mode} onChange={setMode} />
+              {mode === "invite" ? (
+                <p className="text-xs text-muted-foreground">Recibirá un enlace para elegir su propia contraseña. Si el correo no está configurado, verás el enlace para compartirlo tú.</p>
+              ) : (
+                <Input id="u-pass" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} minLength={10} placeholder="Contraseña inicial (mín. 10 caracteres)" required aria-label="Contraseña inicial" />
+              )}
             </div>
-            <div className="space-y-2">
+            <div className="space-y-2 sm:col-span-2">
               <Label>Rol</Label>
               <RoleSelect value={form.role} onChange={(role) => setForm({ ...form, role })} className="h-9 w-full" />
             </div>
@@ -118,7 +136,7 @@ function NewUserDialog({ open, onOpenChange, collections, onCreated }: {
                   {collections.map((c) => (
                     <label key={c.id} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted">
                       <Checkbox
-                        checked={collectionIds.includes(c.id)}
+                        checked={selectedCollections.has(c.id)}
                         onCheckedChange={(v) => setCollectionIds((s) => (v ? [...s, c.id] : s.filter((x) => x !== c.id)))}
                       />
                       <span className="truncate">{c.name}</span>
@@ -134,7 +152,7 @@ function NewUserDialog({ open, onOpenChange, collections, onCreated }: {
             </Button>
             <Button type="submit" disabled={busy}>
               {busy && <Loader2 className="animate-spin" />}
-              Crear usuario
+              {mode === "invite" ? "Crear e invitar" : "Crear usuario"}
             </Button>
           </DialogFooter>
         </form>
@@ -192,6 +210,7 @@ export function UsersPage() {
   const qc = useQueryClient();
   const [newOpen, setNewOpen] = useState(false);
   const [resetUser, setResetUser] = useState<TenantUser | null>(null);
+  const [linkResult, setLinkResult] = useState<{ result: LinkResult; email: string } | null>(null);
   const [search, setSearch] = useState("");
 
   const usersQuery = useQuery({ queryKey: ["users"], queryFn: () => api.get<{ users: TenantUser[] }>("/users") });
@@ -212,6 +231,15 @@ export function UsersPage() {
   };
 
   const colName = (id: string) => collections.find((c) => c.id === id)?.name ?? "?";
+
+  const createLink = async (u: TenantUser) => {
+    try {
+      const result = await api.post<LinkResult>(`/users/${u.id}/link`);
+      setLinkResult({ result, email: u.email });
+    } catch (err) {
+      toast.error(errorMessage(err));
+    }
+  };
 
   return (
     <Page>
@@ -271,6 +299,11 @@ export function UsersPage() {
                           {u.name}
                           {u.id === me.id && <Badge variant="secondary">Tú</Badge>}
                           {!u.isActive && <Badge variant="outline">Desactivado</Badge>}
+                          {u.pendingInvite && u.isActive && (
+                            <Badge variant="outline" className="border-warning/30 bg-warning/10 text-warning">
+                              Invitación pendiente
+                            </Badge>
+                          )}
                         </p>
                         <p className="truncate text-xs text-muted-foreground">{u.email}</p>
                       </div>
@@ -309,9 +342,20 @@ export function UsersPage() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onSelect={() => setResetUser(u)}>
-                          <KeyRound /> Restablecer contraseña
-                        </DropdownMenuItem>
+                        {u.pendingInvite ? (
+                          <DropdownMenuItem disabled={!u.isActive} onSelect={() => void createLink(u)}>
+                            <Send /> Reenviar invitación
+                          </DropdownMenuItem>
+                        ) : (
+                          <>
+                            <DropdownMenuItem disabled={!u.isActive || u.id === me.id} onSelect={() => void createLink(u)}>
+                              <Link2 /> Enviar enlace para restablecer
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onSelect={() => setResetUser(u)}>
+                              <KeyRound /> Definir contraseña
+                            </DropdownMenuItem>
+                          </>
+                        )}
                         {u.id !== me.id && (
                           <>
                             <DropdownMenuSeparator />
@@ -340,8 +384,12 @@ export function UsersPage() {
         open={newOpen}
         onOpenChange={setNewOpen}
         collections={collections}
-        onCreated={() => void qc.invalidateQueries({ queryKey: ["users"] })}
+        onCreated={(link, email) => {
+          void qc.invalidateQueries({ queryKey: ["users"] });
+          if (link) setLinkResult({ result: link, email });
+        }}
       />
+      <LinkResultDialog result={linkResult?.result ?? null} email={linkResult?.email} onClose={() => setLinkResult(null)} />
       <ResetPasswordDialog user={resetUser} onOpenChange={(o) => !o && setResetUser(null)} />
     </Page>
   );

@@ -19,7 +19,7 @@ const THEMES: { value: Theme; label: string; icon: LucideIcon }[] = [
 ];
 
 export function AccountPage() {
-  const { user, tenant } = useCurrentUser();
+  const { user, tenant, support } = useCurrentUser();
   const { theme, setTheme } = useTheme();
   const [currentPassword, setCurrent] = useState("");
   const [newPassword, setNew] = useState("");
@@ -87,6 +87,7 @@ export function AccountPage() {
           </CardContent>
         </Card>
 
+        {!support && (
         <Card>
           <CardHeader>
             <CardTitle>Cambiar contraseña</CardTitle>
@@ -113,6 +114,7 @@ export function AccountPage() {
             </form>
           </CardContent>
         </Card>
+        )}
       </div>
     </Page>
   );
