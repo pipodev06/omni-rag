@@ -278,6 +278,8 @@ export const ROLE_DESCRIPTIONS: Record<Role, string> = {
 export interface Session {
   user: User;
   tenant: Tenant;
+  /** El superadministrador debe activar la verificación en dos pasos antes de usar la plataforma. */
+  mfaSetupRequired?: boolean;
   /** Presente cuando el superadministrador está dentro de esta organización como soporte. */
   support: { name: string; username: string } | null;
 }

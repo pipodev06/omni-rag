@@ -77,6 +77,7 @@ services:
       DOCLING_URL: http://docling:5001
       RERANKER_URL: ${RERANKER_URL-http://reranker:80}
       STORAGE_DIR: /data/uploads
+      REQUIRE_SUPERADMIN_2FA: ${REQUIRE_SUPERADMIN_2FA:-auto}
     volumes:
       - uploads:/data/uploads
     security_opt: ["no-new-privileges:true"]

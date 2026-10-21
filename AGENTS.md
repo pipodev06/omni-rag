@@ -22,4 +22,5 @@ Cambiarlos solo si el usuario lo pide de forma explícita.
 
 - Se inicia sesión con **usuario o correo** y contraseña. El `username` es único en toda la plataforma. El email es opcional.
 - **Verificación en dos pasos (TOTP):** opcional por usuario, recomendada para el superadministrador. Se configura en Mi cuenta; funciona en local sin dominio. Un administrador puede quitarla a un usuario normal; la del superadmin solo se quita en la base de datos.
+- **Sesiones:** se revocan al cambiar o restablecer la contraseña, al quitar el 2FA y con «Cerrar todas las sesiones» (`users.sessions_valid_after`). El superadmin debe tener 2FA con un dominio real (`REQUIRE_SUPERADMIN_2FA`).
 - Sin email no hay invitaciones ni recuperación por correo: el administrador define o restablece la contraseña.

@@ -125,10 +125,10 @@ Con `DOMAIN=localhost` y `COMPOSE_PROFILES=https`, Caddy usa un certificado prop
 ## Lista de comprobación
 
 - [ ] `DOMAIN`, `COMPOSE_PROFILES=https` y `WEB_BIND=127.0.0.1` en `.env`.
-- [ ] Contraseñas y `JWT_SECRET` nuevos y aleatorios.
+- [ ] Contraseñas y `JWT_SECRET` nuevos y aleatorios (con dominio, la API no arranca si siguen siendo los del ejemplo).
 - [ ] Solo los puertos 22, 80 y 443 abiertos.
 - [ ] Correo SMTP configurado (SPF/DKIM) y probado con una invitación.
-- [ ] Contraseña del superadministrador cambiada.
-- [ ] Copias de `./backups` fuera del servidor, y restauración probada.
+- [ ] Contraseña del superadministrador cambiada y **verificación en dos pasos activada** (con dominio real es obligatoria: `REQUIRE_SUPERADMIN_2FA=auto`).
+- [ ] Copias de `./backups` fuera del servidor. La restauración en una base temporal la prueba sola cada copia: busca `VERIFICADA` en `docker compose logs backup`.
 - [ ] Créditos de OpenRouter y límites diarios por organización revisados.
 - [ ] Monitorización de `https://tu-dominio/api/health` (por ejemplo con Uptime Kuma o un servicio externo).

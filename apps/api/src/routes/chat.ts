@@ -10,6 +10,7 @@ import { streamChat } from "../rag/llm.js";
 import { buildMessages, citedSources, NO_CONTEXT_ANSWER, retrievalQuery, type ChatMessage } from "../rag/prompt.js";
 import { resolveScope, retrieve, type RankedHit } from "../rag/retrieve.js";
 import { HttpError, notFound } from "../lib/errors.js";
+import { userRateLimit } from "../lib/limits.js";
 import { getTenantPlan, type TenantPlan } from "../lib/plans.js";
 import { parse, UUID_RE } from "../lib/validate.js";
 
@@ -69,7 +70,7 @@ const SearchBody = z.object({
  * Búsqueda sin LLM: devuelve los fragmentos más relevantes (con re-ranking si
  * está activo). No consume cupo de OpenRouter; útil para calibrar la recuperación.
  */
-chatRoutes.post("/search", async (c) => {
+chatRoutes.post("/search", userRateLimit(60, 60_000, "búsquedas"), async (c) => {
   const body = parse(SearchBody, await c.req.json().catch(() => ({})));
   const ctx = tenantCtx(c);
   const [vector, scope] = await Promise.all([embedQuery(body.query, c.req.raw.signal), resolveScope(ctx, body.collectionIds, body.documentIds)]);
@@ -91,7 +92,7 @@ const ChatBody = z.object({
  *   event: done    → { messageId, model, sources, fromCache }  (sources con `cited` marcado)
  *   event: error   → { message }
  */
-chatRoutes.post("/chat", async (c) => {
+chatRoutes.post("/chat", userRateLimit(20, 60_000, "preguntas"), async (c) => {
   const body = parse(ChatBody, await c.req.json().catch(() => ({})));
   const ctx = tenantCtx(c);
   const user = c.get("user");

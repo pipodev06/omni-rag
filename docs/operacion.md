@@ -35,6 +35,8 @@ docker compose exec backup sh /backup.sh --once
 docker compose logs backup          # ver el resultado de las copias
 ```
 
+**Cada copia se verifica sola:** nada más hacerla, el servicio la restaura en una base temporal (`rag_restore_test`), cuenta usuarios, documentos y fragmentos, comprueba que el archivo de subidas se puede leer y borra la base temporal. En `docker compose logs backup` debe aparecer `VERIFICADA`; si aparece `ERROR`, la copia no sirve y hay que investigarlo antes de fiarse de ella.
+
 > La carpeta `./backups` está en el mismo disco: cópiala también **fuera del servidor** (ver [produccion.md](produccion.md#6-copias-de-seguridad-fuera-del-servidor)).
 
 ### Restaurar una copia
@@ -257,6 +259,19 @@ Página **Auditoría** (administradores): inicios de sesión (también los falli
 ## Mantenimiento automático
 
 El worker ejecuta cada día a las 03:15 (UTC) una limpieza: auditoría más antigua que la retención, enlaces usados o caducados y respuestas en caché vencidas. No requiere intervención.
+
+## Seguridad del despliegue
+
+- **Secretos:** si `DOMAIN` es un dominio real, la API no arranca con `JWT_SECRET`, `APP_DB_PASSWORD` o `POSTGRES_PASSWORD` iguales a los del `.env.example` o demasiado cortos (mínimo 32, 16 y 16), ni crea el primer administrador con la contraseña de ejemplo. En local (sin dominio) no se exige. Genera claves con `openssl rand -base64 48`.
+- **Archivos subidos:** además de la extensión y el tamaño, se comprueba que el contenido corresponda al formato (firma de PDF, Office e imágenes; sin bytes nulos en los de texto). Un ejecutable renombrado a `.pdf` se rechaza con el motivo en el resultado de la subida.
+- **Docling aislado:** el conversor procesa archivos de usuarios, así que vive en una red interna (`ingest`) sin salida a internet ni acceso a la base de datos; solo el worker llega a él. Ya no publica el puerto `DOCLING_PORT` en tu máquina. Para depurarlo: `docker compose exec worker wget -qO- http://docling:5001/health`.
+- **Contenedores de la API y el worker:** sin privilegios nuevos y sin capacidades de Linux (`no-new-privileges`, `cap_drop: ALL`).
+- **Prompt injection:** los fragmentos de los documentos van entre `<documentos>` como datos; si un documento intenta cerrar esa etiqueta, se neutraliza. No es infalible (ningún modelo lo es), pero evita el truco más común.
+- **Sesiones revocables:** cambiar la contraseña, restablecerla (enlace o administrador), quitar el 2FA a un usuario o pulsar **Mi cuenta → Cerrar todas las sesiones** invalida todas las sesiones anteriores de ese usuario al instante. Al cambiar tu propia contraseña, la sesión actual se renueva y las demás se cierran.
+- **Límites por usuario** (no por IP, que se puede falsear): 20 preguntas, 60 búsquedas, 30 subidas y 10 resúmenes por minuto. Se suman al límite diario de cada plan. Al pasarlos, la API responde `429`.
+- **2FA obligatorio para el superadministrador:** `REQUIRE_SUPERADMIN_2FA` = `auto` (por defecto: solo cuando `DOMAIN` es un dominio real), `true` o `false`. Si está activo y la cuenta aún no tiene 2FA, la plataforma solo la deja ir a **Mi cuenta** hasta activarlo (la API responde `403` con `code: mfa_setup_required` al resto de rutas). Para un administrador normal sigue siendo opcional.
+- **Aviso de modo soporte:** cada entrada y salida queda en la auditoría del cliente (`support.entered`); no hay aviso aparte porque el único que puede entrar eres tú.
+- **nginx y la API:** nginx vuelve a resolver el nombre `api` cada 5 s; si recreas la API ya no hace falta reiniciar `web` (antes daba `502 Bad Gateway`).
 
 ## Lista para producción
 

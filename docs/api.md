@@ -18,11 +18,12 @@ Base: `http://localhost:8000/api` (a través de nginx) o `http://localhost:3001/
 |---|---|---|---|
 | POST | `/auth/login` | `{ login, password }` (`login` = usuario o email; también se acepta `email`) | `{ token, user }` + cookie. Máx. 10 intentos / 15 min por IP y usuario. |
 | POST | `/auth/logout` | — | Borra la cookie |
-| GET | `/auth/me` | — | `{ user, tenant, support }`. `support` = `{ name, username }` del superadministrador si la sesión es de soporte, o `null` |
+| GET | `/auth/me` | — | `{ user, tenant, support, mfaSetupRequired }`. `support` = `{ name, username }` del superadministrador si la sesión es de soporte, o `null` |
 | POST | `/auth/exit-support` | — | Sale del modo soporte y vuelve a la sesión del superadministrador: `{ token, user }` + cookie |
 | POST | `/auth/change-password` | `{ currentPassword, newPassword }` | `{ ok }` (mín. 10 caracteres) |
 | GET | `/auth/config` | — | `{ emailEnabled }` (si hay SMTP configurado) |
 | POST | `/auth/login/totp` | `{ mfaToken, code }`: segundo paso si `/auth/login` devolvió `{ mfaRequired: true, mfaToken }` (el token dura 5 min y no abre sesión). `code` = 6 dígitos de la app o un código de recuperación | Igual que el login. Máx. 5 intentos / 15 min por usuario. Un código TOTP no se puede reutilizar |
+| POST | `/auth/logout-all` | — | Cierra todas las sesiones del usuario (incluida la actual). Un `401` posterior = la sesión se cerró |
 | POST | `/auth/totp/setup` | — | `{ secret, otpauthUrl }`: empieza la configuración (aún inactiva) |
 | POST | `/auth/totp/enable` | `{ code }` | `{ recoveryCodes[] }` (8, solo se muestran esta vez): confirma y activa el 2FA |
 | POST | `/auth/totp/disable` | `{ password, code }` | Desactiva el 2FA (contraseña + código TOTP o de recuperación) |
