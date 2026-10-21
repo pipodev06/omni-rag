@@ -69,7 +69,7 @@ Guía completa paso a paso: **[docs/instalacion.md](docs/instalacion.md)**.
 | Lectura de documentos | [Docling](https://github.com/docling-project/docling-serve) (OCR, tablas, Office…) |
 | Embeddings | [Text Embeddings Inference](https://github.com/huggingface/text-embeddings-inference) + `intfloat/multilingual-e5-base` |
 | LLM | Modelos `:free` de [OpenRouter](https://openrouter.ai) con respaldo automático |
-| Interfaz | React 19 + Vite, servida por nginx |
+| Interfaz | React 19 + Vite, [shadcn/ui](https://ui.shadcn.com) (Radix + Tailwind CSS 4), iconos [Lucide](https://lucide.dev), TanStack Query, React Router; servida por nginx |
 
 ## Estructura
 
@@ -88,7 +88,7 @@ rag-project/
 │   │   │   ├── server.ts     # arranque de la API
 │   │   │   └── worker.ts     # arranque del worker de ingesta
 │   │   └── test/             # pruebas unitarias y de integración (RLS)
-│   └── web/                  # interfaz React
+│   └── web/                  # interfaz React (shadcn/ui + Tailwind)
 ├── scripts/smoke-test.mjs    # prueba de punta a punta contra un sistema en marcha
 └── docs/                     # documentación
 ```
