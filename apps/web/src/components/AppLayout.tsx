@@ -102,7 +102,7 @@ function UserMenu() {
       <DropdownMenuContent side="top" align="start" className="w-60">
         <DropdownMenuLabel className="font-normal">
           <p className="text-sm font-medium">{user.name}</p>
-          <p className="truncate text-xs text-muted-foreground">{user.email}</p>
+          <p className="truncate text-xs text-muted-foreground">{user.username}</p>
           <p className="mt-1 text-xs text-muted-foreground">
             {ROLE_LABELS[user.role]} · {tenant.name}
           </p>
@@ -225,12 +225,12 @@ function SupportBanner() {
     }
   };
   return (
-    <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 bg-primary px-3 py-1.5 text-center text-sm text-primary-foreground">
-      <LifeBuoy className="size-4 shrink-0" />
+    <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 bg-primary px-3 py-1 text-center text-xs text-primary-foreground">
+      <LifeBuoy className="size-3.5 shrink-0" />
       <span>
-        Estás en <strong>{tenant.name}</strong> como soporte. Lo que hagas queda registrado en su auditoría.
+        Soporte en <strong>{tenant.name}</strong> · queda registrado en su auditoría
       </span>
-      <Button size="sm" variant="secondary" className="h-7" onClick={() => void exit()} disabled={busy}>
+      <Button size="sm" variant="secondary" className="h-6 px-2 text-xs" onClick={() => void exit()} disabled={busy}>
         {busy ? <Loader2 className="animate-spin" /> : <Undo2 />} Volver a mi organización
       </Button>
     </div>

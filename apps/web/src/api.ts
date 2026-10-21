@@ -7,10 +7,13 @@ export type Role = "admin" | "editor" | "viewer";
 
 export interface User {
   id: string;
-  email: string;
+  username: string;
+  email: string | null;
   name: string;
   role: Role;
   isSuperadmin: boolean;
+  /** Solo lo informa /auth/me. */
+  totpEnabled?: boolean;
 }
 
 export interface Tenant {
@@ -76,7 +79,8 @@ export interface Conversation {
 
 export interface TenantUser {
   id: string;
-  email: string;
+  username: string;
+  email: string | null;
   name: string;
   role: Role;
   isActive: boolean;
@@ -84,6 +88,7 @@ export interface TenantUser {
   collectionIds: string[];
   /** Invitado que aún no ha elegido contraseña. */
   pendingInvite: boolean;
+  totpEnabled: boolean;
 }
 
 /** Resultado de crear un enlace de invitación o de restablecimiento. */
@@ -245,6 +250,23 @@ export const initials = (name: string) =>
     .map((w) => w[0]!.toUpperCase())
     .join("") || "?";
 
+/** Plan de una organización: modelos de lenguaje y topes (los gestiona el superadministrador). */
+export interface Plan {
+  id: string;
+  name: string;
+  description: string;
+  llmModels: string[];
+  /** Preguntas por día; 0 = sin límite. */
+  dailyQuestionLimit: number;
+  maxUsers: number | null;
+  maxDocuments: number | null;
+  isDefault: boolean;
+  tenants: number;
+}
+
+/** Límite diario de preguntas tal como se muestra: 0 = sin límite. */
+export const dailyLimitLabel = (n: number) => (n === 0 ? "Sin límite" : `${n} / día`);
+
 export const ROLE_LABELS: Record<Role, string> = { admin: "Administrador", editor: "Editor", viewer: "Lector" };
 
 export const ROLE_DESCRIPTIONS: Record<Role, string> = {
@@ -257,5 +279,5 @@ export interface Session {
   user: User;
   tenant: Tenant;
   /** Presente cuando el superadministrador está dentro de esta organización como soporte. */
-  support: { name: string; email: string } | null;
+  support: { name: string; username: string } | null;
 }

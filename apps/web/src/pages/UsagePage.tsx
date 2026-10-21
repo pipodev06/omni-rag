@@ -12,11 +12,32 @@ interface Usage {
   daily: { day: string; questions: number; cacheHits: number; promptTokens: number; completionTokens: number }[];
   byModel: { model: string; questions: number }[];
   totals: { documents: number; chunks: number; users: number };
+  plan: { name: string; dailyQuestionLimit: number; maxUsers: number | null; maxDocuments: number | null; usedToday: number };
 }
 
 const nf = new Intl.NumberFormat("es");
 const dayLabel = (iso: string, opts: Intl.DateTimeFormatOptions = { day: "numeric", month: "short" }) =>
   new Date(`${iso}T00:00:00Z`).toLocaleDateString("es", { ...opts, timeZone: "UTC" });
+
+/** Barra de uso frente al tope del plan. `max` null/0 = sin tope. */
+function PlanMeter({ label, used, max }: { label: string; used: number; max: number | null }) {
+  const limited = max !== null && max > 0;
+  const pct = limited ? Math.min(100, (used / max) * 100) : 0;
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-baseline justify-between gap-2 text-sm">
+        <span className="text-muted-foreground">{label}</span>
+        <span className="tabular-nums">
+          {nf.format(used)}
+          <span className="text-muted-foreground"> / {limited ? nf.format(max) : "sin tope"}</span>
+        </span>
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+        <div className={cn("h-full rounded-full", pct >= 90 ? "bg-destructive" : "bg-primary")} style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
 
 function StatTile({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: number }) {
   return (
@@ -126,7 +147,7 @@ export function UsagePage() {
 
   return (
     <Page>
-      <PageHeader title="Consumo" description="Actividad de tu organización en los últimos 30 días (días en UTC)." />
+      <PageHeader title="Consumo" description="Actividad de la organización en los últimos 30 días. Los días se calculan en UTC." />
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <StatTile icon={MessagesSquare} label="Preguntas al LLM (30 días)" value={totalQuestions} />
@@ -135,6 +156,17 @@ export function UsagePage() {
         <StatTile icon={Layers} label="Fragmentos indexados" value={data.totals.chunks} />
         <StatTile icon={Users} label="Usuarios" value={data.totals.users} />
       </div>
+
+      <section className="mt-6 rounded-xl border bg-card p-5">
+        <h2 className="mb-4 font-medium">
+          Plan {data.plan.name} <span className="text-sm font-normal text-muted-foreground">· el uso de hoy se reinicia a las 00:00 UTC</span>
+        </h2>
+        <div className="grid gap-5 sm:grid-cols-3">
+          <PlanMeter label="Preguntas hoy" used={data.plan.usedToday} max={data.plan.dailyQuestionLimit} />
+          <PlanMeter label="Usuarios activos" used={data.totals.users} max={data.plan.maxUsers} />
+          <PlanMeter label="Documentos" used={data.totals.documents} max={data.plan.maxDocuments} />
+        </div>
+      </section>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-3">
         <section className="rounded-xl border bg-card p-5 lg:col-span-2">

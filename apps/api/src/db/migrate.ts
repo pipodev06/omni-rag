@@ -32,7 +32,9 @@ export function renderMigration(sqlText: string): string {
   if (!/^[a-z_]+$/.test(config.FTS_LANGUAGE)) throw new Error("FTS_LANGUAGE inválido");
   return sqlText
     .replaceAll("{{EMBEDDING_DIM}}", String(config.EMBEDDING_DIM))
-    .replaceAll("{{FTS_LANGUAGE}}", config.FTS_LANGUAGE);
+    .replaceAll("{{FTS_LANGUAGE}}", config.FTS_LANGUAGE)
+    .replaceAll("{{LLM_MODELS}}", config.LLM_MODELS.replaceAll("'", "''"))
+    .replaceAll("{{TENANT_DAILY_QUESTION_LIMIT}}", String(config.TENANT_DAILY_QUESTION_LIMIT));
 }
 
 export async function migrate(): Promise<string[]> {

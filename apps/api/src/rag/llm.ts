@@ -1,11 +1,11 @@
-import { config, llmModels } from "../config.js";
+import { config } from "../config.js";
 import { HttpError } from "../lib/errors.js";
 import type { ChatMessage } from "./prompt.js";
 
 /**
  * Cliente mínimo de OpenRouter (API compatible con OpenAI) con streaming.
  *
- * Respaldo entre modelos: se prueba cada modelo de LLM_MODELS en orden. Si uno
+ * Respaldo entre modelos: se prueba cada modelo del plan de la organización en orden. Si uno
  * falla ANTES de emitir texto (límite de uso, modelo caído, retirado…), se pasa
  * al siguiente. Los modelos gratuitos se saturan a menudo, así que esto es clave.
  */
@@ -26,11 +26,11 @@ class ModelError extends Error {
   }
 }
 
-export async function* streamChat(messages: ChatMessage[], signal?: AbortSignal): AsyncGenerator<LlmEvent> {
+export async function* streamChat(messages: ChatMessage[], models: string[], signal?: AbortSignal): AsyncGenerator<LlmEvent> {
   if (!config.OPENROUTER_API_KEY) {
     throw new HttpError(503, "Falta OPENROUTER_API_KEY en la configuración del servidor");
   }
-  const models = llmModels();
+  if (models.length === 0) throw new HttpError(503, "El plan de la organización no tiene modelos configurados");
   const failures: string[] = [];
 
   for (const model of models) {
@@ -154,9 +154,9 @@ export async function* sseData(body: ReadableStream<Uint8Array>): AsyncGenerator
 }
 
 /** Llamada sin streaming: devuelve el texto completo, el modelo y los tokens. */
-export async function completeChat(messages: ChatMessage[], signal?: AbortSignal) {
+export async function completeChat(messages: ChatMessage[], models: string[], signal?: AbortSignal) {
   let text = "";
-  for await (const ev of streamChat(messages, signal)) {
+  for await (const ev of streamChat(messages, models, signal)) {
     if (ev.type === "token") text += ev.text;
     else return { text, model: ev.model, promptTokens: ev.promptTokens, completionTokens: ev.completionTokens };
   }

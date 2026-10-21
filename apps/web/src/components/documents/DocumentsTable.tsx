@@ -11,6 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { TableCard } from "@/components/common";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -116,7 +117,7 @@ function DocumentRow({ doc: d, ...actions }: RowActions & { doc: DocumentInfo })
 /** Tabla de documentos de una colección con su menú de acciones. */
 export function DocumentsTable({ documents, ...actions }: RowActions & { documents: DocumentInfo[] }) {
   return (
-    <div className="overflow-hidden rounded-xl border bg-card">
+    <TableCard>
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
@@ -135,6 +136,6 @@ export function DocumentsTable({ documents, ...actions }: RowActions & { documen
           ))}
         </TableBody>
       </Table>
-    </div>
+    </TableCard>
   );
 }

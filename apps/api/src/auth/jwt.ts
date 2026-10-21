@@ -33,3 +33,25 @@ export async function verifySession(token: string): Promise<SessionClaims | null
     return null;
   }
 }
+
+const MFA_PURPOSE = "mfa";
+
+/** Token de 5 minutos que solo sirve para completar el segundo paso del login (no abre sesión). */
+export async function signMfaToken(userId: string): Promise<string> {
+  return new SignJWT({ purpose: MFA_PURPOSE })
+    .setProtectedHeader({ alg: "HS256" })
+    .setSubject(userId)
+    .setIssuer(ISSUER)
+    .setIssuedAt()
+    .setExpirationTime("5m")
+    .sign(key);
+}
+
+export async function verifyMfaToken(token: string): Promise<string | null> {
+  try {
+    const { payload } = await jwtVerify(token, key, { issuer: ISSUER, algorithms: ["HS256"] });
+    return payload.purpose === MFA_PURPOSE && typeof payload.sub === "string" ? payload.sub : null;
+  } catch {
+    return null;
+  }
+}

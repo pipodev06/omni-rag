@@ -34,7 +34,7 @@ const BackToLogin = () => (
 
 /** /recuperar — pedir un enlace para restablecer la contraseña. */
 export function ForgotPasswordPage() {
-  const [email, setEmail] = useState("");
+  const [login, setLogin] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ message: string; emailEnabled: boolean } | null>(null);
   const [error, setError] = useState("");
@@ -44,7 +44,7 @@ export function ForgotPasswordPage() {
     setBusy(true);
     setError("");
     try {
-      setResult(await api.post<{ message: string; emailEnabled: boolean }>("/auth/forgot", { email }));
+      setResult(await api.post<{ message: string; emailEnabled: boolean }>("/auth/forgot", { login }));
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -65,11 +65,11 @@ export function ForgotPasswordPage() {
   }
 
   return (
-    <AuthShell title="¿Olvidaste la contraseña?" description="Escribe tu email y te enviaremos un enlace para elegir una nueva.">
+    <AuthShell title="¿Olvidaste la contraseña?" description="Escribe tu usuario o correo y, si la cuenta tiene un correo registrado, te enviaremos un enlace para elegir una nueva.">
       <form onSubmit={submit} className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="email">Email</Label>
-          <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" required autoFocus />
+          <Label htmlFor="login">Usuario o correo</Label>
+          <Input id="login" value={login} onChange={(e) => setLogin(e.target.value)} autoComplete="username" autoCapitalize="none" spellCheck={false} required autoFocus />
         </div>
         {error && <p className="text-sm text-destructive">{error}</p>}
         <Button type="submit" className="w-full" disabled={busy}>
@@ -82,13 +82,20 @@ export function ForgotPasswordPage() {
   );
 }
 
+interface LinkInfo {
+  kind: "invite" | "reset";
+  username: string;
+  email: string | null;
+  name: string;
+}
+
 /** /activar y /restablecer — usar un enlace de invitación o de restablecimiento. */
 export function LinkPage() {
   const [params] = useSearchParams();
   const token = params.get("token") ?? "";
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const [info, setInfo] = useState<{ kind: "invite" | "reset"; email: string; name: string } | null>(null);
+  const [info, setInfo] = useState<LinkInfo | null>(null);
   const [invalid, setInvalid] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
@@ -102,7 +109,7 @@ export function LinkPage() {
       return;
     }
     api
-      .get<{ kind: "invite" | "reset"; email: string; name: string }>(`/auth/link?token=${encodeURIComponent(token)}`)
+      .get<LinkInfo>(`/auth/link?token=${encodeURIComponent(token)}`)
       .then((d) => {
         setInfo(d);
         setName(d.name);
@@ -155,8 +162,8 @@ export function LinkPage() {
       title={invite ? "Activa tu cuenta" : "Elige una nueva contraseña"}
       description={
         <>
-          {invite ? "Te han invitado con el email " : "Cuenta: "}
-          <b className="font-medium text-foreground">{info.email}</b>
+          {invite ? "Te han invitado con el usuario " : "Cuenta: "}
+          <b className="font-medium text-foreground">{info.username}</b>
         </>
       }
     >

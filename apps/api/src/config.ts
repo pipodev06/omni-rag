@@ -119,8 +119,3 @@ function load(): Config {
 }
 
 export const config = load();
-
-export const llmModels = (): string[] =>
-  config.LLM_MODELS.split(",")
-    .map((m) => m.trim())
-    .filter(Boolean);

@@ -120,10 +120,10 @@ export function DocumentsPage() {
   }
 
   return (
-    <Page>
+    <Page fill>
       <PageHeader
         title="Documentos"
-        description="Los documentos se procesan automáticamente al subirlos y quedan disponibles en el chat."
+        description="Los documentos se procesan automáticamente al subirse y quedan disponibles para consultar en el chat."
         actions={
           isAdmin && (
             <Button onClick={() => setCollectionDialog("new")}>
@@ -141,7 +141,7 @@ export function DocumentsPage() {
           action={isAdmin && <Button onClick={() => setCollectionDialog("new")}><FolderPlus /> Nueva colección</Button>}
         />
       ) : (
-        <div className="space-y-5">
+        <div className="flex min-h-0 flex-1 flex-col gap-5">
           <CollectionToolbar
             collections={collections}
             current={current}

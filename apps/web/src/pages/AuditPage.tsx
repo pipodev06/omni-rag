@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { Building2, FileText, FolderOpen, KeyRound, LifeBuoy, Loader2, ScrollText, ThumbsUp, Users, type LucideIcon } from "lucide-react";
+import { Building2, FileText, FolderOpen, KeyRound, Layers, LifeBuoy, Loader2, ScrollText, ThumbsUp, Users, type LucideIcon } from "lucide-react";
 import { api, formatDate, ROLE_LABELS } from "@/api";
-import { EmptyState, Page, PageHeader } from "@/components/common";
+import { EmptyState, Page, PageHeader, TableCard } from "@/components/common";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -13,7 +13,7 @@ interface AuditItem {
   id: number;
   action: string;
   userId: string | null;
-  userEmail: string | null;
+  userLabel: string | null;
   targetType: string | null;
   targetId: string | null;
   details: Record<string, unknown>;
@@ -28,6 +28,7 @@ const CATEGORIES: { value: string; label: string; icon: LucideIcon }[] = [
   { value: "document", label: "Documentos", icon: FileText },
   { value: "quality", label: "Calidad", icon: ThumbsUp },
   { value: "tenant", label: "Organizaciones", icon: Building2 },
+  { value: "plan", label: "Planes", icon: Layers },
   { value: "support", label: "Soporte", icon: LifeBuoy },
 ];
 
@@ -53,11 +54,22 @@ const ACTIONS: Record<string, string> = {
   "quality.feedback_resolved": "Revisó una valoración",
   "tenant.created": "Creó una organización",
   "tenant.updated": "Modificó una organización",
+  "tenant.plan_changed": "Cambiaron el plan de la organización",
+  "tenant.limit_changed": "Cambiaron el límite diario de preguntas",
+  "plan.edited": "Se modificaron las condiciones de su plan",
+  "auth.totp_enabled": "Activó la verificación en dos pasos",
+  "auth.totp_disabled": "Desactivó la verificación en dos pasos",
+  "auth.totp_reset": "Quitó la verificación en dos pasos de un usuario",
+  "auth.login_mfa_failed": "Código de verificación incorrecto",
+  "plan.created": "Creó un plan",
+  "plan.updated": "Modificó un plan",
+  "plan.deleted": "Borró un plan",
   "support.entered": "Entró como soporte",
   "support.exited": "Salió del modo soporte",
 };
 
 const DETAIL_LABELS: Record<string, string> = {
+  username: "usuario",
   email: "email",
   role: "rol",
   name: "nombre",
@@ -76,11 +88,19 @@ const DETAIL_LABELS: Record<string, string> = {
   slug: "identificador",
   invited: "invitado",
   dailyQuestionLimit: "límite diario",
+  isDefault: "por defecto",
+  plan: "plan",
+  de: "de",
+  a: "a",
+  límite: "límite",
+  mfa: "verificación",
   description: "descripción",
 };
 
 const VALUE_LABELS: Record<string, string> = {
   ...ROLE_LABELS,
+  totp: "app autenticadora",
+  recovery: "código de recuperación",
   invite: "invitación",
   reset: "restablecer",
 };
@@ -117,10 +137,10 @@ export function AuditPage() {
   const items = query.data?.pages.flatMap((p) => p.items) ?? [];
 
   return (
-    <Page>
+    <Page fill>
       <PageHeader
         title="Auditoría"
-        description="Registro de las acciones importantes de tu organización: accesos, cambios de usuarios y permisos, documentos subidos o borrados…"
+        description="Registro cronológico de las acciones relevantes de la organización: accesos, cambios de usuarios y permisos, y documentos subidos o eliminados."
         actions={
           <Select value={category} onValueChange={setCategory}>
             <SelectTrigger className="w-52" aria-label="Filtrar por tipo">
@@ -143,7 +163,7 @@ export function AuditPage() {
       ) : items.length === 0 ? (
         <EmptyState icon={ScrollText} title="Sin actividad registrada" description="Las acciones aparecerán aquí a medida que se usen las funciones del sistema." />
       ) : (
-        <div className="overflow-hidden rounded-xl border bg-card">
+        <TableCard>
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
@@ -161,7 +181,7 @@ export function AuditPage() {
                 return (
                   <TableRow key={it.id}>
                     <TableCell className="pl-4 text-sm whitespace-nowrap text-muted-foreground">{formatDate(it.createdAt)}</TableCell>
-                    <TableCell className="text-sm">{it.userEmail ?? "Sistema"}</TableCell>
+                    <TableCell className="text-sm">{it.userLabel ?? "Sistema"}</TableCell>
                     <TableCell>
                       <span className="flex items-center gap-2 text-sm">
                         <Icon className={it.action === "auth.login_failed" ? "size-4 text-destructive" : "size-4 text-muted-foreground"} />
@@ -177,11 +197,11 @@ export function AuditPage() {
               })}
             </TableBody>
           </Table>
-        </div>
+        </TableCard>
       )}
 
       {query.hasNextPage && (
-        <div className="mt-4 flex justify-center">
+        <div className="mt-4 flex shrink-0 justify-center">
           <Button variant="outline" onClick={() => void query.fetchNextPage()} disabled={query.isFetchingNextPage}>
             {query.isFetchingNextPage && <Loader2 className="animate-spin" />}
             Cargar más

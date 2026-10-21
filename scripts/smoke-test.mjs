@@ -86,7 +86,7 @@ const pwd = `Prueba-${stamp}-segura`;
 const mk = async (tag) => {
   const r = await call("POST", "/platform/tenants", {
     token: root,
-    json: { name: `Smoke ${tag} ${stamp}`, slug: `smoke-${tag}-${stamp}`, admin: { email: `admin-${tag}-${stamp}@smoke.test`, name: `Admin ${tag}`, password: pwd } },
+    json: { name: `Smoke ${tag} ${stamp}`, slug: `smoke-${tag}-${stamp}`, admin: { username: `admin-${tag}-${stamp}`, email: `admin-${tag}-${stamp}@smoke.test`, name: `Admin ${tag}`, password: pwd } },
   });
   ok(r.status === 201, `crear organización ${tag}`);
   const token = await login(`admin-${tag}-${stamp}@smoke.test`, pwd);
@@ -122,7 +122,7 @@ if (files.length) {
 }
 
 // Lector sin acceso a ninguna colección
-const viewer = await call("POST", "/users", { token: A.token, json: { email: `viewer-${stamp}@smoke.test`, name: "Lector", password: pwd, role: "viewer" } });
+const viewer = await call("POST", "/users", { token: A.token, json: { username: `viewer-${stamp}`, email: `viewer-${stamp}@smoke.test`, name: "Lector", password: pwd, role: "viewer" } });
 ok(viewer.status === 201, "admin de A crea un lector");
 const vt = await login(`viewer-${stamp}@smoke.test`, pwd);
 const vdocs = await call("GET", "/documents", { token: vt });
@@ -252,7 +252,7 @@ if (!skipChat && files.length) {
 // ---------------------------------------------------------------------------
 {
   const inviteEmail = `invitado-${stamp}@smoke.test`;
-  const inv = await call("POST", "/users", { token: A.token, json: { email: inviteEmail, name: "Invitado", role: "viewer" } });
+  const inv = await call("POST", "/users", { token: A.token, json: { username: `invitado-${stamp}`, email: inviteEmail, name: "Invitado", role: "viewer" } });
   ok(inv.status === 201 && inv.data.inviteUrl, `invitación creada (correo enviado: ${inv.data.emailSent ? "sí" : "no"})`);
   const loginBefore = await call("POST", "/auth/login", { json: { email: inviteEmail, password: "lo-que-sea-123" } });
   ok(loginBefore.status === 401, "un invitado no puede entrar antes de activar su cuenta");

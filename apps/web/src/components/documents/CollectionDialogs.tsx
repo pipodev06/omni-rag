@@ -144,7 +144,7 @@ export function MembersDialog({ open, onOpenChange, collection, onSaved }: {
                   </Avatar>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">{u.name}</p>
-                    <p className="truncate text-xs text-muted-foreground">{u.email}</p>
+                    <p className="truncate text-xs text-muted-foreground">{u.username}</p>
                   </div>
                   <span className="text-xs text-muted-foreground">{ROLE_LABELS[u.role]}</span>
                 </label>

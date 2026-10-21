@@ -6,6 +6,7 @@ import { useCurrentUser } from "@/hooks/useSession";
 import { useTheme, type Theme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import { Page, PageHeader } from "@/components/common";
+import { TwoFactorCard } from "@/components/account/TwoFactorCard";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -54,7 +55,7 @@ export function AccountPage() {
             </Avatar>
             <div className="min-w-0">
               <p className="text-lg font-semibold">{user.name}</p>
-              <p className="truncate text-sm text-muted-foreground">{user.email}</p>
+              <p className="truncate text-sm text-muted-foreground">{user.username}{user.email && ` · ${user.email}`}</p>
               <p className="text-sm text-muted-foreground">
                 {ROLE_LABELS[user.role]}
                 {user.isSuperadmin && " · Superadministrador"} · {tenant.name}
@@ -86,6 +87,8 @@ export function AccountPage() {
             </div>
           </CardContent>
         </Card>
+
+        {!support && <TwoFactorCard enabled={user.totpEnabled === true} recommended={user.isSuperadmin} />}
 
         {!support && (
         <Card>

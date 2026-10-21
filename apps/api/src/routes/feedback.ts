@@ -64,7 +64,7 @@ qualityRoutes.use("*", requireAuth, requireRole("admin"));
 
 qualityRoutes.get("/", async (c) => {
   const rating = c.req.query("rating");
-  const status = c.req.query("status"); // "pending" | "all"
+  const status = c.req.query("status"); // "pending" | "resolved" | "all"
   const data = await withTenant(tenantCtx(c), async (tx) => {
     const [summary] = await tx`
       SELECT count(*) FILTER (WHERE rating = 1)::int AS positive,
@@ -78,10 +78,10 @@ qualityRoutes.get("/", async (c) => {
     const [cache] = await tx`SELECT count(*)::int AS entries FROM answer_cache`;
     const items = await tx`
       SELECT f.id, f.rating, f.comment, f.question, f.answer, f.sources, f.model, f.from_cache AS "fromCache",
-             f.resolved, f.created_at AS "createdAt", u.name AS "userName", u.email AS "userEmail"
+             f.resolved, f.created_at AS "createdAt", u.name AS "userName", u.username AS "username"
         FROM message_feedback f JOIN users u ON u.id = f.user_id
        WHERE (${rating ?? null}::smallint IS NULL OR f.rating = ${rating ?? null}::smallint)
-         AND (${status ?? "all"} = 'all' OR NOT f.resolved)
+         AND (${status ?? "all"} = 'all' OR (${status ?? "all"} = 'pending' AND NOT f.resolved) OR (${status ?? "all"} = 'resolved' AND f.resolved))
        ORDER BY f.created_at DESC LIMIT 200`;
     return { summary, usage, cache, items };
   });
