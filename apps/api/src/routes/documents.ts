@@ -13,7 +13,7 @@ import { requireAuth, requireRole, tenantCtx, type AppEnv } from "../auth/middle
 import { formatFor, SUPPORTED_EXTENSIONS } from "../ingest/formats.js";
 import { enqueueIngest } from "../queue.js";
 import { invalidateCollections } from "../rag/cache.js";
-import { readStoredFile, removeStored, safeFilename, saveFile } from "../storage/local.js";
+import { readStoredFile, removeStored, safeFilename, saveFile, titleFromFilename } from "../storage/local.js";
 import { badRequest, HttpError, notFound } from "../lib/errors.js";
 import { documentSlots } from "../lib/plans.js";
 import { UUID_RE } from "../lib/validate.js";
@@ -191,7 +191,7 @@ documentRoutes.post(
       const sha256 = createHash("sha256").update(data).digest("hex");
       const id = randomUUID();
       const storageKey = `${ctx.tenantId}/${id}/${filename}`;
-      const title = filename.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim() || filename;
+      const title = titleFromFilename(file.name) || filename;
 
       const inserted = await withTenant(ctx, async (tx) => {
         const [existing] = await tx<{ id: string }[]>`
