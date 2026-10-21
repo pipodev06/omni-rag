@@ -59,8 +59,9 @@ services:
       DOCLING_SERVE_ENG_LOC_NUM_WORKERS: ${DOCLING_WORKERS:-1}
       DOCLING_SERVE_MAX_DOCUMENT_TIMEOUT: ${DOCLING_TIMEOUT_SECONDS:-900}
       DOCLING_SERVE_ENABLE_UI: "false"
-    ports:
-      - "127.0.0.1:${DOCLING_PORT:-15001}:5001"
+    # Procesa archivos de usuarios (no confiables): red interna, sin salida a internet
+    # ni acceso a la base de datos. Solo el worker puede hablar con él.
+    networks: [ingest]
 
   # API HTTP (Hono + TypeScript). Aplica migraciones al arrancar.
   api:
@@ -78,6 +79,8 @@ services:
       STORAGE_DIR: /data/uploads
     volumes:
       - uploads:/data/uploads
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
     depends_on:
       db:
         condition: service_healthy
@@ -93,6 +96,9 @@ services:
     environment: *backend-env
     volumes:
       - uploads:/data/uploads
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    networks: [default, ingest]
     depends_on:
       db:
         condition: service_healthy
@@ -156,6 +162,11 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:${MAILPIT_PORT:-8025}:8025"
+
+networks:
+  # Red sin salida a internet donde vive Docling.
+  ingest:
+    internal: true
 
 volumes:
   caddy-data:
