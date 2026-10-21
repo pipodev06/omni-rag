@@ -44,7 +44,8 @@ function LoginRoute() {
   const { data, isLoading } = useSession();
   const from = (useLocation().state as { from?: string } | null)?.from;
   if (isLoading) return <FullScreenLoader />;
-  if (data) return <Navigate to={from && from !== "/login" ? from : "/chat"} replace />;
+  // El dueño de la plataforma aterriza en el selector de organizaciones; el resto, en el chat.
+  if (data) return <Navigate to={from && from !== "/login" ? from : data.user.isSuperadmin ? "/organizaciones" : "/chat"} replace />;
   return <LoginPage />;
 }
 

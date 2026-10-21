@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { RateLimiter } from "../src/lib/rateLimit.js";
+import { OptionalEmailSchema, UsernameSchema } from "../src/lib/validate.js";
 
 describe("RateLimiter", () => {
   it("bloquea al superar el máximo y se reinicia al pasar la ventana", () => {
@@ -16,5 +17,21 @@ describe("RateLimiter", () => {
     rl.hit("k", 0);
     rl.reset("k");
     expect(rl.hit("k", 1)).toBe(true);
+  });
+});
+
+describe("nombre de usuario", () => {
+  it("normaliza a minúsculas y acepta el formato permitido", () => {
+    expect(UsernameSchema.parse("  Ana.Perez_01 ")).toBe("ana.perez_01");
+  });
+  it("rechaza espacios, arrobas, acentos y longitudes fuera de rango", () => {
+    for (const bad of ["ab", "a b c", "ana@mail.com", "pérez", "x".repeat(41), "-ana"]) {
+      expect(UsernameSchema.safeParse(bad).success, bad).toBe(false);
+    }
+  });
+  it("el email opcional acepta vacío como «sin email»", () => {
+    expect(OptionalEmailSchema.parse("")).toBeNull();
+    expect(OptionalEmailSchema.parse(undefined)).toBeUndefined();
+    expect(OptionalEmailSchema.safeParse("no-es-email").success).toBe(false);
   });
 });

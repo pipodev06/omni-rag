@@ -10,6 +10,7 @@ import { streamChat } from "../rag/llm.js";
 import { buildMessages, citedSources, NO_CONTEXT_ANSWER, retrievalQuery, type ChatMessage } from "../rag/prompt.js";
 import { resolveScope, retrieve, type RankedHit } from "../rag/retrieve.js";
 import { HttpError, notFound } from "../lib/errors.js";
+import { getTenantPlan, type TenantPlan } from "../lib/plans.js";
 import { parse, UUID_RE } from "../lib/validate.js";
 
 export const chatRoutes = new Hono<AppEnv>();
@@ -39,19 +40,22 @@ const toSources = (hits: RankedHit[]): Source[] =>
     cited: false,
   }));
 
-/** Comprueba el límite diario de llamadas al LLM (preguntas y resúmenes) de la organización. */
-export async function checkDailyLimit(ctx: TenantContext): Promise<void> {
-  const [tenant] = await sqlOwner<{ daily_question_limit: number | null }[]>`
-    SELECT daily_question_limit FROM tenants WHERE id = ${ctx.tenantId}`;
-  const limit = tenant?.daily_question_limit ?? config.TENANT_DAILY_QUESTION_LIMIT;
-  if (limit === 0) return; // 0 = sin límite
+/**
+ * Comprueba el límite diario de llamadas al LLM (preguntas y resúmenes) de la organización
+ * según su plan. Devuelve el plan, que indica con qué modelos responder.
+ */
+export async function checkDailyLimit(ctx: TenantContext): Promise<TenantPlan> {
+  const plan = await getTenantPlan(ctx.tenantId);
+  const limit = plan.dailyQuestionLimit;
+  if (limit === 0) return plan; // 0 = sin límite
   const [row] = await sqlOwner<{ n: number }[]>`
     SELECT count(*)::int AS n FROM usage_events
      WHERE tenant_id = ${ctx.tenantId} AND kind IN ('question', 'summary')
        AND created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`;
   if ((row?.n ?? 0) >= limit) {
-    throw new HttpError(429, `Tu organización alcanzó el límite de ${limit} preguntas por día.`);
+    throw new HttpError(429, `Tu organización alcanzó el límite de ${limit} preguntas por día de su plan ${plan.name}.`);
   }
+  return plan;
 }
 
 const SearchBody = z.object({
@@ -119,7 +123,7 @@ chatRoutes.post("/chat", async (c) => {
     : null;
 
   // 4. Las respuestas nuevas cuentan para el límite diario (antes de guardar nada).
-  if (!cached) await checkDailyLimit(ctx);
+  const plan = cached ? null : await checkDailyLimit(ctx);
 
   // 5. Crear la conversación si es nueva y guardar la pregunta.
   const conversationId = await withTenant(ctx, async (tx) => {
@@ -187,7 +191,7 @@ chatRoutes.post("/chat", async (c) => {
 
     let answer = "";
     try {
-      for await (const ev of streamChat(buildMessages(body.question, hits, history), signal)) {
+      for await (const ev of streamChat(buildMessages(body.question, hits, history), plan?.llmModels ?? [], signal)) {
         if (ev.type === "token") {
           answer += ev.text;
           await stream.writeSSE({ event: "token", data: JSON.stringify(ev.text) });

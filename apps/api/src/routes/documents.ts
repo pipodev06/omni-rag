@@ -15,6 +15,7 @@ import { enqueueIngest } from "../queue.js";
 import { invalidateCollections } from "../rag/cache.js";
 import { readStoredFile, removeStored, safeFilename, saveFile } from "../storage/local.js";
 import { badRequest, HttpError, notFound } from "../lib/errors.js";
+import { documentSlots } from "../lib/plans.js";
 import { UUID_RE } from "../lib/validate.js";
 
 export const documentRoutes = new Hono<AppEnv>();
@@ -163,6 +164,8 @@ documentRoutes.post(
     const ctx = tenantCtx(c);
     const user = c.get("user");
     const results: { filename: string; id?: string; status: "queued" | "duplicate" | "rejected"; reason?: string }[] = [];
+    const slots = await documentSlots(ctx.tenantId);
+    let left = slots.left;
 
     for (const file of files) {
       const filename = safeFilename(file.name);
@@ -177,6 +180,10 @@ documentRoutes.post(
       }
       if (file.size === 0) {
         results.push({ filename, status: "rejected", reason: "Archivo vacío" });
+        continue;
+      }
+      if (left !== null && left <= 0) {
+        results.push({ filename, status: "rejected", reason: `Tu plan permite hasta ${slots.max} documentos` });
         continue;
       }
 
@@ -209,6 +216,7 @@ documentRoutes.post(
         results.push({ filename, id: inserted.duplicateOf, status: "duplicate", reason: "Ya existe en esta colección" });
         continue;
       }
+      if (left !== null) left -= 1;
       await enqueueIngest({ tenantId: ctx.tenantId, documentId: id });
       await audit(c, "document.uploaded", { targetType: "document", targetId: id, details: { filename, collectionId, size: file.size } });
       results.push({ filename, id, status: "queued" });
@@ -235,8 +243,8 @@ documentRoutes.post("/:id/summary", async (c) => {
     return { doc: d, chunks: rows };
   });
 
-  await checkDailyLimit(ctx);
-  const result = await completeChat(buildSummaryMessages(doc.title, chunks), c.req.raw.signal);
+  const plan = await checkDailyLimit(ctx);
+  const result = await completeChat(buildSummaryMessages(doc.title, chunks), plan.llmModels, c.req.raw.signal);
   const { summary, questions } = parseSummary(result.text);
 
   // El acceso ya se comprobó arriba con RLS; se guarda con la conexión propietaria

@@ -6,7 +6,7 @@
 |---|---|
 | **Organización** (*tenant*) | Un cliente. Sus usuarios, colecciones, documentos y conversaciones están completamente separados de los de otras organizaciones. |
 | **Colección** | Carpeta de documentos dentro de una organización. Sirve para dar acceso a grupos de documentos. |
-| **Superadministrador** | El dueño de la plataforma (tú). Crea organizaciones, puede desactivarlas y puede **entrar en cualquiera como soporte** (ver abajo). Se crea al primer arranque con `SEED_ADMIN_EMAIL`. |
+| **Superadministrador** | El dueño de la plataforma (tú). Crea organizaciones, puede desactivarlas y puede **entrar en cualquiera como soporte** (ver abajo). Se crea al primer arranque con `SEED_ADMIN_USERNAME`. |
 
 ## Roles dentro de una organización
 
@@ -81,7 +81,7 @@ Con un solo usuario puedes entrar en cualquier organización: **Organizaciones �
 - Se usa una **cuenta de soporte** de esa organización, enlazada a tu usuario (`users.support_for`), con rol administrador. Así el aislamiento por RLS sigue funcionando igual: dentro, solo ves esa organización, y tu historial de chat de soporte queda en ella.
 - La cuenta **no tiene contraseña** y no se puede usar para iniciar sesión: solo vale dentro de tu sesión (el token lleva tu identificador y se comprueba en cada petición que sigues siendo superadministrador y estás activo).
 - No aparece en la lista de usuarios del cliente ni en los recuentos, y sus administradores **no pueden modificarla ni borrarla** (política RLS).
-- La entrada, la salida y todo lo que hagas se registran en la **auditoría del cliente** con tu email real seguido de "(soporte)".
+- La entrada, la salida y todo lo que hagas se registran en la **auditoría del cliente** con tu usuario real seguido de "(soporte)".
 - Mientras estás dentro se muestra un aviso fijo con **Volver a mi organización**. En modo soporte no se puede gestionar la plataforma ni cambiar la contraseña.
 
 Si tus contratos lo requieren, informa a tus clientes de que el proveedor puede acceder como soporte y de que esos accesos quedan en su auditoría.

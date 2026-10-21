@@ -16,14 +16,18 @@ Base: `http://localhost:8000/api` (a través de nginx) o `http://localhost:3001/
 
 | Método | Ruta | Cuerpo | Respuesta |
 |---|---|---|---|
-| POST | `/auth/login` | `{ email, password }` | `{ token, user }` + cookie. Máx. 10 intentos / 15 min por IP y email. |
+| POST | `/auth/login` | `{ login, password }` (`login` = usuario o email; también se acepta `email`) | `{ token, user }` + cookie. Máx. 10 intentos / 15 min por IP y usuario. |
 | POST | `/auth/logout` | — | Borra la cookie |
-| GET | `/auth/me` | — | `{ user, tenant, support }`. `support` = `{ name, email }` del superadministrador si la sesión es de soporte, o `null` |
+| GET | `/auth/me` | — | `{ user, tenant, support }`. `support` = `{ name, username }` del superadministrador si la sesión es de soporte, o `null` |
 | POST | `/auth/exit-support` | — | Sale del modo soporte y vuelve a la sesión del superadministrador: `{ token, user }` + cookie |
 | POST | `/auth/change-password` | `{ currentPassword, newPassword }` | `{ ok }` (mín. 10 caracteres) |
 | GET | `/auth/config` | — | `{ emailEnabled }` (si hay SMTP configurado) |
-| POST | `/auth/forgot` | `{ email }` | `{ ok }` siempre (no revela si el email existe). Envía un enlace si hay SMTP. Máx. 5 / hora por IP y email |
-| GET | `/auth/link?token=` | — | `{ kind: "invite" \| "reset", email, name }` o `404` si caducó o ya se usó |
+| POST | `/auth/login/totp` | `{ mfaToken, code }`: segundo paso si `/auth/login` devolvió `{ mfaRequired: true, mfaToken }` (el token dura 5 min y no abre sesión). `code` = 6 dígitos de la app o un código de recuperación | Igual que el login. Máx. 5 intentos / 15 min por usuario. Un código TOTP no se puede reutilizar |
+| POST | `/auth/totp/setup` | — | `{ secret, otpauthUrl }`: empieza la configuración (aún inactiva) |
+| POST | `/auth/totp/enable` | `{ code }` | `{ recoveryCodes[] }` (8, solo se muestran esta vez): confirma y activa el 2FA |
+| POST | `/auth/totp/disable` | `{ password, code }` | Desactiva el 2FA (contraseña + código TOTP o de recuperación) |
+| POST | `/auth/forgot` | `{ login }` (usuario o email) | `{ ok }` siempre (no revela si la cuenta existe). Envía un enlace si hay SMTP y la cuenta tiene email. Máx. 5 / hora por IP y usuario |
+| GET | `/auth/link?token=` | — | `{ kind: "invite" \| "reset", username, email, name }` o `404` si caducó o ya se usó |
 | POST | `/auth/link` | `{ token, password, name? }` | Fija la contraseña (y el nombre en invitaciones), invalida el enlace e inicia sesión: `{ token, user }` + cookie |
 
 ## Chat y búsqueda
@@ -81,7 +85,7 @@ Los mensajes de `GET /conversations/:id` incluyen `fromCache` y `feedback` (`1`,
 
 | Método | Ruta | Descripción |
 |---|---|---|
-| GET | `/quality?rating=-1&status=pending` | `{ summary: { positive, negative, pendingNegative }, usage: { questions, cacheHits }, cache: { entries }, items: [...] }`. `rating` (`1`/`-1`) y `status` (`pending`/`all`) son opcionales. |
+| GET | `/quality?rating=-1&status=pending` | `{ summary: { positive, negative, pendingNegative }, usage: { questions, cacheHits }, cache: { entries }, items: [...] }`. `rating` (`1`/`-1`) y `status` (`pending`/`resolved`/`all`) son opcionales. |
 | PATCH | `/quality/feedback/:id` | `{ resolved: boolean }`: marcar como revisada o reabrir |
 | DELETE | `/quality/cache` | Vacía la caché de respuestas de la organización → `{ deleted }` |
 
@@ -129,27 +133,35 @@ curl localhost:8000/api/documents -H "authorization: Bearer $TOKEN" \
 
 | Método | Ruta | Cuerpo |
 |---|---|---|
-| GET | `/users` | → `{ users: [{ id, email, name, role, isActive, lastLoginAt, pendingInvite, collectionIds }] }` |
-| POST | `/users` | `{ email, name, password?, role, collectionIds? }`. Sin `password` se crea una **invitación**: → `{ id, inviteUrl, emailSent }` |
+| GET | `/users` | → `{ users: [{ id, username, email, name, role, totpEnabled, isActive, lastLoginAt, pendingInvite, collectionIds }] }` |
+| POST | `/users` | `{ username, email?, name, password?, role, collectionIds? }`. `email` es opcional. Sin `password` se crea una **invitación** (requiere `email`): → `{ id, inviteUrl, emailSent }` |
+| POST | `/users/:id/totp/reset` | Quita el 2FA de un usuario (perdió el teléfono). No aplica a superadministradores |
 | POST | `/users/:id/link` | Genera un enlace nuevo (invitación si aún no la aceptó, o restablecer contraseña) → `{ url, kind, emailSent }`. Anula los enlaces anteriores |
-| PATCH | `/users/:id` | `{ name?, role?, isActive?, password? }` (no puedes quitarte el rol de admin ni desactivarte) |
+| PATCH | `/users/:id` | `{ name?, username?, email? (null = quitarlo), role?, isActive?, password? }` (no puedes quitarte el rol de admin ni desactivarte) |
 
 ## Consumo — `/usage` (admin)
 
 `GET /usage` → `{ daily: [{ day, questions, cacheHits, promptTokens, completionTokens }], byModel: [{ model, questions }], totals: { documents, chunks, users } }` (últimos 30 días).
 
+`GET /usage` incluye `plan: { name, dailyQuestionLimit, maxUsers, maxDocuments, usedToday }` con los topes de la organización.
+
 ## Plataforma — `/platform` (superadministrador)
 
 | Método | Ruta | Cuerpo |
 |---|---|---|
-| GET | `/platform/tenants` | → lista con nº de usuarios y documentos |
-| POST | `/platform/tenants` | `{ name, slug, dailyQuestionLimit?, admin: { email, name, password? } }` → crea la organización, su admin y la colección "General". Sin `password`, el admin recibe una invitación (`inviteUrl`, `emailSent`) |
+| GET | `/platform/tenants` | → `{ tenants: [{ id, name, slug, isActive, dailyQuestionLimit, planId, planName, planDailyQuestionLimit, users, documents, questions30d, createdAt }] }`. `dailyQuestionLimit` es la excepción puntual (`null` = rige el plan) |
+| GET | `/platform/plans` | → `{ plans: [{ id, name, description, llmModels, dailyQuestionLimit, maxUsers, maxDocuments, isDefault, tenants }] }` |
+| POST | `/platform/plans` | `{ name, description?, llmModels[], dailyQuestionLimit, maxUsers\|null, maxDocuments\|null }` → `{ id }` |
+| PUT | `/platform/plans/:id` | Mismo cuerpo: reemplaza el plan |
+| POST | `/platform/plans/:id/default` | Marca el plan que reciben las organizaciones nuevas y las que no tienen plan |
+| DELETE | `/platform/plans/:id` | `409` si lo usa alguna organización; no se puede borrar el plan por defecto |
+| POST | `/platform/tenants` | `{ name, slug, dailyQuestionLimit?, planId?, admin: { username, email?, name, password? } }` → crea la organización, su admin y la colección "General". Sin `password`, el admin recibe una invitación (`inviteUrl`, `emailSent`) |
 | POST | `/platform/tenants/:id/enter` | — → entra en la organización como soporte (rol admin) y cambia la cookie de sesión. Queda en su auditoría (`support.entered`) |
-| PATCH | `/platform/tenants/:id` | `{ name?, isActive?, dailyQuestionLimit? }` (`null` = límite global, `0` = sin límite) |
+| PATCH | `/platform/tenants/:id` | `{ name?, isActive?, dailyQuestionLimit?, planId? }` (`dailyQuestionLimit`: `null` = el del plan, `0` = sin límite) |
 
 ## Auditoría — `/audit` (admin)
 
-`GET /audit?category=&userId=&before=&limit=` → `{ items: [{ id, action, userId, userEmail, targetType, targetId, details, ip, createdAt }], nextBefore }`.
+`GET /audit?category=&userId=&before=&limit=` → `{ items: [{ id, action, userId, userLabel, targetType, targetId, details, ip, createdAt }], nextBefore }`.
 
 - `category`: `auth`, `user`, `collection`, `document`, `quality` o `tenant` (prefijo de `action`, p. ej. `document.deleted`).
 - Paginación hacia atrás: pasa `before=<nextBefore>` para la página siguiente (`limit` máx. 200, por defecto 50).

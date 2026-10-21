@@ -62,7 +62,8 @@ Rellena como mínimo:
 POSTGRES_PASSWORD=<openssl rand -base64 32>
 APP_DB_PASSWORD=<otro distinto>
 JWT_SECRET=<openssl rand -base64 48>
-SEED_ADMIN_EMAIL=tu@email.com
+SEED_ADMIN_USERNAME=tu-usuario
+SEED_ADMIN_EMAIL=tu@email.com   # opcional
 SEED_ADMIN_PASSWORD=<contraseña fuerte>
 OPENROUTER_API_KEY=sk-or-v1-...
 
@@ -95,7 +96,7 @@ docker compose up -d --build
 docker compose logs -f caddy     # verás cómo obtiene el certificado
 ```
 
-Abre `https://rag.tuempresa.com`, entra con `SEED_ADMIN_EMAIL` y **cambia la contraseña** en *Mi cuenta*.
+Abre `https://rag.tuempresa.com`, entra con `SEED_ADMIN_USERNAME` y **cambia la contraseña** en *Mi cuenta*.
 
 ### 6. Copias de seguridad fuera del servidor
 

@@ -6,9 +6,10 @@ import { hashPassword, passwordProblem } from "../auth/password.js";
 import { issueSession } from "../auth/session.js";
 import { audit, auditLog } from "../lib/audit.js";
 import { clientIp } from "../lib/request.js";
+import { getTenantPlan } from "../lib/plans.js";
 import { createUserLink, emailLink } from "../lib/tokens.js";
 import { badRequest, HttpError, notFound } from "../lib/errors.js";
-import { parse, UUID_RE } from "../lib/validate.js";
+import { OptionalEmailSchema, parse, UsernameSchema, UUID_RE } from "../lib/validate.js";
 
 // ---------------------------------------------------------------------------
 // Consumo de la organización (administradores)
@@ -37,7 +38,15 @@ usageRoutes.get("/", async (c) => {
              (SELECT count(*)::int FROM users WHERE support_for IS NULL) AS users`;
     return { daily, byModel, totals };
   });
-  return c.json(data);
+  const plan = await getTenantPlan(tenantCtx(c).tenantId);
+  const [today] = await sqlOwner<{ n: number }[]>`
+    SELECT count(*)::int AS n FROM usage_events
+     WHERE tenant_id = ${tenantCtx(c).tenantId} AND kind IN ('question', 'summary')
+       AND created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`;
+  return c.json({
+    ...data,
+    plan: { name: plan.name, dailyQuestionLimit: plan.dailyQuestionLimit, maxUsers: plan.maxUsers, maxDocuments: plan.maxDocuments, usedToday: today?.n ?? 0 },
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -51,20 +60,127 @@ platformRoutes.get("/tenants", async (c) => {
   const tenants = await sqlOwner`
     SELECT t.id, t.name, t.slug, t.is_active AS "isActive", t.daily_question_limit AS "dailyQuestionLimit",
            t.created_at AS "createdAt",
+           p.id AS "planId", p.name AS "planName", p.daily_question_limit AS "planDailyQuestionLimit",
            (SELECT count(*)::int FROM users u WHERE u.tenant_id = t.id AND u.support_for IS NULL) AS users,
-           (SELECT count(*)::int FROM documents d WHERE d.tenant_id = t.id) AS documents
-      FROM tenants t ORDER BY t.created_at`;
+           (SELECT count(*)::int FROM documents d WHERE d.tenant_id = t.id) AS documents,
+           (SELECT count(*)::int FROM usage_events e
+             WHERE e.tenant_id = t.id AND e.kind = 'question' AND e.created_at > now() - interval '30 days') AS "questions30d"
+      FROM tenants t
+      JOIN plans p ON p.id = coalesce(t.plan_id, (SELECT id FROM plans WHERE is_default))
+     ORDER BY t.created_at`;
   return c.json({ tenants });
+});
+
+// ---------------------------------------------------------------------------
+// Planes: modelos de lenguaje y topes por organización
+// ---------------------------------------------------------------------------
+const MODEL_RE = /^[A-Za-z0-9][\w.\-:/]{1,119}$/;
+
+const PlanBody = z.object({
+  name: z.string().trim().min(1).max(60),
+  description: z.string().trim().max(300).default(""),
+  // Orden de preferencia: si el primero falla o está saturado se prueba el siguiente.
+  llmModels: z.array(z.string().trim().regex(MODEL_RE, "nombre de modelo no válido")).min(1).max(8),
+  dailyQuestionLimit: z.number().int().min(0).max(1_000_000),
+  maxUsers: z.number().int().min(1).max(1_000_000).nullable(),
+  maxDocuments: z.number().int().min(1).max(10_000_000).nullable(),
+});
+
+/** Deja constancia, en la auditoría del cliente afectado, de un cambio hecho desde la plataforma. */
+const auditTenant = (tenantId: string, action: string, details: Record<string, unknown>) =>
+  auditLog({ tenantId, userId: null, username: "Plataforma" }, action, { targetType: "tenant", targetId: tenantId, details });
+
+/** Avisa en la auditoría de cada organización que usa el plan (asignado o por defecto) de que sus condiciones cambiaron. */
+async function auditPlanTenants(planId: string, planName: string): Promise<void> {
+  const tenants = await sqlOwner<{ id: string }[]>`
+    SELECT id FROM tenants WHERE coalesce(plan_id, (SELECT id FROM plans WHERE is_default)) = ${planId}`;
+  await Promise.all(tenants.map((t) => auditTenant(t.id, "plan.edited", { plan: planName })));
+}
+
+const planConflict = (err: { code?: string }): never => {
+  if (err.code === "23505") throw new HttpError(409, "Ya existe un plan con ese nombre");
+  throw err;
+};
+
+platformRoutes.get("/plans", async (c) => {
+  const plans = await sqlOwner`
+    SELECT p.id, p.name, p.description, p.llm_models AS "llmModels", p.daily_question_limit AS "dailyQuestionLimit",
+           p.max_users AS "maxUsers", p.max_documents AS "maxDocuments", p.is_default AS "isDefault",
+           (SELECT count(*)::int FROM tenants t WHERE coalesce(t.plan_id, (SELECT id FROM plans WHERE is_default)) = p.id) AS tenants
+      FROM plans p ORDER BY p.is_default DESC, p.created_at`;
+  return c.json({ plans });
+});
+
+platformRoutes.post("/plans", async (c) => {
+  const body = parse(PlanBody, await c.req.json().catch(() => ({})));
+  const models = [...new Set(body.llmModels)];
+  const [row] = await sqlOwner<{ id: string }[]>`
+    INSERT INTO plans (name, description, llm_models, daily_question_limit, max_users, max_documents)
+    VALUES (${body.name}, ${body.description}, ${models}, ${body.dailyQuestionLimit}, ${body.maxUsers}, ${body.maxDocuments})
+    RETURNING id`.catch(planConflict);
+  await audit(c, "plan.created", { targetType: "plan", targetId: row!.id, details: { name: body.name } });
+  return c.json({ id: row!.id }, 201);
+});
+
+platformRoutes.put("/plans/:id", async (c) => {
+  const id = c.req.param("id");
+  if (!UUID_RE.test(id)) throw notFound();
+  const body = parse(PlanBody, await c.req.json().catch(() => ({})));
+  const models = [...new Set(body.llmModels)];
+  const [row] = await sqlOwner<{ id: string }[]>`
+    UPDATE plans SET name = ${body.name}, description = ${body.description}, llm_models = ${models},
+           daily_question_limit = ${body.dailyQuestionLimit}, max_users = ${body.maxUsers}, max_documents = ${body.maxDocuments}
+     WHERE id = ${id} RETURNING id`.catch(planConflict);
+  if (!row) throw notFound("Plan no encontrado");
+  await audit(c, "plan.updated", { targetType: "plan", targetId: id, details: { name: body.name } });
+  await auditPlanTenants(id, body.name);
+  return c.json({ ok: true });
+});
+
+/** Marca un plan como el que reciben las organizaciones nuevas y las que no tienen plan asignado. */
+platformRoutes.post("/plans/:id/default", async (c) => {
+  const id = c.req.param("id");
+  if (!UUID_RE.test(id)) throw notFound();
+  const ok = await sqlOwner.begin(async (tx) => {
+    const [exists] = await tx`SELECT id FROM plans WHERE id = ${id}`;
+    if (!exists) return false;
+    await tx`UPDATE plans SET is_default = false WHERE is_default`;
+    await tx`UPDATE plans SET is_default = true WHERE id = ${id}`;
+    return true;
+  });
+  if (!ok) throw notFound("Plan no encontrado");
+  await audit(c, "plan.updated", { targetType: "plan", targetId: id, details: { isDefault: true } });
+  const [plan] = await sqlOwner<{ name: string }[]>`SELECT name FROM plans WHERE id = ${id}`;
+  // Las organizaciones sin plan asignado pasan a regirse por este.
+  const inherit = await sqlOwner<{ id: string }[]>`SELECT id FROM tenants WHERE plan_id IS NULL`;
+  await Promise.all(inherit.map((t) => auditTenant(t.id, "plan.edited", { plan: plan?.name ?? "" })));
+  return c.json({ ok: true });
+});
+
+platformRoutes.delete("/plans/:id", async (c) => {
+  const id = c.req.param("id");
+  if (!UUID_RE.test(id)) throw notFound();
+  const [plan] = await sqlOwner<{ name: string; is_default: boolean }[]>`SELECT name, is_default FROM plans WHERE id = ${id}`;
+  if (!plan) throw notFound("Plan no encontrado");
+  if (plan.is_default) throw badRequest("No se puede borrar el plan por defecto; marca otro como defecto primero");
+  await sqlOwner`DELETE FROM plans WHERE id = ${id}`.catch((err: { code?: string }) => {
+    if (err.code === "23503") throw new HttpError(409, "Hay organizaciones con este plan; cámbiales el plan antes de borrarlo");
+    throw err;
+  });
+  await audit(c, "plan.deleted", { targetType: "plan", targetId: id, details: { name: plan.name } });
+  return c.json({ ok: true });
 });
 
 const CreateTenant = z.object({
   name: z.string().trim().min(1).max(120),
   slug: z.string().regex(/^[a-z0-9][a-z0-9-]{1,62}$/, "solo minúsculas, números y guiones"),
   dailyQuestionLimit: z.number().int().min(0).nullable().optional(),
+  planId: z.string().regex(UUID_RE).optional(), // sin plan = el plan por defecto
   admin: z.object({
-    email: z.string().email().max(254),
+    username: UsernameSchema,
+    email: OptionalEmailSchema,
     name: z.string().trim().min(1).max(120),
-    // Sin contraseña = se envía una invitación al administrador de la organización.
+    // Sin contraseña = se envía una invitación (requiere email) al administrador de la organización.
     password: z.string().optional(),
   }),
 });
@@ -72,6 +188,8 @@ const CreateTenant = z.object({
 /** Crea una organización con su primer administrador y una colección "General". */
 platformRoutes.post("/tenants", async (c) => {
   const body = parse(CreateTenant, await c.req.json().catch(() => ({})));
+  const adminEmail = body.admin.email?.toLowerCase() ?? null;
+  if (!body.admin.password && !adminEmail) throw badRequest("Sin email hay que definir una contraseña inicial");
   if (body.admin.password) {
     const problem = passwordProblem(body.admin.password);
     if (problem) throw badRequest(problem);
@@ -81,29 +199,30 @@ platformRoutes.post("/tenants", async (c) => {
   const result = await sqlOwner
     .begin(async (tx) => {
       const [t] = await tx<{ id: string }[]>`
-        INSERT INTO tenants (name, slug, daily_question_limit)
-        VALUES (${body.name}, ${body.slug}, ${body.dailyQuestionLimit ?? null}) RETURNING id`;
+        INSERT INTO tenants (name, slug, daily_question_limit, plan_id)
+        VALUES (${body.name}, ${body.slug}, ${body.dailyQuestionLimit ?? null}, ${body.planId ?? null}) RETURNING id`;
       const [u] = await tx<{ id: string }[]>`
-        INSERT INTO users (tenant_id, email, name, password_hash, role)
-        VALUES (${t!.id}, ${body.admin.email.toLowerCase()}, ${body.admin.name}, ${hash}, 'admin') RETURNING id`;
+        INSERT INTO users (tenant_id, username, email, name, password_hash, role)
+        VALUES (${t!.id}, ${body.admin.username}, ${adminEmail}, ${body.admin.name}, ${hash}, 'admin') RETURNING id`;
       await tx`INSERT INTO collections (tenant_id, name, description) VALUES (${t!.id}, 'General', 'Colección por defecto')`;
       return { tenantId: t!.id, adminId: u!.id };
     })
     .catch((err: { code?: string; constraint_name?: string }) => {
-      if (err.code === "23505") throw new HttpError(409, "Ya existe una organización con ese slug o un usuario con ese email");
+      if (err.code === "23503") throw badRequest("El plan indicado no existe");
+      if (err.code === "23505") throw new HttpError(409, "Ya existe una organización con ese identificador o un usuario con ese nombre de usuario o email");
       throw err;
     });
 
   let inviteUrl: string | null = null;
   let emailSent = false;
-  if (!hash) {
+  if (!hash && adminEmail) {
     inviteUrl = await createUserLink({ tenantId: result.tenantId, userId: result.adminId, kind: "invite", createdBy: c.get("user").id });
-    emailSent = await emailLink("invite", { email: body.admin.email, name: body.admin.name }, inviteUrl, body.name);
+    emailSent = await emailLink("invite", { email: adminEmail, name: body.admin.name }, inviteUrl, body.name);
   }
   await audit(c, "tenant.created", {
     targetType: "tenant",
     targetId: result.tenantId,
-    details: { name: body.name, slug: body.slug, admin: body.admin.email.toLowerCase(), invited: !hash, emailSent },
+    details: { name: body.name, slug: body.slug, admin: body.admin.username, invited: !hash, emailSent },
   });
   return c.json({ ...result, inviteUrl, emailSent }, 201);
 });
@@ -112,6 +231,7 @@ const UpdateTenant = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   isActive: z.boolean().optional(),
   dailyQuestionLimit: z.number().int().min(0).nullable().optional(),
+  planId: z.string().regex(UUID_RE).optional(),
 });
 
 platformRoutes.patch("/tenants/:id", async (c) => {
@@ -121,15 +241,30 @@ platformRoutes.patch("/tenants/:id", async (c) => {
   if (id === c.get("user").tenantId && body.isActive === false) {
     throw badRequest("No puedes desactivar tu propia organización");
   }
+  const [before] = await sqlOwner<{ plan: string; limit: number | null }[]>`
+    SELECT p.name AS plan, t.daily_question_limit AS "limit"
+      FROM tenants t JOIN plans p ON p.id = coalesce(t.plan_id, (SELECT id FROM plans WHERE is_default))
+     WHERE t.id = ${id}`;
   const [row] = await sqlOwner`
     UPDATE tenants SET
       name = coalesce(${body.name ?? null}, name),
       is_active = coalesce(${body.isActive ?? null}::boolean, is_active),
+      plan_id = coalesce(${body.planId ?? null}::uuid, plan_id),
       daily_question_limit = CASE WHEN ${body.dailyQuestionLimit !== undefined}
                                   THEN ${body.dailyQuestionLimit ?? null}::int ELSE daily_question_limit END
-    WHERE id = ${id} RETURNING id`;
+    WHERE id = ${id} RETURNING id`.catch((err: { code?: string }) => {
+    if (err.code === "23503") throw badRequest("El plan indicado no existe");
+    throw err;
+  });
   if (!row) throw notFound("Organización no encontrada");
   await audit(c, "tenant.updated", { targetType: "tenant", targetId: id, details: body });
+  if (body.planId !== undefined) {
+    const [after] = await sqlOwner<{ name: string }[]>`SELECT name FROM plans WHERE id = ${body.planId}`;
+    if (after && after.name !== before?.plan) await auditTenant(id, "tenant.plan_changed", { de: before?.plan ?? "", a: after.name });
+  }
+  if (body.dailyQuestionLimit !== undefined && body.dailyQuestionLimit !== (before?.limit ?? null)) {
+    await auditTenant(id, "tenant.limit_changed", { límite: body.dailyQuestionLimit === null ? "el de su plan" : body.dailyQuestionLimit === 0 ? "sin límite" : `${body.dailyQuestionLimit} / día` });
+  }
   return c.json({ ok: true });
 });
 
@@ -149,14 +284,14 @@ platformRoutes.post("/tenants/:id/enter", async (c) => {
   if (!tenant.is_active) throw badRequest("La organización está desactivada; actívala para entrar");
 
   const [support] = await sqlOwner<{ id: string }[]>`
-    INSERT INTO users (tenant_id, email, name, password_hash, role, support_for)
-    VALUES (${id}, ${`soporte.${me.id}.${id}@soporte.invalid`}, ${`${me.name} (soporte)`}, NULL, 'admin', ${me.id})
+    INSERT INTO users (tenant_id, username, email, name, password_hash, role, support_for)
+    VALUES (${id}, 'soporte-' || substr(md5(${me.id} || ${id}), 1, 12), ${`soporte.${me.id}.${id}@soporte.invalid`}, ${`${me.name} (soporte)`}, NULL, 'admin', ${me.id})
     ON CONFLICT (support_for, tenant_id) WHERE support_for IS NOT NULL
       DO UPDATE SET name = EXCLUDED.name, role = 'admin', is_active = true
     RETURNING id`;
 
   await issueSession(c, { userId: support!.id, tenantId: id, role: "admin", actorId: me.id });
-  await auditLog({ tenantId: id, userId: support!.id, email: `${me.email} (soporte)`, ip: clientIp(c) }, "support.entered");
+  await auditLog({ tenantId: id, userId: support!.id, username: `${me.username} (soporte)`, ip: clientIp(c) }, "support.entered");
   await audit(c, "support.entered", { targetType: "tenant", targetId: id, details: { name: tenant.name } });
   return c.json({ ok: true });
 });
@@ -178,7 +313,7 @@ const AuditQuery = z.object({
 auditRoutes.get("/", async (c) => {
   const q = parse(AuditQuery, c.req.query());
   const items = await withTenant(tenantCtx(c), (tx) => tx`
-    SELECT id::int, action, user_id AS "userId", user_email AS "userEmail", target_type AS "targetType",
+    SELECT id::int, action, user_id AS "userId", user_email AS "userLabel", target_type AS "targetType",
            target_id AS "targetId", details, ip, created_at AS "createdAt"
       FROM audit_log
      WHERE (${q.category ?? null}::text IS NULL OR action LIKE ${(q.category ?? "") + ".%"})

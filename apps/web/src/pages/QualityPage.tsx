@@ -26,7 +26,7 @@ interface FeedbackItem {
   resolved: boolean;
   createdAt: string;
   userName: string;
-  userEmail: string;
+  username: string;
 }
 
 interface Quality {
@@ -36,10 +36,11 @@ interface Quality {
   items: FeedbackItem[];
 }
 
-type Filter = "pending" | "negative" | "positive" | "all";
+type Filter = "pending" | "resolved" | "negative" | "positive" | "all";
 
 const FILTERS: Record<Filter, string> = {
   pending: "rating=-1&status=pending",
+  resolved: "rating=-1&status=resolved",
   negative: "rating=-1&status=all",
   positive: "rating=1&status=all",
   all: "status=all",
@@ -148,7 +149,7 @@ function QualityStats({ data }: { data: Quality | undefined }) {
   const answered = data.usage.questions + data.usage.cacheHits;
   const cacheRate = answered ? `${Math.round((data.usage.cacheHits / answered) * 100)} %` : "—";
   return (
-    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="grid shrink-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
       <Tile icon={ThumbsUp} label="Satisfacción" value={satisfaction} hint={`${s.positive} 👍 · ${s.negative} 👎`} className="text-success" />
       <Tile icon={ThumbsDown} label="Pendientes de revisar" value={nf.format(s.pendingNegative)} hint="Respuestas con 👎 sin revisar" className="text-destructive" />
       <Tile icon={Zap} label="Respondidas desde caché" value={cacheRate} hint={`${nf.format(data.usage.cacheHits)} de ${nf.format(answered)} respuestas, sin gastar cupo`} />
@@ -169,8 +170,14 @@ function FeedbackList({ loading, items, filter, onResolve }: {
     return (
       <EmptyState
         icon={filter === "pending" ? CircleCheck : Inbox}
-        title={filter === "pending" ? "Todo revisado" : "Sin valoraciones"}
-        description={filter === "pending" ? "No hay respuestas con 👎 pendientes de revisar." : "Cuando los usuarios valoren respuestas, aparecerán aquí."}
+        title={filter === "pending" ? "Todo revisado" : filter === "resolved" ? "Sin respuestas revisadas" : "Sin valoraciones"}
+        description={
+          filter === "pending"
+            ? "No hay respuestas con 👎 pendientes de revisar."
+            : filter === "resolved"
+              ? "Las respuestas con 👎 que marques como revisadas aparecerán aquí."
+              : "Cuando los usuarios valoren respuestas, aparecerán aquí."
+        }
       />
     );
   }
@@ -218,7 +225,7 @@ export function QualityPage() {
   };
 
   return (
-    <Page>
+    <Page fill>
       <PageHeader
         title="Calidad"
         description="Valoraciones de los usuarios y uso de la caché en los últimos 30 días. Revisa las respuestas con 👎 para detectar documentos que faltan o están mal."
@@ -231,16 +238,17 @@ export function QualityPage() {
 
       <QualityStats data={data} />
 
-      <Tabs value={filter} onValueChange={(v) => setFilter(v as Filter)} className="mt-6">
+      <Tabs value={filter} onValueChange={(v) => setFilter(v as Filter)} className="mt-6 shrink-0">
         <TabsList>
           <TabsTrigger value="pending">Pendientes</TabsTrigger>
+          <TabsTrigger value="resolved">Revisadas</TabsTrigger>
           <TabsTrigger value="negative">Negativas</TabsTrigger>
           <TabsTrigger value="positive">Positivas</TabsTrigger>
           <TabsTrigger value="all">Todas</TabsTrigger>
         </TabsList>
       </Tabs>
 
-      <div className="mt-4 space-y-3">
+      <div className="mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
         <FeedbackList loading={isLoading} items={data?.items ?? []} filter={filter} onResolve={(item, r) => void resolve(item, r)} />
       </div>
     </Page>

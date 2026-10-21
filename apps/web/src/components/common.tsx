@@ -9,12 +9,15 @@ import {
   FileImage,
   FileSpreadsheet,
   FileText,
+  Info,
   Loader2,
   Presentation,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { DocumentInfo } from "@/api";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
 /** Logotipo de la aplicación. */
@@ -29,15 +32,52 @@ export function Logo({ className, withText = true }: { className?: string; withT
   );
 }
 
-/** Cabecera de página: título, descripción y acciones a la derecha. */
+/** Icono (i) que abre un modal con la explicación de la página. */
+function InfoHint({ title, children }: { title: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button variant="ghost" size="icon" className="size-7 text-muted-foreground" aria-label={`Información sobre ${title}`} onClick={() => setOpen(true)}>
+        <Info />
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{title}</DialogTitle>
+            <DialogDescription>{children}</DialogDescription>
+          </DialogHeader>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+/** Cabecera de página: título, acciones a la derecha y, si hay `description`, un icono (i) con su explicación. */
 export function PageHeader({ title, description, actions }: { title: string; description?: ReactNode; actions?: ReactNode }) {
   return (
-    <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-      <div className="space-y-1">
+    <div className="mb-6 flex shrink-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-center gap-1.5">
         <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-        {description && <p className="text-sm text-muted-foreground">{description}</p>}
+        {description && <InfoHint title={title}>{description}</InfoHint>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+    </div>
+  );
+}
+
+/**
+ * Contenedor de una tabla: ocupa el alto disponible de la página y es la tabla
+ * (no la página) la que hace scroll, con la cabecera fija. Usar dentro de `<Page fill>`.
+ */
+export function TableCard({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <div
+      className={cn(
+        "min-h-24 overflow-auto rounded-xl border bg-card [&_[data-slot=table-container]]:overflow-visible [&_thead]:sticky [&_thead]:top-0 [&_thead]:z-10 [&_thead]:bg-card [&_thead]:shadow-[inset_0_-1px_0_var(--border)]",
+        className,
+      )}
+    >
+      {children}
     </div>
   );
 }
@@ -65,8 +105,9 @@ export function EmptyState({ icon: Icon, title, description, action, className }
 }
 
 /** Contenedor estándar de las páginas. */
-export function Page({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={cn("mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8", className)}>{children}</div>;
+export function Page({ children, className, fill }: { children: ReactNode; className?: string; fill?: boolean }) {
+  // `fill`: la página ocupa el alto disponible y deja que su tabla (TableCard) haga el scroll.
+  return <div className={cn("mx-auto w-full px-4 py-6 sm:px-6 lg:px-8 lg:py-8", fill && "flex h-full min-h-0 flex-col", className)}>{children}</div>;
 }
 
 const STATUS: Record<DocumentInfo["status"], { label: string; icon: LucideIcon; className: string; spin?: boolean }> = {
