@@ -11,6 +11,7 @@ Sistema **RAG (Retrieval-Augmented Generation)** multi-cliente para hacer pregun
 - 🔔 **Tiempo real:** el estado de los documentos se actualiza al instante y avisa cuando un documento está listo.
 - ✨ **Resumen y preguntas sugeridas** por documento, y opción de preguntar solo sobre un documento concreto.
 - 🆓 **Coste cero en modelos:** embeddings **locales** (gratis, privados, sin límites) y LLMs **gratuitos de OpenRouter** con cambio automático de modelo si uno falla.
+- 🔐 **Verificación en dos pasos (TOTP)** opcional, con códigos de recuperación.
 - ✉️ **Invitaciones y recuperación de contraseña** por email (o con enlace para copiar si no hay correo configurado).
 - 📜 **Auditoría:** registro de accesos, cambios de usuarios, permisos y documentos, visible para los administradores.
 - 🔒 **Listo para producción solo con `.env`:** HTTPS automático con Caddy al poner tu dominio, copias de seguridad diarias y mantenimiento automático.
@@ -30,11 +31,11 @@ Requisitos: **Docker** con Docker Compose v2, **8 GB de RAM** para Docker (pico 
 ```bash
 git clone <este-repositorio> rag-project && cd rag-project
 cp .env.example .env
-#   Edita .env: contraseñas, JWT_SECRET, SEED_ADMIN_EMAIL/PASSWORD y OPENROUTER_API_KEY
+#   Edita .env: contraseñas, JWT_SECRET, SEED_ADMIN_USERNAME/PASSWORD y OPENROUTER_API_KEY
 docker compose up -d --build
 ```
 
-Abre **http://localhost:8000** e inicia sesión con `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`.
+Abre **http://localhost:8000** e inicia sesión con `SEED_ADMIN_USERNAME` / `SEED_ADMIN_PASSWORD`.
 
 > El primer arranque tarda unos minutos: se descargan las imágenes (~3 GB, sobre todo Docling) y el modelo de embeddings (~1 GB).
 > Comprueba el estado con `curl http://localhost:8000/api/health`.
@@ -49,7 +50,7 @@ Guía completa paso a paso: **[docs/instalacion.md](docs/instalacion.md)**.
 
 1. **Organizaciones (superadministrador):** crea una organización por cliente, con su primer administrador. Con **Entrar como soporte** accedes a cualquiera de ellas con tu propio usuario (queda en su auditoría).
 2. **Documentos (administrador/editor):** crea colecciones (carpetas) y arrastra archivos. Se procesan en segundo plano: *En cola → Procesando → Listo*.
-3. **Usuarios (administrador):** invita editores y lectores por email (o crea su contraseña tú) y dales acceso a las colecciones que correspondan. En **Auditoría** ves quién hizo qué.
+3. **Usuarios (administrador):** crea editores y lectores con usuario y contraseña (el email es opcional: con él puedes invitarlos y pueden recuperar su contraseña) y dales acceso a las colecciones que correspondan. En **Auditoría** ves quién hizo qué.
 4. **Chat (todos):** pregunta. La respuesta cita las fuentes `[1]`; despliégalas y pulsa **Ver en el documento** para abrir el PDF en la página citada con el texto resaltado.
 5. **Resumen:** en Documentos, abre un archivo → pestaña **Resumen** → *Generar resumen*. Sus preguntas sugeridas aparecen en el chat, y *Preguntar sobre este documento* limita la conversación a ese archivo.
 

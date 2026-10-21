@@ -161,8 +161,8 @@ Todas las tablas llevan `tenant_id` y claves foráneas **compuestas** `(id, tena
 
 ## Seguridad
 
-- **Contraseñas** con bcrypt (12 rondas). El login limita a 10 intentos cada 15 minutos por IP y email, y tarda lo mismo exista o no el email.
-- **Enlaces de invitación y restablecimiento** aleatorios (256 bits), guardados como hash, de un solo uso y con caducidad (`INVITE_EXPIRES_HOURS`, `RESET_EXPIRES_MINUTES`). "¿Olvidaste la contraseña?" responde lo mismo exista o no el email.
+- **Contraseñas** con bcrypt (12 rondas). El login limita a 10 intentos cada 15 minutos por IP y email, y tarda lo mismo exista o no el usuario.
+- **Enlaces de invitación y restablecimiento** aleatorios (256 bits), guardados como hash, de un solo uso y con caducidad (`INVITE_EXPIRES_HOURS`, `RESET_EXPIRES_MINUTES`). "¿Olvidaste la contraseña?" responde lo mismo exista o no la cuenta.
 - **HTTPS** con Caddy y cabecera HSTS; la cookie se marca `Secure` automáticamente cuando la petición llega por HTTPS (`COOKIE_SECURE=auto`).
 - **Auditoría** de las acciones importantes en `audit_log`, borrada tras `AUDIT_RETENTION_DAYS`.
 - **Sesión** con JWT (HS256) en una cookie `httpOnly` + `SameSite=Lax`; también se acepta `Authorization: Bearer` para scripts. En cada petición se comprueba en la base de datos que el usuario y su organización siguen activos y cuál es su rol actual.

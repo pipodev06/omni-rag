@@ -25,8 +25,8 @@ describe.skipIf(!enabled)("Row Level Security", async () => {
       ids[`tenant_${t}`] = tenant!.id;
       for (const role of ["admin", "viewer"]) {
         const [u] = await sqlOwner`
-          INSERT INTO users (tenant_id, email, name, password_hash, role)
-          VALUES (${tenant!.id}, ${`${role}-${t}-${tag}@rls.test`}, ${role}, 'x', ${role}) RETURNING id`;
+          INSERT INTO users (tenant_id, username, email, name, password_hash, role)
+          VALUES (${tenant!.id}, ${`${role}-${t}-${tag}`}, ${`${role}-${t}-${tag}@rls.test`}, ${role}, 'x', ${role}) RETURNING id`;
         ids[`${role}_${t}`] = u!.id;
       }
       const [col] = await sqlOwner`INSERT INTO collections (tenant_id, name) VALUES (${tenant!.id}, 'c') RETURNING id`;
@@ -158,16 +158,16 @@ describe.skipIf(!enabled)("Row Level Security", async () => {
 
   it("el admin del cliente no puede modificar ni borrar la cuenta de soporte", async () => {
     const [sup] = await sqlOwner`
-      INSERT INTO users (tenant_id, email, name, password_hash, role, support_for)
-      VALUES (${ids.tenant_a!}, ${`soporte-${tag}@rls.test`}, 'soporte', NULL, 'admin', ${ids.admin_b!}) RETURNING id`;
+      INSERT INTO users (tenant_id, username, email, name, password_hash, role, support_for)
+      VALUES (${ids.tenant_a!}, ${`soporte-${tag}`}, ${`soporte-${tag}@rls.test`}, 'soporte', NULL, 'admin', ${ids.admin_b!}) RETURNING id`;
     const updated = await withTenant(as("a", "admin"), (tx) => tx`UPDATE users SET is_active = false WHERE id = ${sup!.id} RETURNING id`);
     const deleted = await withTenant(as("a", "admin"), (tx) => tx`DELETE FROM users WHERE id = ${sup!.id} RETURNING id`);
     expect(updated).toHaveLength(0);
     expect(deleted).toHaveLength(0);
     await expect(
       withTenant(as("a", "admin"), (tx) => tx`
-        INSERT INTO users (tenant_id, email, name, password_hash, role, support_for)
-        VALUES (${ids.tenant_a!}, ${`falso-${tag}@rls.test`}, 'x', NULL, 'admin', ${ids.admin_a!})`),
+        INSERT INTO users (tenant_id, username, email, name, password_hash, role, support_for)
+        VALUES (${ids.tenant_a!}, ${`falso-${tag}`}, ${`falso-${tag}@rls.test`}, 'x', NULL, 'admin', ${ids.admin_a!})`),
     ).rejects.toThrow(/row-level security/);
   });
 

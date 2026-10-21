@@ -38,7 +38,7 @@ Edita `.env` y cambia al menos:
 | `POSTGRES_PASSWORD` | Contraseña larga y aleatoria (dueño de la base de datos) |
 | `APP_DB_PASSWORD` | Otra contraseña distinta (usuario `rag_app` de la aplicación) |
 | `JWT_SECRET` | Secreto aleatorio de 32 caracteres o más |
-| `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` | Tu cuenta de superadministrador (contraseña de 10 caracteres o más) |
+| `SEED_ADMIN_USERNAME` / `SEED_ADMIN_PASSWORD` | Tu cuenta de superadministrador (contraseña de 10 caracteres o más). `SEED_ADMIN_EMAIL` es opcional; si no defines el usuario, se toma la parte del email anterior a `@` |
 | `OPENROUTER_API_KEY` | Tu clave de OpenRouter (siguiente apartado) |
 
 Para generar secretos:
@@ -85,7 +85,7 @@ curl http://localhost:8000/api/health
 
 ## 5. Primeros pasos en la interfaz
 
-1. Abre <http://localhost:8000> y entra con `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`.
+1. Abre <http://localhost:8000> y entra con `SEED_ADMIN_USERNAME` / `SEED_ADMIN_PASSWORD`.
 2. **Mi cuenta:** cambia la contraseña inicial.
 3. **Organizaciones:** crea una organización por cliente, indicando su administrador. Pásale sus credenciales.
 4. Como administrador de cada organización (o con tu propia organización):
@@ -98,7 +98,7 @@ curl http://localhost:8000/api/health
 
 ```bash
 node scripts/smoke-test.mjs --url http://localhost:8000 \
-  --email "$SEED_ADMIN_EMAIL" --password "$SEED_ADMIN_PASSWORD" \
+  --email "$SEED_ADMIN_USERNAME" --password "$SEED_ADMIN_PASSWORD" \
   --files ruta/a/un.pdf,ruta/a/otro.docx \
   --question "Una pregunta cuya respuesta esté en esos archivos"
 ```

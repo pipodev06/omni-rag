@@ -17,10 +17,20 @@ function resolveKey(key: string): string {
   return full;
 }
 
-/** Nombre de archivo seguro (sin rutas ni caracteres raros). */
+/**
+ * Nombre de archivo seguro (sin rutas ni caracteres raros). Los acentos se quitan
+ * (Muñoz → Munoz): al separar «ñ» en «n» + tilde, la tilde suelta se convertía en «_».
+ */
 export function safeFilename(name: string): string {
-  const base = path.basename(name).normalize("NFKD").replace(/[^\w.\-]+/g, "_");
+  const base = path.basename(name).normalize("NFKD").replace(/\p{M}+/gu, "").replace(/[^\w.\-]+/g, "_");
   return base.slice(-150) || "archivo";
+}
+
+/** Título legible a partir del nombre original del archivo, conservando acentos y eñes. */
+export function titleFromFilename(name: string): string {
+  const original = path.basename(name).normalize("NFC");
+  const clean = original.replace(/\p{Cc}/gu, "");
+  return clean.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim() || clean;
 }
 
 export async function saveFile(key: string, data: Uint8Array): Promise<void> {

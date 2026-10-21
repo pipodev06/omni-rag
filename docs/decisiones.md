@@ -188,3 +188,19 @@ La interfaz se revisa con [React Doctor](https://www.npmjs.com/package/react-doc
 ## 23. Cierre de sesión sin `queryClient.clear()`
 
 Al cerrar sesión se borraba toda la caché de TanStack Query, incluida la consulta de sesión que observaban las rutas. Unas rutas seguían viendo la sesión anterior y otras ninguna, y la app saltaba sin fin entre `/login` y `/chat`. Ahora primero se marca la sesión como vacía y después se descartan solo los demás datos (`clearSession`). Además, cada página tiene un *error boundary*: si falta un archivo de la app tras una actualización, se recarga una vez (como mucho cada 30 s) y si no, muestra un botón **Recargar** en lugar de quedarse en blanco.
+
+## 24. Planes por organización con una sola clave de OpenRouter
+
+**Alternativas:** una clave de OpenRouter por organización; el modelo fijo en el `.env` para todos.
+
+**Decisión.** Una única clave, del dueño de la plataforma, compartida por todas las organizaciones. Lo que cambia entre clientes es el **plan** (`plans`): modelos en orden con respaldo, preguntas por día, usuarios y documentos máximos. Se gestionan en **Organizaciones → Planes** y solo los ve el superadministrador (la tabla no se concede a `rag_app`). `tenants.plan_id` NULL = plan por defecto; `tenants.daily_question_limit` queda como excepción puntual que prevalece sobre el plan. El plan «Estándar» nace con `LLM_MODELS` y `TENANT_DAILY_QUESTION_LIMIT` del `.env`, que después dejan de leerse.
+
+**Por qué.** Una clave por cliente multiplica los secretos a custodiar sin dar nada hasta que alguien pida traer su propia clave. Los modelos `:free` tienen un cupo por cuenta que comparten todas las organizaciones, por eso el formulario de planes avisa cuando se usan. Si algún día hace falta traer la propia clave, se añade `tenants.openrouter_key` cifrada y prevalece sobre la global.
+
+## 25. Verificación en dos pasos propia (TOTP) y trazabilidad por cliente
+
+**Alternativas:** una librería (`otpauth`, `speakeasy`) o un proveedor externo; hacerlo obligatorio para todos.
+
+**Decisión.** TOTP de RFC 6238 implementado en `lib/totp.ts` (~100 líneas, comprobado con los vectores de la RFC), opcional por usuario y recomendado para el superadministrador. El secreto se guarda cifrado (AES-256-GCM, clave derivada de `JWT_SECRET`), cada código vale una sola vez (`totp_last_step`), hay 8 códigos de recuperación guardados como hash y el segundo paso tiene su propio límite de intentos. La contraseña correcta no abre sesión: devuelve un token de 5 minutos (`purpose: mfa`) que solo sirve para `/auth/login/totp`. Es opcional porque exigirlo antes de tener correo o soporte humano dejaría fuera a quien pierda el teléfono.
+
+**Trazabilidad.** Los cambios hechos desde la plataforma (plan, límite diario, condiciones del plan) se registran también en la auditoría de la organización afectada, con el actor «Plataforma», para que el cliente pueda comprobar qué cambió y cuándo.

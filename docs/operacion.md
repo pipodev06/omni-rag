@@ -109,7 +109,7 @@ Modelos multilingües recomendados:
 
 ```bash
 TOKEN=$(curl -s localhost:8000/api/auth/login -H 'content-type: application/json' \
-  -d '{"email":"admin@example.com","password":"..."}' | jq -r .token)
+  -d '{"login":"admin","password":"..."}' | jq -r .token)
 curl -s localhost:8000/api/search -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
   -d '{"query":"¿plazo de preaviso?"}' | jq '.results[] | {distance, vectorRank, keywordRank, documentTitle, heading}'
 ```
@@ -178,14 +178,27 @@ La interfaz recibe los cambios de estado de los documentos por `GET /api/documen
 
 ## Modelos gratuitos de OpenRouter
 
-- Si las respuestas fallan con *"Los modelos gratuitos están saturados…"*, espera unos minutos o añade más modelos a `LLM_MODELS`.
+- Si las respuestas fallan con *"Los modelos gratuitos están saturados…"*, espera unos minutos, añade más modelos de respaldo al plan o pasa la organización a un plan con modelo de pago.
 - Si un modelo deja de existir, se salta automáticamente (aparece `[llm] … falló (404)` en los registros). Actualiza la lista con los disponibles en <https://openrouter.ai/models?max_price=0>.
 - El modelo usado en cada respuesta aparece bajo la respuesta y en **Consumo → Modelos usados**.
 
+## Verificación en dos pasos (opcional)
+
+Cada usuario puede activarla en **Mi cuenta → Verificación en dos pasos**. Para el superadministrador está recomendada.
+
+- **Funciona en local, sin dominio, HTTPS ni correo.** El código lo calcula la app autenticadora (Google Authenticator, Aegis, 1Password…) a partir de un secreto compartido. Solo hace falta que el **reloj del servidor** sea correcto; con un desfase de más de ~30 s los códigos fallan.
+- **Activar:** escanea el QR (o escribe la clave), confirma con el primer código y guarda los **8 códigos de recuperación** (se muestran una vez).
+- **Entrar:** usuario y contraseña, y después el código de 6 dígitos. Un código no se puede reutilizar; con 5 fallos en 15 minutos se bloquea el intento.
+- **Perdí el teléfono:** entra con un código de recuperación (cada uno sirve una vez) y vuelve a configurarlo. Si un usuario normal lo perdió todo, su administrador lo quita en **Usuarios → Quitar verificación en dos pasos**.
+- **Superadministrador sin teléfono ni códigos:** nadie puede quitárselo desde la aplicación. Se hace en la base de datos: `UPDATE users SET totp_secret = NULL, totp_enabled_at = NULL, totp_last_step = NULL, totp_recovery_hashes = '{}' WHERE username = '<tu usuario>';`
+- **Cuidado con `JWT_SECRET`:** el secreto TOTP se guarda cifrado con una clave derivada de él. Si lo cambias, el 2FA de todos queda inservible y hay que quitarlo y volver a activarlo.
+- No aplica a las cuentas de soporte (entras con tu sesión de superadministrador).
+
 ## Límite de preguntas por organización
 
-- Global: `TENANT_DAILY_QUESTION_LIMIT` (0 = sin límite).
-- Por organización: **Organizaciones → Límite diario** (vacío = global).
+- Cada organización tiene un **plan** (**Organizaciones → Planes**) que fija el límite diario, los modelos y los topes de usuarios y documentos. `TENANT_DAILY_QUESTION_LIMIT` solo da el valor inicial del plan «Estándar» la primera vez que se crea.
+- Excepción puntual: **Organizaciones → Límite diario** (vacío = el del plan; 0 = sin límite).
+- Los administradores de cada organización ven su uso frente a los topes del plan en **Consumo**.
 - Solo cuentan las preguntas que llegan al LLM. Las respuestas "no encontré información" no cuentan. El día se cuenta en UTC.
 
 Reparte el cupo de OpenRouter (1.000 al día con créditos) entre tus clientes con este límite.
@@ -230,7 +243,7 @@ Reparte el cupo de OpenRouter (1.000 al día con créditos) entre tus clientes c
 
 - **Invitar** (Usuarios → Nuevo usuario → *Enviar invitación*): se crea el usuario sin contraseña y se genera un enlace de un solo uso (caduca en `INVITE_EXPIRES_HOURS`, 72 h). Si hay SMTP se envía por correo; siempre se muestra al administrador para que pueda copiarlo.
 - **Reenviar invitación / enlace para restablecer**: menú ⋮ del usuario. Cada enlace nuevo anula el anterior.
-- **¿Olvidaste la contraseña?** (pantalla de login): requiere SMTP. Responde lo mismo exista o no el email, para no revelar quién tiene cuenta. El enlace caduca en `RESET_EXPIRES_MINUTES` (60 min).
+- **¿Olvidaste la contraseña?** (pantalla de login): requiere SMTP y que la cuenta tenga email. Se puede pedir con el usuario o con el email. Responde lo mismo exista o no la cuenta, para no revelar quién la tiene. Los usuarios sin email (o si no hay SMTP) piden a un administrador que restablezca su contraseña desde *Usuarios → Definir contraseña*. El enlace caduca en `RESET_EXPIRES_MINUTES` (60 min).
 - Los enlaces solo se guardan como hash SHA-256 en la base de datos.
 
 ## Entrar en una organización como soporte
