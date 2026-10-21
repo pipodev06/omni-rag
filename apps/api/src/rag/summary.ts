@@ -1,4 +1,4 @@
-import type { ChatMessage } from "./prompt.js";
+import { neutralizeDelimiters, type ChatMessage } from "./prompt.js";
 
 /**
  * Resumen y preguntas sugeridas de un documento. Módulo puro (el acceso a la
@@ -11,7 +11,7 @@ export const SUMMARY_INPUT_CHARS = 9000;
 export function buildSummaryMessages(title: string, chunks: { heading: string; content: string }[]): ChatMessage[] {
   let text = "";
   for (const c of chunks) {
-    const piece = `${c.heading ? `## ${c.heading}\n` : ""}${c.content}\n\n`;
+    const piece = neutralizeDelimiters(`${c.heading ? `## ${c.heading}\n` : ""}${c.content}\n\n`);
     if (text.length + piece.length > SUMMARY_INPUT_CHARS) break;
     text += piece;
   }
@@ -25,7 +25,7 @@ export function buildSummaryMessages(title: string, chunks: { heading: string; c
         '{"resumen": "3 a 5 frases que expliquen de qué trata y sus puntos clave", ' +
         '"preguntas": ["4 preguntas concretas que alguien haría sobre este documento y que el documento responde"]}',
     },
-    { role: "user", content: `Título: ${title}\n\n<documento>\n${text.trim()}\n</documento>` },
+    { role: "user", content: `Título: ${neutralizeDelimiters(title)}\n\n<documento>\n${text.trim()}\n</documento>` },
   ];
 }
 

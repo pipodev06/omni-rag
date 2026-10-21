@@ -18,3 +18,11 @@ export async function issueSession(c: Context, claims: SessionClaims): Promise<s
   });
   return token;
 }
+
+/**
+ * Invalida todas las sesiones emitidas hasta ahora de un usuario. Se trunca al segundo
+ * porque el JWT guarda su fecha en segundos: una sesión creada justo después sigue valiendo.
+ */
+export async function revokeSessions(userId: string): Promise<void> {
+  await sqlOwner`UPDATE users SET sessions_valid_after = date_trunc('second', now()) WHERE id = ${userId}`;
+}

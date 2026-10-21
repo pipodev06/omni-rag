@@ -33,7 +33,7 @@ export function createApp() {
 
   app.notFound((c) => c.json({ error: "Ruta no encontrada" }, 404));
   app.onError((err, c) => {
-    if (err instanceof HttpError) return c.json({ error: err.message }, err.status);
+    if (err instanceof HttpError) return c.json({ error: err.message, ...(err.code && { code: err.code }) }, err.status);
     if (err instanceof HTTPException) return c.json({ error: err.message }, err.status);
     console.error("[api] error no controlado:", err);
     return c.json({ error: "Error interno del servidor" }, 500);

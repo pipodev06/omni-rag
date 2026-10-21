@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Building2, EllipsisVertical, Gauge, Layers, LifeBuoy, Loader2, Plus, Power } from "lucide-react";
+import { Building2, EllipsisVertical, Gauge, Layers, LifeBuoy, Loader2, Plus, Power, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, dailyLimitLabel, errorMessage, timeAgo, type LinkResult, type Plan } from "@/api";
 import { LinkResultDialog } from "@/components/LinkResultDialog";
@@ -216,6 +216,62 @@ function LimitDialog({ tenant, onOpenChange, onSaved }: { tenant: TenantRow | nu
   );
 }
 
+/** Borrado definitivo: hay que escribir el identificador de la organización. */
+function DeleteTenantDialog({ tenant, onOpenChange, onDeleted }: { tenant: TenantRow | null; onOpenChange: (o: boolean) => void; onDeleted: () => void }) {
+  const [slug, setSlug] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (tenant) setSlug("");
+  }, [tenant]);
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!tenant) return;
+    setBusy(true);
+    try {
+      await api.del(`/platform/tenants/${tenant.id}`, { confirmSlug: slug });
+      toast.success(`Organización «${tenant.name}» borrada`);
+      onDeleted();
+      onOpenChange(false);
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Dialog open={tenant !== null} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <form onSubmit={submit} className="space-y-5">
+          <DialogHeader>
+            <DialogTitle>Borrar «{tenant?.name}» definitivamente</DialogTitle>
+            <DialogDescription>
+              Se borran sus {tenant?.users} usuarios, {tenant?.documents} documentos, conversaciones y archivos. No se puede deshacer; las copias de seguridad la conservan hasta que caduquen.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="del-slug">
+              Escribe <b className="font-mono">{tenant?.slug}</b> para confirmar
+            </Label>
+            <Input id="del-slug" value={slug} onChange={(e) => setSlug(e.target.value)} autoComplete="off" autoCapitalize="none" spellCheck={false} autoFocus />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Cancelar
+            </Button>
+            <Button type="submit" variant="destructive" disabled={busy || slug !== tenant?.slug}>
+              {busy && <Loader2 className="animate-spin" />}
+              Borrar definitivamente
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function ChangePlanDialog({ tenant, onOpenChange, onSaved }: { tenant: TenantRow | null; onOpenChange: (o: boolean) => void; onSaved: () => void }) {
   const plans = usePlans().data?.plans ?? [];
   const [planId, setPlanId] = useState("");
@@ -280,6 +336,7 @@ export function PlatformPage() {
   const [newOpen, setNewOpen] = useState(false);
   const [limitTenant, setLimitTenant] = useState<TenantRow | null>(null);
   const [planTenant, setPlanTenant] = useState<TenantRow | null>(null);
+  const [deleteTenant, setDeleteTenant] = useState<TenantRow | null>(null);
   const [tab, setTab] = useState<"orgs" | "plans">("orgs");
   const [planDialog, setPlanDialog] = useState<{ plan: Plan | null } | null>(null);
   const [linkResult, setLinkResult] = useState<{ result: LinkResult; email: string } | null>(null);
@@ -425,6 +482,11 @@ export function PlatformPage() {
                             <DropdownMenuItem variant={t.isActive ? "destructive" : "default"} onSelect={() => void toggle(t)}>
                               <Power /> {t.isActive ? "Desactivar" : "Activar"}
                             </DropdownMenuItem>
+                            {!t.isActive && (
+                              <DropdownMenuItem variant="destructive" onSelect={() => setDeleteTenant(t)}>
+                                <Trash2 /> Borrar definitivamente
+                              </DropdownMenuItem>
+                            )}
                           </>
                         )}
                       </DropdownMenuContent>
@@ -446,6 +508,7 @@ export function PlatformPage() {
       />
       <LinkResultDialog result={linkResult?.result ?? null} email={linkResult?.email} onClose={() => setLinkResult(null)} />
       <LimitDialog tenant={limitTenant} onOpenChange={(o) => !o && setLimitTenant(null)} onSaved={refresh} />
+      <DeleteTenantDialog tenant={deleteTenant} onOpenChange={(o) => !o && setDeleteTenant(null)} onDeleted={refresh} />
       <ChangePlanDialog tenant={planTenant} onOpenChange={(o) => !o && setPlanTenant(null)} onSaved={refresh} />
       <PlanDialog
         plan={planDialog?.plan ?? null}

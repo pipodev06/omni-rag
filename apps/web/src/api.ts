@@ -129,7 +129,7 @@ export const api = {
   post: <T>(url: string, body?: unknown) => request<T>("POST", url, body ?? {}),
   put: <T>(url: string, body?: unknown) => request<T>("PUT", url, body ?? {}),
   patch: <T>(url: string, body?: unknown) => request<T>("PATCH", url, body ?? {}),
-  del: <T>(url: string) => request<T>("DELETE", url),
+  del: <T>(url: string, body?: unknown) => request<T>("DELETE", url, body),
 };
 
 export interface ChatHandlers {
@@ -278,6 +278,8 @@ export const ROLE_DESCRIPTIONS: Record<Role, string> = {
 export interface Session {
   user: User;
   tenant: Tenant;
+  /** El superadministrador debe activar la verificación en dos pasos antes de usar la plataforma. */
+  mfaSetupRequired?: boolean;
   /** Presente cuando el superadministrador está dentro de esta organización como soporte. */
   support: { name: string; username: string } | null;
 }

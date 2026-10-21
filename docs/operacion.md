@@ -35,6 +35,10 @@ docker compose exec backup sh /backup.sh --once
 docker compose logs backup          # ver el resultado de las copias
 ```
 
+**Cada copia se verifica sola:** nada más hacerla, el servicio la restaura en una base temporal (`rag_restore_test`), cuenta usuarios, documentos y fragmentos, comprueba que el archivo de subidas se puede leer y borra la base temporal. En `docker compose logs backup` debe aparecer `VERIFICADA`; si aparece `ERROR`, la copia no sirve y hay que investigarlo antes de fiarse de ella.
+
+**Segunda copia fuera del servidor:** con `BACKUP_OFFSITE=true` (y `BACKUP_OFFSITE_DIR`) cada copia verificada se copia además a una carpeta externa, cifrada si defines `BACKUP_ENCRYPTION_PASSPHRASE` (ver [produccion.md](produccion.md#6-copias-de-seguridad-fuera-del-servidor)). Por defecto está desactivada.
+
 > La carpeta `./backups` está en el mismo disco: cópiala también **fuera del servidor** (ver [produccion.md](produccion.md#6-copias-de-seguridad-fuera-del-servidor)).
 
 ### Restaurar una copia
@@ -246,6 +250,12 @@ Reparte el cupo de OpenRouter (1.000 al día con créditos) entre tus clientes c
 - **¿Olvidaste la contraseña?** (pantalla de login): requiere SMTP y que la cuenta tenga email. Se puede pedir con el usuario o con el email. Responde lo mismo exista o no la cuenta, para no revelar quién la tiene. Los usuarios sin email (o si no hay SMTP) piden a un administrador que restablezca su contraseña desde *Usuarios → Definir contraseña*. El enlace caduca en `RESET_EXPIRES_MINUTES` (60 min).
 - Los enlaces solo se guardan como hash SHA-256 en la base de datos.
 
+## Borrar una organización
+
+**Organizaciones → ⋮ → Borrar definitivamente.** Solo aparece en organizaciones ya **desactivadas** (primero se desactiva) y pide escribir su identificador. Borra usuarios, documentos, fragmentos, conversaciones, caché, auditoría y los archivos subidos. No se puede deshacer, y queda constancia (`tenant.deleted`, con nombre, usuarios y documentos) en la auditoría de tu organización.
+
+> Las **copias de seguridad** conservan sus datos hasta que caducan (`BACKUP_KEEP_DAYS`, 7 por defecto). Si un cliente exige el borrado total, elimina también las copias anteriores de `./backups`.
+
 ## Entrar en una organización como soporte
 
 El superadministrador puede ver y gestionar cualquier organización con su propio usuario: **Organizaciones → ⋮ → Entrar como soporte**. Arriba aparece un aviso con **Volver a mi organización**. Se entra con permisos de administrador y queda registrado en la auditoría del cliente (categoría *Soporte*). Detalles en [permisos.md](permisos.md#acceso-de-soporte-del-superadministrador).
@@ -257,6 +267,22 @@ Página **Auditoría** (administradores): inicios de sesión (también los falli
 ## Mantenimiento automático
 
 El worker ejecuta cada día a las 03:15 (UTC) una limpieza: auditoría más antigua que la retención, enlaces usados o caducados y respuestas en caché vencidas. No requiere intervención.
+
+## Seguridad del despliegue
+
+- **Secretos:** si `DOMAIN` es un dominio real, la API no arranca con `JWT_SECRET`, `APP_DB_PASSWORD` o `POSTGRES_PASSWORD` iguales a los del `.env.example` o demasiado cortos (mínimo 32, 16 y 16), ni crea el primer administrador con la contraseña de ejemplo. En local (sin dominio) no se exige. Genera claves con `openssl rand -base64 48`.
+- **Archivos subidos:** además de la extensión y el tamaño, se comprueba que el contenido corresponda al formato (firma de PDF, Office e imágenes; sin bytes nulos en los de texto). Un ejecutable renombrado a `.pdf` se rechaza con el motivo en el resultado de la subida.
+- **Docling aislado:** el conversor procesa archivos de usuarios, así que vive en una red interna (`ingest`) sin salida a internet ni acceso a la base de datos; solo el worker llega a él. Ya no publica el puerto `DOCLING_PORT` en tu máquina. Para depurarlo: `docker compose exec worker wget -qO- http://docling:5001/health`.
+- **Contenedores de la API y el worker:** sin privilegios nuevos y sin capacidades de Linux (`no-new-privileges`, `cap_drop: ALL`).
+- **Prompt injection:** los fragmentos de los documentos van entre `<documentos>` como datos; si un documento intenta cerrar esa etiqueta, se neutraliza. No es infalible (ningún modelo lo es), pero evita el truco más común.
+- **Sesiones revocables:** cambiar la contraseña, restablecerla (enlace o administrador), quitar el 2FA a un usuario o pulsar **Mi cuenta → Cerrar todas las sesiones** invalida todas las sesiones anteriores de ese usuario al instante. Al cambiar tu propia contraseña, la sesión actual se renueva y las demás se cierran.
+- **Límites por usuario** (no por IP, que se puede falsear): 20 preguntas, 60 búsquedas, 30 subidas y 10 resúmenes por minuto. Se suman al límite diario de cada plan. Al pasarlos, la API responde `429`.
+- **2FA del superadministrador:** `REQUIRE_SUPERADMIN_2FA` = `auto` (por defecto: **se exige solo cuando `DOMAIN` es un dominio real**; en local nunca se te pide), `true` (siempre) o `false` (nunca; se puede, pero no se recomienda en producción). Si está activo y la cuenta aún no tiene 2FA, la plataforma solo la deja ir a **Mi cuenta** hasta activarlo (la API responde `403` con `code: mfa_setup_required` al resto de rutas). Para un administrador normal sigue siendo opcional.
+- **Aviso de modo soporte:** cada entrada y salida queda en la auditoría del cliente (`support.entered`); no hay aviso aparte porque el único que puede entrar eres tú.
+- **Cabeceras de seguridad** (nginx, `apps/web/security-headers.conf`): `Content-Security-Policy` estricta (solo recursos del propio sitio; el visor de PDF usa un worker propio), `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy: same-origin` y `Permissions-Policy` sin cámara, micrófono ni geolocalización. `Strict-Transport-Security` la añade Caddy con HTTPS. Si añades un recurso externo (fuentes, analítica), hay que permitirlo en esa CSP.
+- **Dependencias:** el CI ejecuta `pnpm audit --audit-level=high` y falla con vulnerabilidades altas o críticas; Dependabot abre un PR semanal agrupado (npm, GitHub Actions y las imágenes Docker). Para revisarlo a mano: `pnpm audit`.
+- **Aislamiento entre organizaciones:** las pruebas de Row Level Security corren siempre en el CI (`RUN_DB_TESTS=1` con PostgreSQL). Si algún cambio rompe el aislamiento, no se puede fusionar.
+- **nginx y la API:** nginx vuelve a resolver el nombre `api` cada 5 s; si recreas la API ya no hace falta reiniciar `web` (antes daba `502 Bad Gateway`).
 
 ## Lista para producción
 

@@ -59,8 +59,9 @@ services:
       DOCLING_SERVE_ENG_LOC_NUM_WORKERS: ${DOCLING_WORKERS:-1}
       DOCLING_SERVE_MAX_DOCUMENT_TIMEOUT: ${DOCLING_TIMEOUT_SECONDS:-900}
       DOCLING_SERVE_ENABLE_UI: "false"
-    ports:
-      - "127.0.0.1:${DOCLING_PORT:-15001}:5001"
+    # Procesa archivos de usuarios (no confiables): red interna, sin salida a internet
+    # ni acceso a la base de datos. Solo el worker puede hablar con él.
+    networks: [ingest]
 
   # API HTTP (Hono + TypeScript). Aplica migraciones al arrancar.
   api:
@@ -76,8 +77,11 @@ services:
       DOCLING_URL: http://docling:5001
       RERANKER_URL: ${RERANKER_URL-http://reranker:80}
       STORAGE_DIR: /data/uploads
+      REQUIRE_SUPERADMIN_2FA: ${REQUIRE_SUPERADMIN_2FA:-auto}
     volumes:
       - uploads:/data/uploads
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
     depends_on:
       db:
         condition: service_healthy
@@ -93,6 +97,9 @@ services:
     environment: *backend-env
     volumes:
       - uploads:/data/uploads
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    networks: [default, ingest]
     depends_on:
       db:
         condition: service_healthy
@@ -122,10 +129,14 @@ services:
       PGPASSWORD: ${POSTGRES_PASSWORD}
       BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-24}
       BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-7}
+      BACKUP_OFFSITE: ${BACKUP_OFFSITE:-false}
+      BACKUP_ENCRYPTION_PASSPHRASE: ${BACKUP_ENCRYPTION_PASSPHRASE:-}
     volumes:
       - ./deploy/backup.sh:/backup.sh:ro
       - uploads:/uploads:ro
       - ./backups:/backups
+      # Carpeta externa (disco, NAS, carpeta sincronizada). Solo se usa con BACKUP_OFFSITE=true.
+      - ${BACKUP_OFFSITE_DIR:-./backups-offsite}:/offsite
     depends_on:
       db:
         condition: service_healthy
@@ -156,6 +167,11 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:${MAILPIT_PORT:-8025}:8025"
+
+networks:
+  # Red sin salida a internet donde vive Docling.
+  ingest:
+    internal: true
 
 volumes:
   caddy-data:

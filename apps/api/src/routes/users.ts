@@ -5,6 +5,7 @@ import { requireAuth, requireRole, tenantCtx, type AppEnv } from "../auth/middle
 import { hashPassword, passwordProblem } from "../auth/password.js";
 import { audit } from "../lib/audit.js";
 import { badRequest, HttpError, notFound } from "../lib/errors.js";
+import { revokeSessions } from "../auth/session.js";
 import { assertUserSlot } from "../lib/plans.js";
 import { createUserLink, emailLink } from "../lib/tokens.js";
 import { OptionalEmailSchema, parse, UsernameSchema, UUID_RE } from "../lib/validate.js";
@@ -115,6 +116,7 @@ userRoutes.post("/:id/totp/reset", async (c) => {
      WHERE id = ${id} AND tenant_id = ${ctx.tenantId} AND is_superadmin = false AND support_for IS NULL
     RETURNING id`;
   if (!u) throw notFound("Usuario no encontrado");
+  await revokeSessions(id);
   await audit(c, "auth.totp_reset", { targetType: "user", targetId: id });
   return c.json({ ok: true });
 });
@@ -164,6 +166,7 @@ userRoutes.patch("/:id", async (c) => {
     throw err;
   });
   if (!updated) throw notFound("Usuario no encontrado");
+  if (body.password !== undefined) await revokeSessions(id);
   await audit(c, "user.updated", {
     targetType: "user",
     targetId: id,

@@ -100,13 +100,76 @@ Abre `https://rag.tuempresa.com`, entra con `SEED_ADMIN_USERNAME` y **cambia la 
 
 ### 6. Copias de seguridad fuera del servidor
 
-El servicio `backup` guarda cada día en `./backups` la base de datos y los archivos (7 días). Copia esa carpeta a otro lugar, por ejemplo con `rclone` a un almacenamiento S3 compatible o al *storage box* de tu proveedor, con una tarea `cron` diaria:
+**Las copias automáticas ya existen**: el servicio `backup` guarda cada día en `./backups` la base de datos y los archivos (7 días) y comprueba cada copia restaurándola. Lo que hay que añadir en producción es una **segunda copia fuera del servidor**: si el disco o la máquina se pierden, `./backups` se pierde con ellos.
+
+**Opción integrada (recomendada):** apunta `BACKUP_OFFSITE_DIR` a una carpeta que no esté en ese disco (disco USB, NAS montado o carpeta sincronizada con OneDrive, Drive o Dropbox) y actívala en `.env`:
 
 ```bash
-0 4 * * * rclone sync /ruta/rag-project/backups remoto:rag-backups
+BACKUP_OFFSITE=true
+BACKUP_OFFSITE_DIR=/mnt/nas/rag-backups          # en Windows: D:/OneDrive/rag-backups
+BACKUP_ENCRYPTION_PASSPHRASE=<frase larga y única>
 ```
 
-Prueba alguna vez a restaurar (ver [operacion.md](operacion.md#restaurar-una-copia)).
+Tras cada copia verificada, el servicio la copia allí y borra las de más de `BACKUP_KEEP_DAYS` días. **Pon siempre la frase de cifrado si la carpeta sale a la nube**: las copias contienen los datos de todos tus clientes. Guarda la frase en un gestor de contraseñas; sin ella no se pueden restaurar. Para descifrar una copia:
+
+```bash
+openssl enc -d -aes-256-cbc -pbkdf2 -in db_AAAA-MM-DD_HHMM.dump.enc -out db.dump   # pide la frase
+```
+
+**Opción manual:** copia `./backups` con `rclone` a un almacenamiento S3 compatible o al *storage box* de tu proveedor con una tarea `cron` diaria (`0 4 * * * rclone sync /ruta/rag-project/backups remoto:rag-backups`). Esa copia no va cifrada salvo que lo configures tú.
+
+Prueba alguna vez a restaurar en un servidor limpio (ver [operacion.md](operacion.md#restaurar-una-copia)).
+
+## Si ya tienes un nginx (u otro proxy) en el servidor
+
+Caddy necesita los puertos 80 y 443. Si ya los usa tu nginx, **no actives Caddy**: deja que tu nginx haga el HTTPS y reenvíe el tráfico al contenedor `web`.
+
+**1. En `.env`** (no pongas `COMPOSE_PROFILES=https`):
+
+```
+DOMAIN=rag.tuempresa.com        # sigue siendo obligatorio: activa las comprobaciones de producción
+COMPOSE_PROFILES=               # vacío: sin Caddy
+WEB_BIND=127.0.0.1              # el contenedor solo escucha en este servidor
+WEB_PORT=8000                   # cámbialo si el 8000 está ocupado
+```
+
+`DOMAIN` es lo que hace que la API exija secretos fuertes y 2FA al superadministrador, fuerce la cookie segura y use `https://DOMAIN` en los enlaces de los correos. Aunque no uses Caddy, hay que ponerlo.
+
+**2. En tu nginx**, un `server` nuevo para el dominio (certificado con `certbot --nginx -d rag.tuempresa.com`):
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name rag.tuempresa.com;
+    # ssl_certificate / ssl_certificate_key: los añade certbot
+
+    client_max_body_size 500m;                      # subida de documentos
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;   # SOBRESCRIBE: no uses $proxy_add_x_forwarded_for
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;                             # las respuestas del chat llegan en streaming
+        proxy_read_timeout 300s;
+    }
+}
+server { listen 80; server_name rag.tuempresa.com; return 301 https://$host$request_uri; }
+```
+
+Por qué cada línea importa:
+
+| Línea | Si falta |
+|---|---|
+| `X-Forwarded-Proto $scheme` | Los enlaces y la detección de HTTPS fallan (la cookie igualmente va como segura gracias a `DOMAIN`). |
+| `X-Forwarded-For $remote_addr` | La auditoría y los límites usarían una IP falsificable por el cliente. |
+| `proxy_buffering off` | El chat no se ve palabra a palabra: llega de golpe al final. |
+| `client_max_body_size` | Las subidas grandes dan `413`. |
+| `Strict-Transport-Security` | Solo Caddy lo añade solo; con tu nginx hay que ponerlo tú. |
+
+No añadas `Content-Security-Policy` ni `X-Frame-Options` en tu nginx: ya las envía la web y se duplicarían. Si tu nginx sirve otras aplicaciones, no toques nada de ellas: el dominio nuevo es un `server` aparte.
 
 ## Actualizar a una nueva versión
 
@@ -125,10 +188,10 @@ Con `DOMAIN=localhost` y `COMPOSE_PROFILES=https`, Caddy usa un certificado prop
 ## Lista de comprobación
 
 - [ ] `DOMAIN`, `COMPOSE_PROFILES=https` y `WEB_BIND=127.0.0.1` en `.env`.
-- [ ] Contraseñas y `JWT_SECRET` nuevos y aleatorios.
+- [ ] Contraseñas y `JWT_SECRET` nuevos y aleatorios (con dominio, la API no arranca si siguen siendo los del ejemplo).
 - [ ] Solo los puertos 22, 80 y 443 abiertos.
 - [ ] Correo SMTP configurado (SPF/DKIM) y probado con una invitación.
-- [ ] Contraseña del superadministrador cambiada.
-- [ ] Copias de `./backups` fuera del servidor, y restauración probada.
+- [ ] Contraseña del superadministrador cambiada y **verificación en dos pasos activada** (con un dominio real la exige el sistema; en local nunca. Se puede desactivar con `REQUIRE_SUPERADMIN_2FA=false`, aunque no se recomienda).
+- [ ] Copia **fuera del servidor** activada (`BACKUP_OFFSITE=true` con carpeta externa y frase de cifrado). Las copias locales ya se hacen y se verifican solas: busca `VERIFICADA` en `docker compose logs backup`.
 - [ ] Créditos de OpenRouter y límites diarios por organización revisados.
 - [ ] Monitorización de `https://tu-dominio/api/health` (por ejemplo con Uptime Kuma o un servicio externo).
