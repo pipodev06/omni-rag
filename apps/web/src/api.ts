@@ -59,6 +59,10 @@ export interface Message {
   sources: Source[];
   model?: string | null;
   error?: string;
+  /** La respuesta salió de la caché (no se llamó al LLM). */
+  fromCache?: boolean;
+  /** Valoración del usuario: 1 = 👍, -1 = 👎. */
+  feedback?: 1 | -1 | null;
 }
 
 export interface Conversation {
@@ -113,7 +117,7 @@ export const api = {
 export interface ChatHandlers {
   onMeta: (meta: { conversationId: string; sources: Source[] }) => void;
   onToken: (text: string) => void;
-  onDone: (done: { messageId: string; model: string | null; sources: Source[] }) => void;
+  onDone: (done: { messageId: string; model: string | null; sources: Source[]; fromCache?: boolean }) => void;
   onError: (message: string) => void;
 }
 

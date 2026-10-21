@@ -16,11 +16,12 @@ usageRoutes.get("/", async (c) => {
   const data = await withTenant(tenantCtx(c), async (tx) => {
     const daily = await tx`
       SELECT to_char(date_trunc('day', created_at AT TIME ZONE 'UTC'), 'YYYY-MM-DD') AS day,
-             count(*)::int AS questions,
+             count(*) FILTER (WHERE kind = 'question')::int AS questions,
+             count(*) FILTER (WHERE kind = 'cache_hit')::int AS "cacheHits",
              coalesce(sum(prompt_tokens), 0)::int AS "promptTokens",
              coalesce(sum(completion_tokens), 0)::int AS "completionTokens"
         FROM usage_events
-       WHERE kind = 'question' AND created_at > now() - interval '30 days'
+       WHERE kind IN ('question', 'cache_hit') AND created_at > now() - interval '30 days'
        GROUP BY 1 ORDER BY 1 DESC`;
     const byModel = await tx`
       SELECT model, count(*)::int AS questions FROM usage_events

@@ -105,3 +105,35 @@ En la planificación inicial se propuso MinIO. Para un único servidor, un volum
 Flowbite está más orientado a HTML/plantillas; MUI y Mantine imponen un estilo propio difícil de cambiar.
 
 **Estilo: "neutro profesional".** Grises *zinc* y un único color de acento (índigo), tipografía Inter incluida en la imagen (sin llamadas a Google Fonts), modo claro, oscuro y automático. El acento se cambia en un solo sitio (ver [desarrollo.md](desarrollo.md#interfaz-web)).
+
+## 12. Re-ranker `mmarco-mMiniLMv2` en lugar de `bge-reranker-v2-m3`
+
+**Contexto.** La búsqueda híbrida recupera bien los candidatos, pero su orden no siempre es el mejor. Un *cross-encoder* lee la pregunta y cada fragmento juntos y los puntúa con más precisión.
+
+**Medición** (CPU de 4 núcleos, 7 preguntas en español, 20 fragmentos de ~1.000 caracteres por pregunta):
+
+| Modelo | Aciertos (top-1) | Tiempo por pregunta | RAM |
+|---|---|---|---|
+| `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1` | 7/7 | **~0,6 s** | ~1,9 GB |
+| `BAAI/bge-reranker-v2-m3` | 7/7 | ~14 s | ~3 GB |
+
+**Decisión.** `mmarco-mMiniLMv2` por defecto. `bge-reranker-v2-m3` es más preciso en casos difíciles, pero solo es viable con GPU (`RERANKER_MODEL`).
+
+**Beneficio adicional.** Las puntuaciones del re-ranker separan muy bien lo relevante (≥ 0,1) de lo irrelevante (≈ 0,003), así que `RERANK_MIN_SCORE` decide de forma fiable cuándo responder "no encontré información" sin llamar al LLM.
+
+## 13. Caché de respuestas en PostgreSQL (sin Redis)
+
+**Alternativas:** Redis/Valkey, caché semántica "ingenua" por similitud.
+
+**Decisión.** Tabla `answer_cache` en PostgreSQL:
+- hereda el aislamiento por organización (RLS) y se invalida en la misma transacción que actualiza los documentos;
+- el volumen es pequeño (miles de filas), así que la velocidad de Redis no aporta nada apreciable frente a la llamada al LLM que se ahorra;
+- un servicio menos que operar.
+
+**Reglas conservadoras.** Medimos que preguntas **distintas** pueden ser casi idénticas para el modelo de embeddings ("factura 2026-0457" vs "…0458": distancia 0,026, más cerca que dos paráfrasis reales). Por eso una respuesta solo se reutiliza si:
+1. la pregunta normalizada es idéntica, o
+2. la distancia es ≤ 0,015 **y** los números/códigos coinciden;
+
+además del mismo conjunto de colecciones, sin historial de conversación (las preguntas de seguimiento dependen del contexto), y que no haya pasado `CACHE_TTL_HOURS`. Un 👎 borra la entrada.
+
+**Consecuencia.** Se reutilizan menos respuestas que con una caché agresiva, pero nunca una respuesta equivocada por parecido superficial.

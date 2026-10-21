@@ -62,7 +62,9 @@ Pregunta ──▶ embedding ──▶ búsqueda de los trozos más cercanos ─
 | Umbral de distancia | No llamar al LLM si no hay nada relevante | ✅ `RETRIEVAL_MAX_DISTANCE` |
 | Citas obligatorias y "di que no lo sabes" | Reducir alucinaciones | ✅ `rag/prompt.ts` |
 | Contexto de conversación | Preguntas de seguimiento ("¿y el básico?") | ✅ historial + consulta enriquecida |
-| Re-ranking con modelo *cross-encoder* | Reordenar los candidatos con más precisión | ⏳ futuro |
+| Re-ranking con modelo *cross-encoder* | Reordenar los candidatos con más precisión | ✅ `rag/rerank.ts` |
+| Caché de respuestas | No gastar cupo en preguntas repetidas | ✅ `rag/cache.ts` |
+| Valoraciones de usuarios | Detectar respuestas que fallan | ✅ página Calidad |
 | Reescritura de la pregunta con LLM | Preguntas ambiguas | ⏳ futuro (gasta cupo del LLM) |
 | *Agentic RAG* / *GraphRAG* | Preguntas complejas que cruzan muchos documentos | ⏳ futuro |
 

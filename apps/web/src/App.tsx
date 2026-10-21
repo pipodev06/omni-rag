@@ -11,6 +11,7 @@ const DocumentsPage = lazy(() => import("@/pages/DocumentsPage").then((m) => ({ 
 const UsersPage = lazy(() => import("@/pages/UsersPage").then((m) => ({ default: m.UsersPage })));
 const UsagePage = lazy(() => import("@/pages/UsagePage").then((m) => ({ default: m.UsagePage })));
 const PlatformPage = lazy(() => import("@/pages/PlatformPage").then((m) => ({ default: m.PlatformPage })));
+const QualityPage = lazy(() => import("@/pages/QualityPage").then((m) => ({ default: m.QualityPage })));
 const AccountPage = lazy(() => import("@/pages/AccountPage").then((m) => ({ default: m.AccountPage })));
 
 function FullScreenLoader() {
@@ -50,6 +51,7 @@ export function App() {
         <Route path="/documentos" element={<DocumentsPage />} />
         <Route path="/documentos/:collectionId" element={<DocumentsPage />} />
         <Route path="/usuarios" element={<Protected allow={user?.role === "admin"}><UsersPage /></Protected>} />
+        <Route path="/calidad" element={<Protected allow={user?.role === "admin"}><QualityPage /></Protected>} />
         <Route path="/consumo" element={<Protected allow={user?.role === "admin"}><UsagePage /></Protected>} />
         <Route path="/organizaciones" element={<Protected allow={user?.isSuperadmin === true}><PlatformPage /></Protected>} />
         <Route path="/cuenta" element={<AccountPage />} />

@@ -36,6 +36,18 @@ services:
     ports:
       - "127.0.0.1:${EMBEDDINGS_PORT:-18080}:80"
 
+  # Re-ranker local (cross-encoder multilingüe): reordena los resultados de la
+  # búsqueda leyendo pregunta y fragmento juntos. ~2 GB de RAM, ~0,6 s por pregunta en CPU.
+  # Para desactivarlo: RERANKER_URL= (vacío) y RERANKER_REPLICAS=0 en .env.
+  reranker:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.8
+    restart: unless-stopped
+    command: ["--model-id", "${RERANKER_MODEL:-cross-encoder/mmarco-mMiniLMv2-L12-H384-v1}", "--max-batch-tokens", "8192", "--max-client-batch-size", "64"]
+    volumes:
+      - hf-cache:/data
+    deploy:
+      replicas: ${RERANKER_REPLICAS:-1}
+
   # Conversión de documentos (PDF, Office, HTML, imágenes con OCR…) a Markdown.
   docling:
     image: quay.io/docling-project/docling-serve-cpu:v1.37.0
@@ -59,6 +71,7 @@ services:
       APP_DATABASE_URL: postgres://rag_app:${APP_DB_PASSWORD}@db:5432/rag
       EMBEDDINGS_URL: http://embeddings:80
       DOCLING_URL: http://docling:5001
+      RERANKER_URL: ${RERANKER_URL-http://reranker:80}
       STORAGE_DIR: /data/uploads
     volumes:
       - uploads:/data/uploads

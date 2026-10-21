@@ -11,7 +11,9 @@
  *  3. Sube los archivos a A y un archivo secreto a B; espera a que se indexen.
  *  4. Búsqueda en A: encuentra contenido de A y NUNCA el secreto de B.
  *  5. Un lector (viewer) de A sin acceso a la colección no ve documentos.
- *  6. Pregunta al chat (requiere OPENROUTER_API_KEY) y muestra la respuesta.
+ *  6. Re-ranking activo (si el servicio está en marcha).
+ *  7. Pregunta al chat (requiere OPENROUTER_API_KEY), caché de respuestas,
+ *     respeto de permisos en la caché y valoraciones 👍/👎.
  * Las organizaciones de prueba quedan desactivadas al final.
  */
 import { readFile } from "node:fs/promises";
@@ -129,12 +131,13 @@ ok(vdocs2.data.documents.length === docsA.length, "tras darle acceso, el lector 
 const cross = await call("PUT", `/collections/${A.collectionId}/members`, { token: A.token, json: { userIds: [B.id] } });
 ok(cross.status === 400, "no se puede añadir a una colección un id ajeno a la organización");
 
-if (!skipChat && files.length) {
+async function ask(token, q, extra = {}) {
   const res = await fetch(`${BASE}/api/chat`, {
     method: "POST",
-    headers: { authorization: `Bearer ${A.token}`, "content-type": "application/json" },
-    body: JSON.stringify({ question }),
+    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: JSON.stringify({ question: q, ...extra }),
   });
+  if (!res.ok) return { status: res.status, error: await res.text() };
   const raw = await res.text();
   const events = raw.split("\n\n").filter(Boolean).map((b) => ({
     event: /event: (.*)/.exec(b)?.[1],
@@ -143,9 +146,49 @@ if (!skipChat && files.length) {
   const answer = events.filter((e) => e.event === "token").map((e) => JSON.parse(e.data)).join("");
   const done = events.find((e) => e.event === "done");
   const error = events.find((e) => e.event === "error");
-  console.log(`   Pregunta: ${question}\n   Respuesta: ${answer.trim()}`);
-  if (error) console.log("   Error:", error.data);
-  ok(!!done, `chat responde${done ? ` (modelo: ${JSON.parse(done.data).model})` : ""}`);
+  return { status: 200, answer, done: done ? JSON.parse(done.data) : null, error: error?.data };
+}
+
+if (files.length) {
+  const s = await call("POST", "/search", { token: A.token, json: { query: question } });
+  const reranked = s.data.results?.[0]?.rerankScore;
+  ok(health.data.services.reranker !== "ok" || typeof reranked === "number", `re-ranking aplicado (puntuación del mejor: ${reranked ?? "n/d"})`);
+}
+
+if (!skipChat && files.length) {
+  const first = await ask(A.token, question);
+  console.log(`   Pregunta: ${question}\n   Respuesta: ${first.answer?.trim()}`);
+  if (first.error) console.log("   Error:", first.error);
+  ok(!!first.done, `chat responde${first.done ? ` (modelo: ${first.done.model})` : ""}`);
+
+  if (first.done?.model) {
+    const usageBefore = (await call("GET", "/usage", { token: A.token })).data;
+    const again = await ask(A.token, question.toUpperCase().replace(/\?/g, ""));
+    ok(again.done?.fromCache === true && again.answer === first.answer, "la misma pregunta (con otro formato) se responde desde la caché");
+    const usageAfter = (await call("GET", "/usage", { token: A.token })).data;
+    const sum = (u, k) => u.daily.reduce((n, d) => n + d[k], 0);
+    ok(sum(usageAfter, "questions") === sum(usageBefore, "questions"), "la respuesta desde caché no consume cupo del LLM");
+
+    const otherQ = await ask(A.token, `${question} ¿Y en el año 2031?`);
+    ok(otherQ.done?.fromCache !== true, "una pregunta con un número distinto NO usa la caché");
+
+    // El lector (acceso solo a la colección de A) tiene el mismo alcance → caché compartida.
+    const viewerAsk = await ask(vt, question);
+    ok(viewerAsk.done?.fromCache === true, "otro usuario con el mismo acceso reutiliza la respuesta");
+    // Si se le quita el acceso, ya no ve nada: no puede recibir la respuesta guardada.
+    await call("PUT", `/collections/${A.collectionId}/members`, { token: A.token, json: { userIds: [] } });
+    const viewerNoAccess = await ask(vt, question);
+    ok(viewerNoAccess.done?.fromCache !== true && (viewerNoAccess.done?.sources ?? []).length === 0, "sin acceso a la colección no recibe la respuesta guardada");
+
+    const fb = await call("PUT", `/messages/${again.done.messageId}/feedback`, { token: A.token, json: { rating: -1, comment: "prueba" } });
+    ok(fb.status === 200, "valoración 👎 registrada");
+    const afterBad = await ask(A.token, question);
+    ok(afterBad.done?.fromCache !== true, "tras un 👎 la respuesta sale de la caché y se vuelve a generar");
+    const quality = await call("GET", "/quality?rating=-1&status=pending", { token: A.token });
+    ok(quality.data.items?.some((i) => i.comment === "prueba"), "el administrador ve la valoración en Calidad");
+    const vq = await call("GET", "/quality", { token: vt });
+    ok(vq.status === 403, "un lector no puede ver la página de Calidad");
+  }
 }
 
 for (const t of [A, B]) await call("PATCH", `/platform/tenants/${t.id}`, { token: root, json: { isActive: false } });

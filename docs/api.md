@@ -10,7 +10,7 @@ Base: `http://localhost:8000/api` (a través de nginx) o `http://localhost:3001/
 
 | Método | Ruta | Acceso | Descripción |
 |---|---|---|---|
-| GET | `/health` | público | Estado de `database`, `embeddings`, `docling` y si `openrouter` está configurado. `503` si la base de datos no responde. |
+| GET | `/health` | público | Estado de `database`, `embeddings`, `docling`, `reranker` (o `desactivado`) y si `openrouter` está configurado. `503` si la base de datos no responde. |
 
 ## Sesión — `/auth`
 
@@ -43,7 +43,7 @@ Responde `text/event-stream` con estos eventos:
 |---|---|
 | `meta` | `{ conversationId, sources: Source[] }`: fragmentos recuperados |
 | `token` | `"texto"`: trozo de la respuesta (repetido) |
-| `done` | `{ messageId, model, sources }`: `sources[i].cited` indica si la respuesta lo citó |
+| `done` | `{ messageId, model, sources, fromCache }`: `sources[i].cited` indica si la respuesta lo citó; `fromCache` si salió de la caché (sin LLM) |
 | `error` | `{ message }` |
 
 Antes de empezar el streaming puede responder JSON normal con `429` (límite diario), `404` (conversación) o `400`.
@@ -59,7 +59,24 @@ curl -N localhost:8000/api/chat -H "authorization: Bearer $TOKEN" \
   "pageStart": 2, "pageEnd": 3, "excerpt": "…", "cited": true }
 ```
 
-`SearchHit` (`/search`): `chunkId, documentId, documentTitle, collectionId, heading, content, pageStart, pageEnd, score, vectorRank, keywordRank, distance`.
+`SearchHit` (`/search`): `chunkId, documentId, documentTitle, collectionId, heading, content, pageStart, pageEnd, score, vectorRank, keywordRank, distance, rerankScore` (`rerankScore` es `null` si el re-ranker está desactivado).
+
+Los mensajes de `GET /conversations/:id` incluyen `fromCache` y `feedback` (`1`, `-1` o `null`).
+
+## Valoraciones — `/messages`
+
+| Método | Ruta | Acceso | Descripción |
+|---|---|---|---|
+| PUT | `/messages/:id/feedback` | dueño del mensaje | `{ rating: 1 \| -1, comment? }`. Crea o cambia la valoración. Un `-1` borra la respuesta de la caché. |
+| DELETE | `/messages/:id/feedback` | dueño del mensaje | Quita la valoración |
+
+## Calidad — `/quality` (admin)
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| GET | `/quality?rating=-1&status=pending` | `{ summary: { positive, negative, pendingNegative }, usage: { questions, cacheHits }, cache: { entries }, items: [...] }`. `rating` (`1`/`-1`) y `status` (`pending`/`all`) son opcionales. |
+| PATCH | `/quality/feedback/:id` | `{ resolved: boolean }`: marcar como revisada o reabrir |
+| DELETE | `/quality/cache` | Vacía la caché de respuestas de la organización → `{ deleted }` |
 
 ## Documentos — `/documents`
 
@@ -108,7 +125,7 @@ curl localhost:8000/api/documents -H "authorization: Bearer $TOKEN" \
 
 ## Consumo — `/usage` (admin)
 
-`GET /usage` → `{ daily: [{ day, questions, promptTokens, completionTokens }], byModel: [{ model, questions }], totals: { documents, chunks, users } }` (últimos 30 días).
+`GET /usage` → `{ daily: [{ day, questions, cacheHits, promptTokens, completionTokens }], byModel: [{ model, questions }], totals: { documents, chunks, users } }` (últimos 30 días).
 
 ## Plataforma — `/platform` (superadministrador)
 
