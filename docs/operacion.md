@@ -203,6 +203,7 @@ Cada usuario puede activarla en **Mi cuenta → Verificación en dos pasos**. Pa
 - Cada organización tiene un **plan** (**Organizaciones → Planes**) que fija el límite diario, los modelos y los topes de usuarios y documentos. `TENANT_DAILY_QUESTION_LIMIT` solo da el valor inicial del plan «Estándar» la primera vez que se crea.
 - Excepción puntual: **Organizaciones → Límite diario** (vacío = el del plan; 0 = sin límite).
 - Los administradores de cada organización ven su uso frente a los topes del plan en **Consumo**.
+- **Aviso en el chat:** cuando la organización llega al `QUOTA_WARN_PERCENT` % (80 por defecto) de su límite diario, todos sus usuarios ven sobre el cuadro de escritura «ha usado X de N preguntas de hoy»; al llegar al tope, el aviso pasa a rojo. Se actualiza tras cada pregunta y no aparece en planes sin límite (0).
 - Solo cuentan las preguntas que llegan al LLM. Las respuestas "no encontré información" no cuentan. El día se cuenta en UTC.
 
 Reparte el cupo de OpenRouter (1.000 al día con créditos) entre tus clientes con este límite.
@@ -210,18 +211,22 @@ Reparte el cupo de OpenRouter (1.000 al día con créditos) entre tus clientes c
 ## Cambiar contraseñas de la base de datos
 
 - `APP_DB_PASSWORD`: cámbiala en `.env` y ejecuta `docker compose up -d api worker` (la API la aplica al arrancar).
-- `POSTGRES_PASSWORD` (después del primer arranque):
+- `POSTGRES_PASSWORD` (después del primer arranque): la base conserva la contraseña con la que se creó, así que hay que igualarla. Cambia el valor en `.env` y ejecuta:
   ```bash
-  docker compose exec db psql -U rag_owner -d rag -c "ALTER ROLE rag_owner PASSWORD 'nueva'"
-  # luego cámbiala en .env y reinicia: docker compose up -d
+  docker compose up -d db
+  docker compose exec -T db sh < deploy/sync-db-password.sh
+  docker compose up -d api worker backup
   ```
+  El script usa la variable del propio contenedor: no muestra ni te pide la contraseña. Si la API ya está en bucle con `password authentication failed`, es exactamente esto.
 
 ## Problemas frecuentes
 
 | Síntoma | Causa probable | Solución |
 |---|---|---|
 | `health` → `embeddings: fetch failed` | El modelo aún se está descargando o cargando | `docker compose logs -f embeddings`; espera a `Ready` |
-| `health` → `docling: fetch failed` | Docling arrancando (tarda 20–60 s) | Espera; revisa `docker compose logs docling` |
+| `docker compose ps` → `docling` en `starting` o `unhealthy` | Docling arrancando (tarda 20–60 s) o caído | Espera; revisa `docker compose logs docling`. Los documentos subidos se procesan cuando esté `healthy` |
+| La API no arranca y el log dice `no es una URL de PostgreSQL válida` | Falta o está mal `POSTGRES_PASSWORD` / `APP_DB_PASSWORD` | Revisa el `.env`. Las contraseñas con `/`, `+` o `=` (de `openssl rand -base64`) son válidas: la API las codifica sola |
+| La API no arranca: «La base de datos rechazó la contraseña de POSTGRES_PASSWORD» (o `password authentication failed`) | La base conserva la contraseña con la que se creó el volumen y el `.env` ya no coincide | `docker compose exec -T db sh < deploy/sync-db-password.sh` y luego `docker compose up -d api worker backup` (ver «Cambiar contraseñas de la base de datos») |
 | Documento en *Error*: "Docling no extrajo texto" | Archivo protegido con contraseña, dañado o vacío | Ábrelo y guárdalo de nuevo / quita la protección |
 | Documento en *Error*: "dimensiones" | `EMBEDDING_DIM` no coincide con el modelo | Ver "Cambiar el modelo de embeddings" |
 | Documentos atascados en *En cola* | El worker no está en marcha | `docker compose ps worker`; `docker compose logs worker` |
@@ -236,7 +241,7 @@ Reparte el cupo de OpenRouter (1.000 al día con créditos) entre tus clientes c
 | Respuesta "guardada" desactualizada | Se cambió el documento fuera del sistema o el prompt/modelo | Márcala con 👎 o usa Calidad → Vaciar caché |
 | Las respuestas no llegan en streaming detrás de otro proxy | El proxy acumula la respuesta | Desactiva el *buffering* para `/api/chat` |
 | PDF escaneado con texto incorrecto | OCR con idioma equivocado | Ajusta `DOCLING_OCR_LANGS` y reprocesa |
-| `ports are not available … bind: Intento de acceso a un socket no permitido` (Windows) o `address already in use` | El puerto está ocupado (p. ej. un PostgreSQL instalado) o reservado por Windows/Hyper-V | Cambia `WEB_PORT`, `DB_PORT`, `EMBEDDINGS_PORT` o `DOCLING_PORT` en `.env`. En Windows, los rangos reservados se ven con `netsh interface ipv4 show excludedportrange protocol=tcp` |
+| `ports are not available … bind: Intento de acceso a un socket no permitido` (Windows) o `address already in use` | El puerto está ocupado (p. ej. un PostgreSQL instalado) o reservado por Windows/Hyper-V | Cambia `WEB_PORT`, `DB_PORT`, o `EMBEDDINGS_PORT` en `.env`. En Windows, los rangos reservados se ven con `netsh interface ipv4 show excludedportrange protocol=tcp` |
 | El invitado dice que el enlace "no es válido o ha caducado" | Caducó, ya se usó o se generó uno más nuevo | Usuarios → ⋮ → *Reenviar invitación* |
 | No llegan los correos | SMTP mal configurado o bloqueado por spam | `docker compose logs api \| grep correo`; revisa `SMTP_*`, SPF/DKIM; prueba con Mailpit |
 | Caddy no obtiene el certificado | DNS aún sin propagar o puertos 80/443 cerrados | `docker compose logs caddy`; comprueba el registro A y el cortafuegos |
@@ -272,7 +277,7 @@ El worker ejecuta cada día a las 03:15 (UTC) una limpieza: auditoría más anti
 
 - **Secretos:** si `DOMAIN` es un dominio real, la API no arranca con `JWT_SECRET`, `APP_DB_PASSWORD` o `POSTGRES_PASSWORD` iguales a los del `.env.example` o demasiado cortos (mínimo 32, 16 y 16), ni crea el primer administrador con la contraseña de ejemplo. En local (sin dominio) no se exige. Genera claves con `openssl rand -base64 48`.
 - **Archivos subidos:** además de la extensión y el tamaño, se comprueba que el contenido corresponda al formato (firma de PDF, Office e imágenes; sin bytes nulos en los de texto). Un ejecutable renombrado a `.pdf` se rechaza con el motivo en el resultado de la subida.
-- **Docling aislado:** el conversor procesa archivos de usuarios, así que vive en una red interna (`ingest`) sin salida a internet ni acceso a la base de datos; solo el worker llega a él. Ya no publica el puerto `DOCLING_PORT` en tu máquina. Para depurarlo: `docker compose exec worker wget -qO- http://docling:5001/health`.
+- **Docling aislado:** el conversor procesa archivos de usuarios, así que vive en una red interna (`ingest`) sin salida a internet ni acceso a la base de datos; solo el worker llega a él. No publica ningún puerto en tu máquina. Para depurarlo: `docker compose exec worker wget -qO- http://docling:5001/health`.
 - **Contenedores de la API y el worker:** sin privilegios nuevos y sin capacidades de Linux (`no-new-privileges`, `cap_drop: ALL`).
 - **Prompt injection:** los fragmentos de los documentos van entre `<documentos>` como datos; si un documento intenta cerrar esa etiqueta, se neutraliza. No es infalible (ningún modelo lo es), pero evita el truco más común.
 - **Sesiones revocables:** cambiar la contraseña, restablecerla (enlace o administrador), quitar el 2FA a un usuario o pulsar **Mi cuenta → Cerrar todas las sesiones** invalida todas las sesiones anteriores de ese usuario al instante. Al cambiar tu propia contraseña, la sesión actual se renueva y las demás se cierran.

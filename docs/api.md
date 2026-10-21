@@ -10,7 +10,8 @@ Base: `http://localhost:8000/api` (a través de nginx) o `http://localhost:3001/
 
 | Método | Ruta | Acceso | Descripción |
 |---|---|---|---|
-| GET | `/health` | público | Estado de `database`, `embeddings`, `docling`, `reranker` (o `desactivado`) y si `openrouter` está configurado. `503` si la base de datos no responde. |
+| GET | `/quota` | cualquier usuario | `{ used, limit, level, warnPercent }`: preguntas de hoy de la organización frente al límite de su plan. `level`: `ok`, `warn` (desde `QUOTA_WARN_PERCENT` %), `full` o `unlimited` |
+| GET | `/health` | público | Estado de `database`, `embeddings`, `reranker` (o `desactivado`) y si `openrouter` está configurado. `docling` aparece como «aislado»: vive en una red interna que solo alcanza el worker, y su estado se ve con `docker compose ps`. `503` si la base de datos no responde. |
 
 ## Sesión — `/auth`
 
@@ -102,6 +103,7 @@ Los mensajes de `GET /conversations/:id` incluyen `fromCache` y `feedback` (`1`,
 | GET | `/documents/:id/chunks` | todos | Fragmentos generados (para revisar la fragmentación) |
 | GET | `/documents/:id/file` | todos | Descarga el original |
 | POST | `/documents` | admin, editor | `multipart/form-data`: `collectionId` + uno o varios `file` |
+| PATCH | `/documents/:id` | admin, editor | `{ title }`: cambia el título mostrado (no el archivo). Vacía la caché de respuestas de la colección. Los fragmentos conservan el título antiguo en su texto de búsqueda hasta que se reprocese |
 | POST | `/documents/:id/reprocess` | admin, editor | Vuelve a indexar |
 | DELETE | `/documents/:id` | admin, editor | Borra el documento, sus fragmentos y el archivo |
 

@@ -11,6 +11,7 @@ import { AssistantMessage, UserMessage } from "@/components/chat/ChatMessage";
 import { messageKey } from "@/lib/messages";
 import { ChatWelcome } from "@/components/chat/ChatWelcome";
 import { Composer } from "@/components/chat/Composer";
+import { QuotaBanner } from "@/components/chat/QuotaBanner";
 import { ConversationList } from "@/components/chat/ConversationList";
 import { useOpenDocument } from "@/components/documents/DocumentViewer";
 import { Button } from "@/components/ui/button";
@@ -168,6 +169,7 @@ export function ChatPage() {
     } finally {
       setBusy(false);
       void qc.invalidateQueries({ queryKey: ["conversations"] });
+      void qc.invalidateQueries({ queryKey: ["quota"] });
       textareaRef.current?.focus();
     }
   };
@@ -228,6 +230,7 @@ export function ChatPage() {
         </div>
       </div>
 
+      <QuotaBanner />
       <Composer
         textareaRef={textareaRef}
         value={input}

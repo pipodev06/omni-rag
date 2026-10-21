@@ -6,7 +6,7 @@ import { hashPassword, passwordProblem } from "../auth/password.js";
 import { issueSession } from "../auth/session.js";
 import { audit, auditLog } from "../lib/audit.js";
 import { clientIp } from "../lib/request.js";
-import { getTenantPlan } from "../lib/plans.js";
+import { getTenantPlan, questionsToday } from "../lib/plans.js";
 import { removeStored } from "../storage/local.js";
 import { createUserLink, emailLink } from "../lib/tokens.js";
 import { badRequest, HttpError, notFound } from "../lib/errors.js";
@@ -40,13 +40,10 @@ usageRoutes.get("/", async (c) => {
     return { daily, byModel, totals };
   });
   const plan = await getTenantPlan(tenantCtx(c).tenantId);
-  const [today] = await sqlOwner<{ n: number }[]>`
-    SELECT count(*)::int AS n FROM usage_events
-     WHERE tenant_id = ${tenantCtx(c).tenantId} AND kind IN ('question', 'summary')
-       AND created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`;
+  const usedToday = await questionsToday(tenantCtx(c).tenantId);
   return c.json({
     ...data,
-    plan: { name: plan.name, dailyQuestionLimit: plan.dailyQuestionLimit, maxUsers: plan.maxUsers, maxDocuments: plan.maxDocuments, usedToday: today?.n ?? 0 },
+    plan: { name: plan.name, dailyQuestionLimit: plan.dailyQuestionLimit, maxUsers: plan.maxUsers, maxDocuments: plan.maxDocuments, usedToday },
   });
 });
 

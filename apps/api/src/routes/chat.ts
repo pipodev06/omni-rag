@@ -11,7 +11,7 @@ import { buildMessages, citedSources, NO_CONTEXT_ANSWER, retrievalQuery, type Ch
 import { resolveScope, retrieve, type RankedHit } from "../rag/retrieve.js";
 import { HttpError, notFound } from "../lib/errors.js";
 import { userRateLimit } from "../lib/limits.js";
-import { getTenantPlan, type TenantPlan } from "../lib/plans.js";
+import { getTenantPlan, questionsToday, quotaLevel, type TenantPlan } from "../lib/plans.js";
 import { parse, UUID_RE } from "../lib/validate.js";
 
 export const chatRoutes = new Hono<AppEnv>();
@@ -49,15 +49,22 @@ export async function checkDailyLimit(ctx: TenantContext): Promise<TenantPlan> {
   const plan = await getTenantPlan(ctx.tenantId);
   const limit = plan.dailyQuestionLimit;
   if (limit === 0) return plan; // 0 = sin límite
-  const [row] = await sqlOwner<{ n: number }[]>`
-    SELECT count(*)::int AS n FROM usage_events
-     WHERE tenant_id = ${ctx.tenantId} AND kind IN ('question', 'summary')
-       AND created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`;
-  if ((row?.n ?? 0) >= limit) {
+  if ((await questionsToday(ctx.tenantId)) >= limit) {
     throw new HttpError(429, `Tu organización alcanzó el límite de ${limit} preguntas por día de su plan ${plan.name}.`);
   }
   return plan;
 }
+
+/**
+ * Cuota diaria de la organización, para avisar en el chat antes de llegar al tope.
+ * La puede ver cualquier usuario: es quien gasta las preguntas.
+ */
+chatRoutes.get("/quota", async (c) => {
+  const ctx = tenantCtx(c);
+  const [plan, used] = await Promise.all([getTenantPlan(ctx.tenantId), questionsToday(ctx.tenantId)]);
+  const limit = plan.dailyQuestionLimit;
+  return c.json({ used, limit, level: quotaLevel(used, limit, config.QUOTA_WARN_PERCENT), warnPercent: config.QUOTA_WARN_PERCENT });
+});
 
 const SearchBody = z.object({
   query: z.string().trim().min(1).max(2000),

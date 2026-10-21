@@ -11,6 +11,7 @@ import { EmptyState, Page, PageHeader } from "@/components/common";
 import { CollectionFormDialog, MembersDialog } from "@/components/documents/CollectionDialogs";
 import { CollectionToolbar } from "@/components/documents/CollectionToolbar";
 import { DocumentsTable } from "@/components/documents/DocumentsTable";
+import { RenameDocumentDialog } from "@/components/documents/RenameDocumentDialog";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -74,11 +75,12 @@ function UploadZone({ collectionId, extensions, onUploaded }: { collectionId: st
 }
 
 /** Tabla de documentos, o su estado de carga / vacío. */
-function DocumentsSection({ loading, documents, search, canEdit, onReprocess, onDelete }: {
+function DocumentsSection({ loading, documents, search, canEdit, onRename, onReprocess, onDelete }: {
   loading: boolean;
   documents: DocumentInfo[];
   search: string;
   canEdit: boolean;
+  onRename: (d: DocumentInfo) => void;
   onReprocess: (d: DocumentInfo) => void;
   onDelete: (d: DocumentInfo) => void;
 }) {
@@ -92,7 +94,7 @@ function DocumentsSection({ loading, documents, search, canEdit, onReprocess, on
       />
     );
   }
-  return <DocumentsTable documents={documents} canEdit={canEdit} onReprocess={onReprocess} onDelete={onDelete} />;
+  return <DocumentsTable documents={documents} canEdit={canEdit} onRename={onRename} onReprocess={onReprocess} onDelete={onDelete} />;
 }
 
 export function DocumentsPage() {
@@ -105,6 +107,7 @@ export function DocumentsPage() {
   const [search, setSearch] = useState("");
   const [collectionDialog, setCollectionDialog] = useState<"new" | "edit" | null>(null);
   const [membersOpen, setMembersOpen] = useState(false);
+  const [renameDoc, setRenameDoc] = useState<DocumentInfo | null>(null);
 
   const { collections, current, loadingCollections, documents, loadingDocuments, refreshing, extensions } =
     useCollectionDocuments(routeCollection, search);
@@ -161,6 +164,7 @@ export function DocumentsPage() {
             documents={documents}
             search={search}
             canEdit={canEdit}
+            onRename={setRenameDoc}
             onReprocess={(d) => void reprocess(d)}
             onDelete={(d) => void removeDocument(d)}
           />
@@ -181,6 +185,7 @@ export function DocumentsPage() {
           navigate(`/documentos/${id}`);
         }}
       />
+      <RenameDocumentDialog doc={renameDoc} onOpenChange={(o) => !o && setRenameDoc(null)} onSaved={refresh} />
       {current && <MembersDialog open={membersOpen} onOpenChange={setMembersOpen} collection={current} onSaved={refresh} />}
     </Page>
   );

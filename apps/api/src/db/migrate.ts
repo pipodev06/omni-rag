@@ -41,7 +41,18 @@ export async function migrate(): Promise<string[]> {
   const sql = postgres(config.DATABASE_URL, { max: 1, onnotice: () => {} });
   try {
     // Evita que dos procesos (api y worker) migren a la vez.
-    await sql`SELECT pg_advisory_lock(727274)`;
+    try {
+      await sql`SELECT pg_advisory_lock(727274)`;
+    } catch (err) {
+      // La base conserva la contraseña con la que se creó el volumen: si el .env cambió después, no coinciden.
+      if ((err as { code?: string }).code === "28P01") {
+        throw new Error(
+          "La base de datos rechazó la contraseña de POSTGRES_PASSWORD (la base conserva la que tenía al crearse). " +
+            "Iguálala con: docker compose exec -T db sh < deploy/sync-db-password.sh   y luego: docker compose up -d api worker backup",
+        );
+      }
+      throw err;
+    }
 
     const [role] = await sql`SELECT 1 FROM pg_roles WHERE rolname = 'rag_app'`;
     const verb = role ? "ALTER" : "CREATE";

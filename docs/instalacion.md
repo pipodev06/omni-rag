@@ -23,7 +23,7 @@ Medido con todo en marcha: ≈ 5,2 GB en reposo y ≈ 6,9 GB de pico (procesando
   processors=4
   ```
 - En PowerShell: `Copy-Item .env.example .env` y `notepad .env`. Para generar secretos: `[Convert]::ToBase64String((1..48 | ForEach-Object { Get-Random -Max 256 }))`. Usa `curl.exe` en lugar de `curl`.
-- Si aparece `ports are not available ... Intento de acceso a un socket no permitido`, el puerto está ocupado o reservado por Windows: cambia `WEB_PORT`, `DB_PORT`, `EMBEDDINGS_PORT` o `DOCLING_PORT` en `.env`.
+- Si aparece `ports are not available ... Intento de acceso a un socket no permitido`, el puerto está ocupado o reservado por Windows: cambia `WEB_PORT`, `DB_PORT`, o `EMBEDDINGS_PORT` en `.env`.
 
 ## 2. Configuración (`.env`)
 

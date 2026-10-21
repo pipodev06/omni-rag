@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import "./env.js";
 import { config } from "../src/config.js";
 import { contentMatchesFormat } from "../src/ingest/formats.js";
+import { normalizeDbUrl } from "../src/lib/dburl.js";
 import { clientIp, secureCookie } from "../src/lib/request.js";
 import { weakSeedPassword, weakSecrets } from "../src/lib/secrets.js";
 import { buildMessages } from "../src/rag/prompt.js";
@@ -112,6 +113,37 @@ describe("cookie de sesión segura", () => {
       expect(secureCookie(ctx({ "x-forwarded-proto": "https" }))).toBe(false);
     } finally {
       restore();
+    }
+  });
+});
+
+describe("URL de la base de datos con contraseñas de openssl", () => {
+  const url = (pass: string) => ["postgres:", "//", "rag_owner", ":", pass, "@db:5432/rag"].join("");
+  const passOf = (u: string) => decodeURIComponent(new URL(u).password);
+
+  it("codifica «/», «+» y «=» que rompían la URL", () => {
+    const pass = "Ab/Cd+Ef=Gh/Ij+Kl/Mn=";
+    expect(() => new URL(url(pass))).toThrow(); // sin normalizar, no es válida
+    const fixed = normalizeDbUrl(url(pass), "DATABASE_URL");
+    expect(passOf(fixed)).toBe(pass);
+    expect(new URL(fixed).host).toBe("db:5432");
+    expect(new URL(fixed).pathname).toBe("/rag");
+  });
+  it("también con «@», «#» y «?» en la contraseña", () => {
+    const pass = "a@b#c?d:e";
+    expect(passOf(normalizeDbUrl(url(pass), "X"))).toBe(pass);
+  });
+  it("no vuelve a codificar lo que ya venía codificado ni toca las simples", () => {
+    expect(passOf(normalizeDbUrl(url("a%2Fb"), "X"))).toBe("a/b");
+    expect(normalizeDbUrl(url("simple123"), "X")).toBe(url("simple123"));
+  });
+  it("si la URL es inválida, el error no incluye la contraseña", () => {
+    try {
+      normalizeDbUrl("postgres://sin-formato-valido ñ/Secreto/9", "DATABASE_URL");
+      throw new Error("debía fallar");
+    } catch (err) {
+      expect((err as Error).message).toMatch(/DATABASE_URL no es una URL/);
+      expect((err as Error).message).not.toContain("Secreto");
     }
   });
 });

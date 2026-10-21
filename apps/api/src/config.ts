@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { normalizeDbUrl } from "./lib/dburl.js";
 import { weakSecrets } from "./lib/secrets.js";
 
 /**
@@ -101,6 +102,9 @@ const schema = z.object({
   // preguntas distintas pueden estar a 0.03 (ver docs/operacion.md).
   CACHE_MAX_DISTANCE: z.coerce.number().min(0).max(1).default(0.015),
 
+  // A partir de qué porcentaje del límite diario se avisa en el chat (1-100).
+  QUOTA_WARN_PERCENT: z.coerce.number().int().min(1).max(100).default(80),
+
   // Límite de preguntas al LLM por organización y día (protege el cupo gratuito compartido).
   TENANT_DAILY_QUESTION_LIMIT: z.coerce.number().int().nonnegative().default(200),
 });
@@ -114,6 +118,8 @@ function load(): Config {
     throw new Error(`Configuración inválida:\n${issues}`);
   }
   const data = parsed.data;
+  data.DATABASE_URL = normalizeDbUrl(data.DATABASE_URL, "DATABASE_URL");
+  data.APP_DATABASE_URL = normalizeDbUrl(data.APP_DATABASE_URL, "APP_DATABASE_URL");
   const weak = weakSecrets({ domain: data.DOMAIN, jwtSecret: data.JWT_SECRET, appDbPassword: data.APP_DB_PASSWORD, databaseUrl: data.DATABASE_URL });
   if (weak.length > 0) {
     throw new Error(`Secretos inseguros para un despliegue con dominio (${data.DOMAIN}):\n${weak.map((w) => `  - ${w}`).join("\n")}\nGenera claves con: openssl rand -base64 48`);
