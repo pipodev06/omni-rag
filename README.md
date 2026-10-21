@@ -56,6 +56,48 @@ Guía completa paso a paso: **[docs/instalacion.md](docs/instalacion.md)**.
 
 ---
 
+## Cambiar la configuración (`.env`)
+
+Toda la configuración de infraestructura (claves, dominio, correo, copias de seguridad…) vive en el archivo `.env`. Tres reglas para no tropezar:
+
+### 1. Aplica los cambios con `docker compose up -d`, no con `restart`
+
+```bash
+docker compose up -d
+```
+
+Docker recrea solo los servicios cuyos valores cambiaron. **`docker compose restart` no relee el `.env`**: reinicia el contenedor con las variables que ya tenía. Si lo que cambiaste es código (no el `.env`), añade `--build`: `docker compose up -d --build`.
+
+Un `#` al inicio de una línea la anula: esa variable usa su valor por defecto (el mismo que trae `.env.example`).
+
+### 2. Algunas variables solo cuentan la primera vez
+
+| Variable | Qué ocurre si la cambias más tarde |
+|---|---|
+| `SEED_ADMIN_*`, `SEED_TENANT_*` | **Nada.** Solo se usan con la base de datos vacía (primer arranque). El usuario y la organización se cambian desde la aplicación. |
+| `LLM_MODELS`, `TENANT_DAILY_QUESTION_LIMIT` | **Nada.** Solo siembran el plan «Estándar». Después se editan en *Organizaciones → Planes*. |
+| `EMBEDDING_MODEL`, `EMBEDDING_DIM` | Hay que recrear los fragmentos y reprocesar todos los documentos (ver [operacion.md](docs/operacion.md#cambiar-el-modelo-de-embeddings)). |
+| `JWT_SECRET` | Se aplica, pero **todos cierran sesión y el 2FA de todos deja de funcionar**. Cámbialo solo si hace falta. |
+| El resto (`OPENROUTER_API_KEY`, `SMTP_*`, `BACKUP_*`, límites, `DOMAIN`…) | Se aplican con `docker compose up -d`. |
+
+### 3. Las contraseñas de la base de datos tienen un paso extra
+
+PostgreSQL guarda la contraseña con la que **se creó el volumen**. Si cambias `POSTGRES_PASSWORD` en un sistema que ya tiene datos, la base sigue con la anterior, la API no puede conectar y la web muestra **502**. Se arregla igualándolas:
+
+```bash
+docker compose up -d db
+docker compose exec -T db sh < deploy/sync-db-password.sh
+docker compose up -d api worker backup
+```
+
+El script usa la variable del propio contenedor: no muestra ni te pide la contraseña. `APP_DB_PASSWORD` no necesita ese paso (la API la aplica sola al arrancar). En un sistema nuevo y vacío tampoco hace falta: la contraseña se fija al crear el volumen.
+
+> Si la API muestra *«La base de datos rechazó la contraseña de POSTGRES_PASSWORD»*, es exactamente este caso.
+
+Las contraseñas pueden llevar cualquier carácter, incluidos `/`, `+` y `=` (los que genera `openssl rand -base64 48`).
+
+---
+
 ## Documentación
 
 | Documento | Contenido |

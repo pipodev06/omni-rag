@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router";
-import { Download, EllipsisVertical, Eye, Layers, MessageSquareText, RotateCw, Sparkles, Trash2 } from "lucide-react";
+import { Download, EllipsisVertical, Eye, Layers, MessageSquareText, Pencil, RotateCw, Sparkles, Trash2 } from "lucide-react";
 import { formatBytes, timeAgo, type DocumentInfo } from "@/api";
 import { FileTypeIcon, StatusBadge } from "@/components/common";
 import { useOpenDocument } from "@/components/documents/DocumentViewer";
@@ -17,11 +17,12 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 
 interface RowActions {
   canEdit: boolean;
+  onRename: (d: DocumentInfo) => void;
   onReprocess: (d: DocumentInfo) => void;
   onDelete: (d: DocumentInfo) => void;
 }
 
-function DocumentActions({ doc: d, canEdit, onReprocess, onDelete }: RowActions & { doc: DocumentInfo }) {
+function DocumentActions({ doc: d, canEdit, onRename, onReprocess, onDelete }: RowActions & { doc: DocumentInfo }) {
   const openDocument = useOpenDocument();
   const navigate = useNavigate();
   const ready = d.status === "ready";
@@ -52,6 +53,9 @@ function DocumentActions({ doc: d, canEdit, onReprocess, onDelete }: RowActions 
         </DropdownMenuItem>
         {canEdit && (
           <>
+            <DropdownMenuItem onSelect={() => onRename(d)}>
+              <Pencil /> Renombrar
+            </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => onReprocess(d)}>
               <RotateCw /> Reprocesar
             </DropdownMenuItem>

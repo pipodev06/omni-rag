@@ -43,3 +43,21 @@ export async function documentSlots(tenantId: string): Promise<{ left: number | 
   const [{ n } = { n: 0 }] = await sqlOwner<{ n: number }[]>`SELECT count(*)::int AS n FROM documents WHERE tenant_id = ${tenantId}`;
   return { left: Math.max(0, maxDocuments - n), max: maxDocuments };
 }
+
+/** Llamadas al LLM (preguntas y resúmenes) que ha hecho la organización hoy (día en UTC). */
+export async function questionsToday(tenantId: string): Promise<number> {
+  const [row] = await sqlOwner<{ n: number }[]>`
+    SELECT count(*)::int AS n FROM usage_events
+     WHERE tenant_id = ${tenantId} AND kind IN ('question', 'summary')
+       AND created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`;
+  return row?.n ?? 0;
+}
+
+export type QuotaLevel = "ok" | "warn" | "full" | "unlimited";
+
+/** Estado de la cuota diaria: sin límite, normal, cerca del tope (`warn`) o agotada (`full`). */
+export function quotaLevel(used: number, limit: number, warnPercent: number): QuotaLevel {
+  if (limit === 0) return "unlimited";
+  if (used >= limit) return "full";
+  return used * 100 >= limit * warnPercent ? "warn" : "ok";
+}

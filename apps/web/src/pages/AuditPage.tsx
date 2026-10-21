@@ -48,6 +48,7 @@ const ACTIONS: Record<string, string> = {
   "collection.members_updated": "Cambió el acceso a una colección",
   "document.uploaded": "Subió un documento",
   "document.deleted": "Borró un documento",
+  "document.renamed": "Renombró un documento",
   "document.reprocessed": "Reprocesó un documento",
   "document.summary": "Generó un resumen",
   "quality.cache_cleared": "Vació la caché de respuestas",

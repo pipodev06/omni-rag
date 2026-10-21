@@ -20,16 +20,17 @@ const ping = async (url: string) => {
 };
 
 healthRoutes.get("/", async (c) => {
-  const [database, embeddings, docling, reranker] = await Promise.all([
+  const [database, embeddings, reranker] = await Promise.all([
     check(() => sqlOwner`SELECT 1`),
     check(() => ping(`${config.EMBEDDINGS_URL.replace(/\/$/, "")}/health`)),
-    check(() => ping(`${config.DOCLING_URL.replace(/\/$/, "")}/health`)),
     config.RERANKER_URL ? check(() => ping(`${config.RERANKER_URL.replace(/\/$/, "")}/health`)) : Promise.resolve("desactivado"),
   ]);
   const services = {
     database,
     embeddings,
-    docling,
+    // Docling vive en una red interna que solo alcanza el worker: la API no puede comprobarlo.
+    // Su estado se ve con `docker compose ps` (tiene su propio healthcheck).
+    docling: "aislado (ver docker compose ps)",
     reranker,
     openrouter: config.OPENROUTER_API_KEY ? "configurado" : "falta OPENROUTER_API_KEY",
   };

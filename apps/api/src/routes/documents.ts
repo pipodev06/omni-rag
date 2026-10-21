@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { audit } from "../lib/audit.js";
 import { Hono } from "hono";
+import { z } from "zod";
 import { bodyLimit } from "hono/body-limit";
 import { streamSSE } from "hono/streaming";
 import { config } from "../config.js";
@@ -17,7 +18,7 @@ import { readStoredFile, removeStored, safeFilename, saveFile, titleFromFilename
 import { badRequest, HttpError, notFound } from "../lib/errors.js";
 import { userRateLimit } from "../lib/limits.js";
 import { documentSlots } from "../lib/plans.js";
-import { UUID_RE } from "../lib/validate.js";
+import { parse, UUID_RE } from "../lib/validate.js";
 
 export const documentRoutes = new Hono<AppEnv>();
 documentRoutes.use("*", requireAuth);
@@ -265,6 +266,29 @@ documentRoutes.post("/:id/summary", userRateLimit(10, 60_000, "resúmenes"), asy
 
   await audit(c, "document.summary", { targetType: "document", targetId: id, details: { title: doc.title } });
   return c.json({ summary, suggestedQuestions: questions, summaryModel: result.model });
+});
+
+const RenameBody = z.object({ title: z.string().trim().min(1).max(200) });
+
+/**
+ * Cambia el título con el que se muestra el documento. El archivo original no cambia.
+ * Los fragmentos ya indexados conservan el título antiguo en su texto de búsqueda
+ * hasta que se reprocese el documento (el efecto es mínimo); la caché de respuestas
+ * de la colección se vacía para que las citas muestren el título nuevo.
+ */
+documentRoutes.patch("/:id", requireRole("admin", "editor"), async (c) => {
+  const id = idParam(c.req.param("id"));
+  const body = parse(RenameBody, await c.req.json().catch(() => ({})));
+  const ctx = tenantCtx(c);
+  const doc = await withTenant(ctx, async (tx) => {
+    const [d] = await tx<{ collection_id: string }[]>`
+      UPDATE documents SET title = ${body.title}, updated_at = now() WHERE id = ${id} RETURNING collection_id`;
+    if (d) await invalidateCollections(tx, [d.collection_id]);
+    return d;
+  });
+  if (!doc) throw notFound("Documento no encontrado");
+  await audit(c, "document.renamed", { targetType: "document", targetId: id, details: { title: body.title } });
+  return c.json({ ok: true });
 });
 
 /** Vuelve a procesar un documento (p. ej. tras cambiar el modelo de embeddings). */

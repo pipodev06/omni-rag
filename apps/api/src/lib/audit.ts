@@ -11,7 +11,7 @@ import { clientIp } from "./request.js";
  * auth.reset_requested, auth.link_used, auth.login_mfa_failed, auth.totp_enabled, auth.totp_disabled,
  * auth.totp_reset, auth.sessions_revoked, user.created, user.invited, user.updated,
  * user.link_created, collection.created, collection.updated, collection.deleted,
- * collection.members_updated, document.uploaded, document.deleted, document.reprocessed,
+ * collection.members_updated, document.uploaded, document.deleted, document.renamed, document.reprocessed,
  * document.summary, quality.cache_cleared, quality.feedback_resolved,
  * tenant.created, tenant.updated, tenant.deleted, tenant.plan_changed, tenant.limit_changed, plan.edited, plan.created, plan.updated, plan.deleted, support.entered, support.exited.
  */
