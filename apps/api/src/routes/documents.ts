@@ -6,6 +6,7 @@ import { withTenant } from "../db/client.js";
 import { requireAuth, requireRole, tenantCtx, type AppEnv } from "../auth/middleware.js";
 import { formatFor, SUPPORTED_EXTENSIONS } from "../ingest/formats.js";
 import { enqueueIngest } from "../queue.js";
+import { invalidateCollections } from "../rag/cache.js";
 import { readStoredFile, removeStored, safeFilename, saveFile } from "../storage/local.js";
 import { badRequest, HttpError, notFound } from "../lib/errors.js";
 import { UUID_RE } from "../lib/validate.js";
@@ -164,7 +165,11 @@ documentRoutes.post("/:id/reprocess", requireRole("admin", "editor"), async (c) 
 documentRoutes.delete("/:id", requireRole("admin", "editor"), async (c) => {
   const id = idParam(c.req.param("id"));
   const ctx = tenantCtx(c);
-  const [doc] = await withTenant(ctx, (tx) => tx`DELETE FROM documents WHERE id = ${id} RETURNING id`);
+  const doc = await withTenant(ctx, async (tx) => {
+    const [d] = await tx<{ collection_id: string }[]>`DELETE FROM documents WHERE id = ${id} RETURNING collection_id`;
+    if (d) await invalidateCollections(tx, [d.collection_id]);
+    return d;
+  });
   if (!doc) throw notFound("Documento no encontrado");
   await removeStored(`${ctx.tenantId}/${id}`);
   return c.json({ ok: true });

@@ -20,6 +20,7 @@
 | Crear usuarios, cambiar roles, desactivar | ❌ | ❌ | ✅ |
 | Ver consumo de la organización | ❌ | ❌ | ✅ |
 | Ver conversaciones de otros usuarios | ❌ | ❌ | ❌ (son privadas) |
+| Ver valoraciones 👍/👎 (página Calidad) | solo las suyas | solo las suyas | ✅ todas |
 
 "Sus colecciones" = las colecciones de las que el usuario es miembro (*Documentos → Gestionar acceso*).
 
@@ -55,6 +56,11 @@ Aunque el código tuviera un error (por ejemplo, una consulta sin `WHERE tenant_
 ### Por qué importa en un RAG
 
 El filtro de permisos se aplica **dentro** de la búsqueda vectorial, no después. El LLM nunca recibe un fragmento que el usuario no pueda ver, así que no puede "filtrarlo" en una respuesta.
+
+## Caché de respuestas y valoraciones
+
+- **Caché:** una respuesta guardada solo se reutiliza para usuarios de la **misma organización** que consultan **exactamente el mismo conjunto de colecciones**. Un usuario con menos acceso tiene otro conjunto, así que nunca recibe una respuesta construida con documentos que no puede ver. Al cambiar un documento de una colección se borran las respuestas que dependían de ella.
+- **Valoraciones:** las conversaciones son privadas, pero al marcar una respuesta con 👍 o 👎 se guarda una copia de la pregunta, la respuesta y las fuentes **visible para los administradores** de la organización (página Calidad). La interfaz lo avisa antes de enviar un 👎.
 
 ## Cómo está probado
 

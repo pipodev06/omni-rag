@@ -111,6 +111,52 @@ curl -s localhost:8000/api/search -H "authorization: Bearer $TOKEN" -H 'content-
 | `CHUNK_SIZE_CHARS` | `1200` | Tamaño de los fragmentos. El modelo E5 lee como máximo 512 tokens (unos 1.800 caracteres en español), así que no conviene superar ~1.500. |
 | `FTS_LANGUAGE` | `spanish` | Idioma de la búsqueda por palabras (raíces, palabras vacías). Cambiarlo requiere una migración nueva. |
 
+## Re-ranking
+
+El servicio `reranker` reordena los candidatos de la búsqueda con un modelo *cross-encoder* (lee pregunta y fragmento juntos). Es la mejora de calidad más importante, pero usa ~1,9 GB de RAM y ~0,6 s por pregunta en CPU.
+
+| Parámetro | Por defecto | Efecto |
+|---|---|---|
+| `RERANKER_MODEL` | `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1` | Con GPU, `BAAI/bge-reranker-v2-m3` es más preciso (en CPU tarda ~14 s; ver [decisiones.md §12](decisiones.md#12-re-ranker-mmarco-mminilmv2-en-lugar-de-bge-reranker-v2-m3)) |
+| `RERANK_CANDIDATES` | `20` | Candidatos de la búsqueda híbrida que se reordenan. Más = mejor recall, más lento. |
+| `RERANK_MIN_SCORE` | `0.02` | Puntuación mínima (0–1). Lo irrelevante puntúa ≈ 0,003 y lo relevante ≥ 0,1. Si ningún fragmento la alcanza, se responde "no encontré información" sin llamar al LLM. |
+
+`POST /api/search` muestra `rerankScore` para cada resultado: úsalo para calibrar.
+
+**Desactivarlo** (equipos con poca RAM), en `.env`:
+
+```
+RERANKER_URL=
+RERANKER_REPLICAS=0
+```
+
+y `docker compose up -d`. Sin re-ranker se usa el orden de la búsqueda híbrida, y si el servicio falla temporalmente, la API sigue funcionando con ese orden.
+
+## Caché de respuestas
+
+Las primeras preguntas de cada conversación se guardan con su respuesta. Si alguien vuelve a preguntar lo mismo sobre los mismos documentos, se responde al instante y **sin gastar cupo** del LLM; la interfaz lo indica con "Respuesta guardada".
+
+| Parámetro | Por defecto | Efecto |
+|---|---|---|
+| `CACHE_ENABLED` | `true` | Activa o desactiva la caché |
+| `CACHE_TTL_HOURS` | `168` | Antigüedad máxima de una respuesta reutilizable (7 días) |
+| `CACHE_MAX_DISTANCE` | `0.015` | Cuánto puede diferir una pregunta para considerarla igual. **No lo subas mucho:** con `multilingual-e5-base`, "factura 2026-0457" y "factura 2026-0458" están a 0,026. Por eso, además, los números y códigos deben coincidir. |
+
+La caché se vacía sola en estos casos:
+- al terminar de procesar, reprocesar o borrar un documento de la colección;
+- al borrar la colección;
+- cuando alguien marca la respuesta con 👎.
+
+Para vaciarla a mano (por ejemplo, tras cambiar de modelo LLM o el prompt), usa **Calidad → Vaciar caché**.
+
+## Valoraciones y página Calidad
+
+Los usuarios valoran cada respuesta con 👍/👎 (el 👎 admite motivos y un comentario). En **Calidad**, los administradores ven:
+- satisfacción, respuestas pendientes de revisar y porcentaje respondido desde caché (30 días);
+- cada valoración con su pregunta, respuesta, fuentes y comentario, y la opción "Marcar revisada".
+
+Un 👎 suele significar que falta un documento, que está desactualizado o que la información está dispersa. Revisa las fuentes citadas y, si hace falta, sube o actualiza el documento: la caché de esa colección se invalida sola.
+
 ## Modelos gratuitos de OpenRouter
 
 - Si las respuestas fallan con *"Los modelos gratuitos están saturados…"*, espera unos minutos o añade más modelos a `LLM_MODELS`.
@@ -146,7 +192,9 @@ Reparte el cupo de OpenRouter (1.000 al día con créditos) entre tus clientes c
 | Chat: "La clave de OpenRouter no es válida" | `OPENROUTER_API_KEY` vacía o incorrecta | Corrígela en `.env` y ejecuta `docker compose up -d api` |
 | Chat: "No endpoints found matching your data policy" (en registros) | La privacidad de OpenRouter bloquea los proveedores gratuitos | [instalacion.md §3](instalacion.md#3-clave-y-privacidad-en-openrouter) |
 | Chat: "límite de N preguntas por día" | Límite de la organización | Ajusta el límite (ver arriba) |
-| Siempre "No encontré información" | `RETRIEVAL_MAX_DISTANCE` demasiado bajo o documentos sin procesar | Revisa con `/api/search` |
+| Siempre "No encontré información" | `RERANK_MIN_SCORE` demasiado alto, `RETRIEVAL_MAX_DISTANCE` demasiado bajo o documentos sin procesar | Revisa `rerankScore` y `distance` con `/api/search` |
+| `health` → `reranker: fetch failed` | El modelo se está descargando o no hay RAM suficiente | `docker compose logs reranker`; si sale `Killed`/`137`, falta memoria: desactívalo (ver "Re-ranking") |
+| Respuesta "guardada" desactualizada | Se cambió el documento fuera del sistema o el prompt/modelo | Márcala con 👎 o usa Calidad → Vaciar caché |
 | Las respuestas no llegan en streaming detrás de otro proxy | El proxy acumula la respuesta | Desactiva el *buffering* para `/api/chat` |
 | PDF escaneado con texto incorrecto | OCR con idioma equivocado | Ajusta `DOCLING_OCR_LANGS` y reprocesa |
 | `ports are not available … bind: Intento de acceso a un socket no permitido` (Windows) o `address already in use` | El puerto está ocupado (p. ej. un PostgreSQL instalado) o reservado por Windows/Hyper-V | Cambia `WEB_PORT`, `DB_PORT`, `EMBEDDINGS_PORT` o `DOCLING_PORT` en `.env`. En Windows, los rangos reservados se ven con `netsh interface ipv4 show excludedportrange protocol=tcp` |

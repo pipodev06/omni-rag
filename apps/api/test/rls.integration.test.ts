@@ -99,6 +99,41 @@ describe.skipIf(!enabled)("Row Level Security", async () => {
     ).rejects.toThrow(/row-level security/);
   });
 
+  it("la caché de respuestas está aislada por organización", async () => {
+    await withTenant(as("b", "admin"), (tx) => tx`
+      INSERT INTO answer_cache (tenant_id, scope_key, collection_ids, question, question_norm, embedding, answer, sources)
+      VALUES (${ids.tenant_b!}, 'k', ${[ids.col_b!]}::uuid[], 'q', 'q', ${vec}::vector, 'respuesta secreta de b', '[]')`);
+    const fromA = await withTenant(as("a", "admin"), (tx) => tx`SELECT answer FROM answer_cache`);
+    expect(fromA).toHaveLength(0);
+    await expect(
+      withTenant(as("a", "admin"), (tx) => tx`
+        INSERT INTO answer_cache (tenant_id, scope_key, collection_ids, question, question_norm, embedding, answer, sources)
+        VALUES (${ids.tenant_b!}, 'k', '{}', 'q', 'q', ${vec}::vector, 'x', '[]')`),
+    ).rejects.toThrow(/row-level security/);
+  });
+
+  it("las valoraciones: cada usuario solo sobre sus mensajes; el admin las lee", async () => {
+    const [conv] = await sqlOwner`
+      INSERT INTO conversations (tenant_id, user_id) VALUES (${ids.tenant_a!}, ${ids.admin_a!}) RETURNING id`;
+    const [msg] = await sqlOwner`
+      INSERT INTO messages (tenant_id, user_id, conversation_id, role, content)
+      VALUES (${ids.tenant_a!}, ${ids.admin_a!}, ${conv!.id}, 'assistant', 'respuesta') RETURNING id`;
+    // El lector no puede valorar un mensaje del admin.
+    await expect(
+      withTenant(as("a", "viewer"), (tx) => tx`
+        INSERT INTO message_feedback (tenant_id, user_id, message_id, rating, question, answer)
+        VALUES (${ids.tenant_a!}, ${ids.viewer_a!}, ${msg!.id}, -1, 'q', 'a')`),
+    ).rejects.toThrow(/row-level security/);
+    // Su dueño sí.
+    await withTenant(as("a", "admin"), (tx) => tx`
+      INSERT INTO message_feedback (tenant_id, user_id, message_id, rating, question, answer)
+      VALUES (${ids.tenant_a!}, ${ids.admin_a!}, ${msg!.id}, 1, 'q', 'a')`);
+    const viewerSees = await withTenant(as("a", "viewer"), (tx) => tx`SELECT id FROM message_feedback`);
+    expect(viewerSees).toHaveLength(0);
+    const otherTenant = await withTenant(as("b", "admin"), (tx) => tx`SELECT id FROM message_feedback`);
+    expect(otherTenant).toHaveLength(0);
+  });
+
   it("sin contexto de organización no se ve nada", async () => {
     const { sqlApp } = await import("../src/db/client.js");
     const rows = await sqlApp`SELECT id FROM chunks`;

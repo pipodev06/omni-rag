@@ -5,12 +5,12 @@
 | Recurso | Mínimo | Recomendado |
 |---|---|---|
 | Docker + Docker Compose v2 | Docker 24+ | la última versión |
-| RAM libre | 6 GB | 8 GB o más |
+| RAM libre para Docker | 8 GB (sin re-ranker) | 10–12 GB |
 | Disco | 8 GB | 20 GB + el tamaño de tus documentos |
 | CPU | 4 núcleos | 8 núcleos (la ingesta y el OCR van más rápido) |
 | Internet | Para descargar imágenes y el modelo la primera vez, y para OpenRouter | |
 
-Uso medido con el sistema en reposo: embeddings ≈ 3,2 GB, Docling ≈ 1,3 GB y el resto < 200 MB. Docling usa más memoria mientras convierte PDF grandes.
+Uso medido con el sistema en reposo: embeddings ≈ 3,2 GB, re-ranker ≈ 1,9 GB, Docling ≈ 1,3 GB y el resto < 200 MB. Docling usa más memoria mientras convierte PDF grandes. Con poca RAM puedes desactivar el re-ranker (ver [operacion.md](operacion.md#re-ranking)).
 
 ### Windows
 
@@ -18,7 +18,7 @@ Uso medido con el sistema en reposo: embeddings ≈ 3,2 GB, Docling ≈ 1,3 GB y
 - Docker (WSL 2) usa por defecto la mitad de la RAM. Con 16 GB o menos, crea `C:\Users\<usuario>\.wslconfig` con estas líneas y ejecuta `wsl --shutdown`:
   ```ini
   [wsl2]
-  memory=8GB
+  memory=10GB
   ```
 - En PowerShell: `Copy-Item .env.example .env` y `notepad .env`. Para generar secretos: `[Convert]::ToBase64String((1..48 | ForEach-Object { Get-Random -Max 256 }))`. Usa `curl.exe` en lugar de `curl`.
 - Si aparece `ports are not available ... Intento de acceso a un socket no permitido`, el puerto está ocupado o reservado por Windows: cambia `WEB_PORT`, `DB_PORT`, `EMBEDDINGS_PORT` o `DOCLING_PORT` en `.env`.

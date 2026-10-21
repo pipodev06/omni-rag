@@ -4,7 +4,9 @@ Sistema **RAG (Retrieval-Augmented Generation)** multi-cliente para hacer pregun
 
 - 📄 **Todo tipo de documentos:** PDF (también escaneados, con OCR), Word, PowerPoint, Excel, CSV, HTML, Markdown, texto e imágenes.
 - 🏢 **Multi-cliente con permisos:** cada organización está aislada a nivel de base de datos (Row Level Security de PostgreSQL), con roles *administrador / editor / lector* y colecciones con acceso por usuario.
-- 🔎 **Búsqueda híbrida:** semántica (pgvector) + palabras clave (texto completo de PostgreSQL), combinadas con *Reciprocal Rank Fusion*.
+- 🔎 **Búsqueda híbrida + re-ranking:** semántica (pgvector) + palabras clave (texto completo de PostgreSQL), combinadas con *Reciprocal Rank Fusion* y reordenadas por un modelo *cross-encoder* local.
+- ⚡ **Caché de respuestas:** las preguntas repetidas se responden al instante sin gastar cupo del LLM, respetando permisos.
+- 👍 **Valoraciones y página de Calidad:** los usuarios valoran respuestas y los administradores revisan las que fallan.
 - 🆓 **Coste cero en modelos:** embeddings **locales** (gratis, privados, sin límites) y LLMs **gratuitos de OpenRouter** con cambio automático de modelo si uno falla.
 - 🐳 **Todo en Docker:** un solo `docker compose up`.
 
@@ -17,7 +19,7 @@ Pregunta ─▶ embedding local ─▶ búsqueda híbrida (solo en lo que el usu
 
 ## Inicio rápido
 
-Requisitos: **Docker** con Docker Compose v2, unos **8 GB de RAM** libres y una clave gratuita de [OpenRouter](https://openrouter.ai/keys).
+Requisitos: **Docker** con Docker Compose v2, unos **10 GB de RAM** libres para Docker (8 GB si desactivas el re-ranker) y una clave gratuita de [OpenRouter](https://openrouter.ai/keys).
 
 ```bash
 git clone <este-repositorio> rag-project && cd rag-project
@@ -68,6 +70,8 @@ Guía completa paso a paso: **[docs/instalacion.md](docs/instalacion.md)**.
 | Cola de trabajos | [pg-boss](https://github.com/timgit/pg-boss) (sobre PostgreSQL, sin Redis) |
 | Lectura de documentos | [Docling](https://github.com/docling-project/docling-serve) (OCR, tablas, Office…) |
 | Embeddings | [Text Embeddings Inference](https://github.com/huggingface/text-embeddings-inference) + `intfloat/multilingual-e5-base` |
+| Re-ranking | TEI + `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1` (multilingüe, ~0,6 s por pregunta en CPU) |
+| Caché | Tabla `answer_cache` en PostgreSQL (sin Redis) |
 | LLM | Modelos `:free` de [OpenRouter](https://openrouter.ai) con respaldo automático |
 | Interfaz | React 19 + Vite, [shadcn/ui](https://ui.shadcn.com) (Radix + Tailwind CSS 4), iconos [Lucide](https://lucide.dev), TanStack Query, React Router; servida por nginx |
 

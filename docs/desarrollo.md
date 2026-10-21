@@ -54,6 +54,7 @@ Prueba de punta a punta contra un sistema en marcha: ver [instalacion.md §6](in
 | `apps/api/test/prompt.test.ts` | Formato del contexto, mensajes, consultas de seguimiento, citas |
 | `apps/api/test/stream.test.ts` | Lectura de SSE, división por páginas, formatos admitidos |
 | `apps/api/test/misc.test.ts` | Limitador de intentos de login |
+| `apps/api/test/cache.test.ts` | Normalización de preguntas, números/códigos, clave de alcance y re-ranking |
 | `apps/api/test/rls.integration.test.ts` | Aislamiento en la base de datos (se omite sin `RUN_DB_TESTS=1`) |
 
 La integración continua (`.github/workflows/ci.yml`) ejecuta todo lo anterior, incluidas las pruebas de RLS, en cada *push* y *pull request*.
@@ -77,6 +78,9 @@ La integración continua (`.github/workflows/ci.yml`) ejecuta todo lo anterior, 
 | `rag/search.ts` | Búsqueda híbrida + RRF en SQL |
 | `rag/prompt.ts` | Prompt del sistema, contexto y citas (puro, probado) |
 | `rag/llm.ts` | Cliente de OpenRouter con streaming y respaldo entre modelos |
+| `rag/rerank.ts` | Cliente del re-ranker (cross-encoder) y aplicación de puntuaciones |
+| `rag/retrieve.ts` | Colecciones consultables + búsqueda híbrida + re-ranking |
+| `rag/cache.ts` | Caché de respuestas: búsqueda, guardado e invalidación |
 | `routes/*` | Endpoints HTTP |
 | `scripts/*` | Primer administrador, `seed` y `reindex` |
 
@@ -115,7 +119,6 @@ Tras añadirlo, revisa que los imports apunten a `@/lib/utils`.
 
 ## Ideas para siguientes versiones
 
-- Re-ranking con un modelo *cross-encoder* local (p. ej. `BAAI/bge-reranker-v2-m3` en otro contenedor TEI).
 - Evaluación automática con un conjunto de preguntas y respuestas esperadas.
 - Reescritura de preguntas ambiguas con el LLM (gasta cupo).
 - Ingesta desde URLs, Google Drive o correo.
