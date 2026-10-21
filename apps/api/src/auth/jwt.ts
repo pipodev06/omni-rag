@@ -11,6 +11,8 @@ export interface SessionClaims {
   role: Role;
   /** Superadministrador que usa esta sesión como soporte (cuenta de soporte). */
   actorId?: string;
+  /** Cuándo se emitió (segundos Unix); solo al verificar. */
+  iat?: number;
 }
 
 export async function signSession(claims: SessionClaims): Promise<string> {
@@ -28,7 +30,7 @@ export async function verifySession(token: string): Promise<SessionClaims | null
     const { payload } = await jwtVerify(token, key, { issuer: ISSUER, algorithms: ["HS256"] });
     if (typeof payload.sub !== "string" || typeof payload.tid !== "string") return null;
     const actorId = typeof payload.act === "string" ? payload.act : undefined;
-    return { userId: payload.sub, tenantId: payload.tid, role: payload.role as Role, actorId };
+    return { userId: payload.sub, tenantId: payload.tid, role: payload.role as Role, actorId, iat: payload.iat };
   } catch {
     return null;
   }

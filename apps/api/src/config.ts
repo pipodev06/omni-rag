@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { weakSecrets } from "./lib/secrets.js";
 
 /**
  * Configuración de la aplicación, leída de variables de entorno.
@@ -21,6 +22,8 @@ const schema = z.object({
   JWT_EXPIRES_IN: z.string().default("12h"),
   // "auto": cookie segura cuando la web se sirve por HTTPS (p. ej. detrás de Caddy).
   COOKIE_SECURE: z.enum(["auto", "true", "false"]).default("auto"),
+  // Exigir verificación en dos pasos al superadministrador. auto = solo con un dominio público.
+  REQUIRE_SUPERADMIN_2FA: z.enum(["auto", "true", "false"]).default("auto"),
 
   // Dominio público (p. ej. rag.miempresa.com). Vacío = uso local.
   DOMAIN: z.string().trim().default(""),
@@ -111,6 +114,10 @@ function load(): Config {
     throw new Error(`Configuración inválida:\n${issues}`);
   }
   const data = parsed.data;
+  const weak = weakSecrets({ domain: data.DOMAIN, jwtSecret: data.JWT_SECRET, appDbPassword: data.APP_DB_PASSWORD, databaseUrl: data.DATABASE_URL });
+  if (weak.length > 0) {
+    throw new Error(`Secretos inseguros para un despliegue con dominio (${data.DOMAIN}):\n${weak.map((w) => `  - ${w}`).join("\n")}\nGenera claves con: openssl rand -base64 48`);
+  }
   if (!data.APP_PUBLIC_URL) {
     data.APP_PUBLIC_URL = data.DOMAIN && data.DOMAIN !== "localhost" ? `https://${data.DOMAIN}` : "http://localhost:8000";
   }

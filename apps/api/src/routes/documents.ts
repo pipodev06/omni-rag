@@ -10,11 +10,12 @@ import { completeChat } from "../rag/llm.js";
 import { buildSummaryMessages, parseSummary } from "../rag/summary.js";
 import { checkDailyLimit } from "./chat.js";
 import { requireAuth, requireRole, tenantCtx, type AppEnv } from "../auth/middleware.js";
-import { formatFor, SUPPORTED_EXTENSIONS } from "../ingest/formats.js";
+import { contentMatchesFormat, formatFor, SUPPORTED_EXTENSIONS } from "../ingest/formats.js";
 import { enqueueIngest } from "../queue.js";
 import { invalidateCollections } from "../rag/cache.js";
 import { readStoredFile, removeStored, safeFilename, saveFile, titleFromFilename } from "../storage/local.js";
 import { badRequest, HttpError, notFound } from "../lib/errors.js";
+import { userRateLimit } from "../lib/limits.js";
 import { documentSlots } from "../lib/plans.js";
 import { UUID_RE } from "../lib/validate.js";
 
@@ -147,6 +148,7 @@ documentRoutes.get("/:id/file", async (c) => {
 documentRoutes.post(
   "/",
   requireRole("admin", "editor"),
+  userRateLimit(30, 60_000, "subidas"),
   bodyLimit({
     maxSize: config.MAX_UPLOAD_MB * 1024 * 1024 * 10, // varios archivos por petición
     onError: () => {
@@ -188,6 +190,10 @@ documentRoutes.post(
       }
 
       const data = new Uint8Array(await file.arrayBuffer());
+      if (!contentMatchesFormat(format.ext, data)) {
+        results.push({ filename, status: "rejected", reason: `El contenido no corresponde a un archivo ${format.ext}` });
+        continue;
+      }
       const sha256 = createHash("sha256").update(data).digest("hex");
       const id = randomUUID();
       const storageKey = `${ctx.tenantId}/${id}/${filename}`;
@@ -230,7 +236,7 @@ documentRoutes.post(
  * Genera (o regenera) el resumen y las preguntas sugeridas con el LLM.
  * Consume una llamada del límite diario de la organización.
  */
-documentRoutes.post("/:id/summary", async (c) => {
+documentRoutes.post("/:id/summary", userRateLimit(10, 60_000, "resúmenes"), async (c) => {
   const id = idParam(c.req.param("id"));
   const ctx = tenantCtx(c);
   const { doc, chunks } = await withTenant(ctx, async (tx) => {

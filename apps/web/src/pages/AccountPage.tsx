@@ -1,8 +1,10 @@
 import { useState, type FormEvent } from "react";
-import { Loader2, Monitor, Moon, Sun, type LucideIcon } from "lucide-react";
+import { Loader2, LogOut, Monitor, Moon, ShieldAlert, Sun, type LucideIcon } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import { api, errorMessage, initials, ROLE_LABELS } from "@/api";
-import { useCurrentUser } from "@/hooks/useSession";
+import { clearSession, useCurrentUser } from "@/hooks/useSession";
 import { useTheme, type Theme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import { Page, PageHeader } from "@/components/common";
@@ -20,7 +22,10 @@ const THEMES: { value: Theme; label: string; icon: LucideIcon }[] = [
 ];
 
 export function AccountPage() {
-  const { user, tenant, support } = useCurrentUser();
+  const { user, tenant, support, mfaSetupRequired } = useCurrentUser();
+  const qc = useQueryClient();
+  const navigate = useNavigate();
+  const [closing, setClosing] = useState(false);
   const { theme, setTheme } = useTheme();
   const [currentPassword, setCurrent] = useState("");
   const [newPassword, setNew] = useState("");
@@ -44,10 +49,28 @@ export function AccountPage() {
     }
   };
 
+  const logoutEverywhere = async () => {
+    setClosing(true);
+    try {
+      await api.post("/auth/logout-all");
+      clearSession(qc);
+      navigate("/login", { replace: true });
+    } catch (err) {
+      toast.error(errorMessage(err));
+      setClosing(false);
+    }
+  };
+
   return (
     <Page className="max-w-3xl">
       <PageHeader title="Mi cuenta" />
       <div className="space-y-4">
+        {mfaSetupRequired && (
+          <div role="alert" className="flex gap-3 rounded-xl border border-warning/30 bg-warning/10 p-4 text-sm text-warning">
+            <ShieldAlert className="mt-0.5 size-5 shrink-0" />
+            <p>La cuenta de superadministrador debe activar la verificación en dos pasos para seguir usando la plataforma. Actívala aquí abajo.</p>
+          </div>
+        )}
         <Card>
           <CardContent className="flex items-center gap-4">
             <Avatar className="size-14">
@@ -89,6 +112,20 @@ export function AccountPage() {
         </Card>
 
         {!support && <TwoFactorCard enabled={user.totpEnabled === true} recommended={user.isSuperadmin} />}
+
+        {!support && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Sesiones</CardTitle>
+              <CardDescription>Cierra la sesión en todos tus dispositivos, también en este. Úsalo si perdiste un equipo o sospechas de un acceso ajeno.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button variant="outline" onClick={() => void logoutEverywhere()} disabled={closing}>
+                {closing ? <Loader2 className="animate-spin" /> : <LogOut />} Cerrar todas las sesiones
+              </Button>
+            </CardContent>
+          </Card>
+        )}
 
         {!support && (
         <Card>

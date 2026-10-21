@@ -1,5 +1,6 @@
 import { sqlOwner } from "../db/client.js";
 import { hashPassword, passwordProblem } from "../auth/password.js";
+import { weakSeedPassword } from "../lib/secrets.js";
 import { USERNAME_RE } from "../lib/validate.js";
 
 /**
@@ -22,7 +23,7 @@ export async function ensureInitialAdmin(): Promise<void> {
   if (!USERNAME_RE.test(username)) {
     throw new Error("SEED_ADMIN_USERNAME: 3-40 caracteres, minúsculas, números, punto, guion o guion bajo");
   }
-  const problem = passwordProblem(password);
+  const problem = passwordProblem(password) ?? weakSeedPassword(process.env.DOMAIN?.trim() ?? "", password);
   if (problem) throw new Error(`SEED_ADMIN_PASSWORD: ${problem}`);
 
   const tenantName = process.env.SEED_TENANT_NAME ?? "Mi organización";

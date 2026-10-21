@@ -3,6 +3,8 @@ export class HttpError extends Error {
   constructor(
     public readonly status: 400 | 401 | 403 | 404 | 409 | 413 | 415 | 422 | 429 | 500 | 502 | 503,
     message: string,
+    /** Código estable para que la interfaz reaccione sin depender del texto. */
+    public readonly code?: string,
   ) {
     super(message);
   }

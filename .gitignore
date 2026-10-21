@@ -6,3 +6,4 @@ coverage/
 data/
 .DS_Store
 backups/
+backups-offsite/

@@ -32,9 +32,11 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Auditoría de dependencias (falla con vulnerabilidades altas o críticas)
+        run: pnpm audit --audit-level=high
       - name: Tipos
         run: pnpm typecheck
-      - name: Pruebas (unitarias + Row Level Security)
+      - name: Pruebas (unitarias + aislamiento entre organizaciones con Row Level Security)
         run: pnpm test
       - name: Compilar
         run: pnpm build

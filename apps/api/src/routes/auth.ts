@@ -3,13 +3,14 @@ import { deleteCookie } from "hono/cookie";
 import { z } from "zod";
 import { sqlOwner, type Role } from "../db/client.js";
 import { signMfaToken, verifyMfaToken } from "../auth/jwt.js";
-import { issueSession } from "../auth/session.js";
+import { issueSession, revokeSessions } from "../auth/session.js";
 import { requireAuth, SESSION_COOKIE, type AppEnv } from "../auth/middleware.js";
 import { hashPassword, passwordProblem, verifyPassword } from "../auth/password.js";
 import { audit, auditLog } from "../lib/audit.js";
 import { badRequest, HttpError, notFound, unauthorized } from "../lib/errors.js";
 import { emailEnabled } from "../lib/mailer.js";
 import { RateLimiter } from "../lib/rateLimit.js";
+import { superadmin2faRequired } from "../lib/limits.js";
 import { clientIp } from "../lib/request.js";
 import {
   decryptSecret,
@@ -178,6 +179,7 @@ authRoutes.get("/me", requireAuth, async (c) => {
   const [mfa] = await sqlOwner<{ on: boolean }[]>`SELECT (totp_enabled_at IS NOT NULL) AS "on" FROM users WHERE id = ${u.id}`;
   return c.json({
     user: { id: u.id, username: u.username, email: u.email, name: u.name, role: u.role, isSuperadmin: u.isSuperadmin, totpEnabled: mfa?.on ?? false },
+    mfaSetupRequired: u.isSuperadmin && !u.support && !(mfa?.on ?? false) && superadmin2faRequired(),
     tenant,
     support: u.support ? { name: u.support.name, username: u.support.username } : null,
   });
@@ -207,7 +209,20 @@ authRoutes.post("/change-password", requireAuth, async (c) => {
     throw badRequest("La contraseña actual no es correcta");
   }
   await sqlOwner`UPDATE users SET password_hash = ${await hashPassword(body.newPassword)} WHERE id = ${u.id}`;
+  // Las sesiones abiertas en otros dispositivos dejan de valer; esta se renueva para no sacar al usuario.
+  await revokeSessions(u.id);
+  await issueSession(c, { userId: u.id, tenantId: u.tenantId, role: u.role });
   await audit(c, "auth.password_changed", { targetType: "user", targetId: u.id });
+  return c.json({ ok: true });
+});
+
+/** Cierra la sesión en todos los dispositivos (incluido este). */
+authRoutes.post("/logout-all", requireAuth, async (c) => {
+  const u = c.get("user");
+  if (u.support) throw badRequest("En modo soporte no se pueden cerrar las sesiones");
+  await revokeSessions(u.id);
+  deleteCookie(c, SESSION_COOKIE, { path: "/" });
+  await audit(c, "auth.sessions_revoked", { targetType: "user", targetId: u.id });
   return c.json({ ok: true });
 });
 
@@ -338,7 +353,7 @@ authRoutes.post("/link", async (c) => {
     const [used] = await tx`UPDATE user_tokens SET used_at = now() WHERE id = ${valid.id} AND used_at IS NULL RETURNING id`;
     if (!used) throw notFound("El enlace ya se ha utilizado.");
     const [u] = await tx<SessionUser[]>`
-      UPDATE users SET password_hash = ${hash},
+      UPDATE users SET password_hash = ${hash}, sessions_valid_after = date_trunc('second', now()),
              name = CASE WHEN ${valid.kind} = 'invite' THEN coalesce(${body.name ?? null}, name) ELSE name END
        WHERE id = ${valid.userId}
       RETURNING id, tenant_id, name, username, email, role, is_superadmin`;

@@ -7,6 +7,7 @@ import { issueSession } from "../auth/session.js";
 import { audit, auditLog } from "../lib/audit.js";
 import { clientIp } from "../lib/request.js";
 import { getTenantPlan } from "../lib/plans.js";
+import { removeStored } from "../storage/local.js";
 import { createUserLink, emailLink } from "../lib/tokens.js";
 import { badRequest, HttpError, notFound } from "../lib/errors.js";
 import { OptionalEmailSchema, parse, UsernameSchema, UUID_RE } from "../lib/validate.js";
@@ -265,6 +266,32 @@ platformRoutes.patch("/tenants/:id", async (c) => {
   if (body.dailyQuestionLimit !== undefined && body.dailyQuestionLimit !== (before?.limit ?? null)) {
     await auditTenant(id, "tenant.limit_changed", { límite: body.dailyQuestionLimit === null ? "el de su plan" : body.dailyQuestionLimit === 0 ? "sin límite" : `${body.dailyQuestionLimit} / día` });
   }
+  return c.json({ ok: true });
+});
+
+const DeleteTenant = z.object({ confirmSlug: z.string().min(1).max(80) });
+
+/**
+ * Borra una organización y todos sus datos (usuarios, documentos, conversaciones,
+ * archivos, auditoría). Solo si ya está desactivada y se escribe su identificador.
+ * No se puede deshacer; las copias de seguridad la conservan hasta que caducan.
+ */
+platformRoutes.delete("/tenants/:id", async (c) => {
+  const id = c.req.param("id");
+  if (!UUID_RE.test(id)) throw notFound();
+  const body = parse(DeleteTenant, await c.req.json().catch(() => ({})));
+  if (id === c.get("user").tenantId) throw badRequest("No puedes borrar tu propia organización");
+  const [t] = await sqlOwner<{ name: string; slug: string; is_active: boolean; users: number; documents: number }[]>`
+    SELECT t.name, t.slug, t.is_active,
+           (SELECT count(*)::int FROM users u WHERE u.tenant_id = t.id AND u.support_for IS NULL) AS users,
+           (SELECT count(*)::int FROM documents d WHERE d.tenant_id = t.id) AS documents
+      FROM tenants t WHERE t.id = ${id}`;
+  if (!t) throw notFound("Organización no encontrada");
+  if (t.is_active) throw badRequest("Desactiva la organización antes de borrarla");
+  if (body.confirmSlug !== t.slug) throw badRequest("El identificador escrito no coincide");
+  await sqlOwner`DELETE FROM tenants WHERE id = ${id}`;
+  await removeStored(id).catch((err) => console.error(`[plataforma] no se pudieron borrar los archivos de ${id}:`, err));
+  await audit(c, "tenant.deleted", { targetType: "tenant", targetId: id, details: { name: t.name, slug: t.slug, users: t.users, documents: t.documents } });
   return c.json({ ok: true });
 });
 

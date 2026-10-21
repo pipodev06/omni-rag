@@ -35,3 +35,32 @@ export function formatFor(filename: string) {
   const f = FORMATS[ext];
   return f ? { ext, ...f } : null;
 }
+
+const startsWith = (d: Uint8Array, sig: number[], at = 0) => sig.every((b, i) => d[at + i] === b);
+const ascii = (d: Uint8Array, from: number, to: number) => String.fromCharCode(...d.subarray(from, to));
+const ZIP = (d: Uint8Array) => startsWith(d, [0x50, 0x4b, 0x03, 0x04]);
+
+/** Comprobación de la «firma» de cada formato binario. */
+const SIGNATURES: Record<string, (d: Uint8Array) => boolean> = {
+  ".pdf": (d) => ascii(d, 0, 1024).includes("%PDF-"),
+  ".docx": ZIP,
+  ".pptx": ZIP,
+  ".xlsx": ZIP,
+  ".png": (d) => startsWith(d, [0x89, 0x50, 0x4e, 0x47]),
+  ".jpg": (d) => startsWith(d, [0xff, 0xd8, 0xff]),
+  ".jpeg": (d) => startsWith(d, [0xff, 0xd8, 0xff]),
+  ".tif": (d) => startsWith(d, [0x49, 0x49, 0x2a, 0x00]) || startsWith(d, [0x4d, 0x4d, 0x00, 0x2a]),
+  ".tiff": (d) => startsWith(d, [0x49, 0x49, 0x2a, 0x00]) || startsWith(d, [0x4d, 0x4d, 0x00, 0x2a]),
+  ".bmp": (d) => startsWith(d, [0x42, 0x4d]),
+  ".webp": (d) => ascii(d, 0, 4) === "RIFF" && ascii(d, 8, 12) === "WEBP",
+};
+
+/**
+ * ¿El contenido corresponde a la extensión? Evita que un ejecutable o un archivo raro
+ * llegue a Docling renombrado como «.pdf». Los formatos de texto no pueden llevar bytes nulos.
+ */
+export function contentMatchesFormat(ext: string, data: Uint8Array): boolean {
+  const check = SIGNATURES[ext];
+  if (check) return check(data);
+  return !data.subarray(0, 8000).includes(0);
+}

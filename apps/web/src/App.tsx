@@ -32,6 +32,8 @@ function Protected({ children, allow = true }: { children: ReactNode; allow?: bo
   if (isLoading) return <FullScreenLoader />;
   if (!data) return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   if (!allow) return <Navigate to="/chat" replace />;
+  // Con 2FA obligatorio, el superadministrador solo puede ir a Mi cuenta hasta activarlo.
+  if (data.mfaSetupRequired && location.pathname !== "/cuenta") return <Navigate to="/cuenta" replace />;
   return (
     <ErrorBoundary>
       <Suspense fallback={<FullScreenLoader />}>{children}</Suspense>
@@ -45,7 +47,7 @@ function LoginRoute() {
   const from = (useLocation().state as { from?: string } | null)?.from;
   if (isLoading) return <FullScreenLoader />;
   // El dueño de la plataforma aterriza en el selector de organizaciones; el resto, en el chat.
-  if (data) return <Navigate to={from && from !== "/login" ? from : data.user.isSuperadmin ? "/organizaciones" : "/chat"} replace />;
+  if (data) return <Navigate to={data.mfaSetupRequired ? "/cuenta" : from && from !== "/login" ? from : data.user.isSuperadmin ? "/organizaciones" : "/chat"} replace />;
   return <LoginPage />;
 }
 
