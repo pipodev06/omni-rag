@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Bot, Files, Layers, MessagesSquare, Users, type LucideIcon } from "lucide-react";
+import { Bot, Files, Layers, MessagesSquare, Users, Zap, type LucideIcon } from "lucide-react";
 import { api } from "@/api";
 import { cn } from "@/lib/utils";
 import { Page, PageHeader } from "@/components/common";
@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface Usage {
-  daily: { day: string; questions: number; promptTokens: number; completionTokens: number }[];
+  daily: { day: string; questions: number; cacheHits: number; promptTokens: number; completionTokens: number }[];
   byModel: { model: string; questions: number }[];
   totals: { documents: number; chunks: number; users: number };
 }
@@ -38,7 +38,7 @@ function last30(daily: Usage["daily"]) {
   for (let i = 29; i >= 0; i--) {
     const d = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - i));
     const key = d.toISOString().slice(0, 10);
-    out.push(byDay.get(key) ?? { day: key, questions: 0, promptTokens: 0, completionTokens: 0 });
+    out.push(byDay.get(key) ?? { day: key, questions: 0, cacheHits: 0, promptTokens: 0, completionTokens: 0 });
   }
   return out;
 }
@@ -90,6 +90,9 @@ function DailyChart({ days }: { days: Usage["daily"] }) {
           <p className="mt-1 text-muted-foreground">
             <span className="font-semibold text-foreground tabular-nums">{nf.format(h.questions)}</span> preguntas
           </p>
+          {h.cacheHits > 0 && (
+            <p className="text-muted-foreground tabular-nums">+ {nf.format(h.cacheHits)} desde caché (sin LLM)</p>
+          )}
           {h.questions > 0 && (
             <p className="text-muted-foreground tabular-nums">
               {nf.format(h.promptTokens)} tokens entrada · {nf.format(h.completionTokens)} salida
@@ -125,8 +128,9 @@ export function UsagePage() {
     <Page>
       <PageHeader title="Consumo" description="Actividad de tu organización en los últimos 30 días (días en UTC)." />
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <StatTile icon={MessagesSquare} label="Preguntas (30 días)" value={totalQuestions} />
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <StatTile icon={MessagesSquare} label="Preguntas al LLM (30 días)" value={totalQuestions} />
+        <StatTile icon={Zap} label="Desde caché (30 días)" value={data.daily.reduce((n, d) => n + d.cacheHits, 0)} />
         <StatTile icon={Files} label="Documentos" value={data.totals.documents} />
         <StatTile icon={Layers} label="Fragmentos indexados" value={data.totals.chunks} />
         <StatTile icon={Users} label="Usuarios" value={data.totals.users} />
@@ -156,15 +160,17 @@ export function UsagePage() {
                     <TableRow>
                       <TableHead>Día</TableHead>
                       <TableHead className="text-right">Preguntas</TableHead>
+                      <TableHead className="text-right">Desde caché</TableHead>
                       <TableHead className="text-right">Tokens entrada</TableHead>
                       <TableHead className="text-right">Tokens salida</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {[...days].reverse().filter((d) => d.questions > 0).map((d) => (
+                    {[...days].reverse().filter((d) => d.questions > 0 || d.cacheHits > 0).map((d) => (
                       <TableRow key={d.day}>
                         <TableCell>{dayLabel(d.day, { weekday: "short", day: "numeric", month: "short" })}</TableCell>
                         <TableCell className="text-right tabular-nums">{nf.format(d.questions)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{nf.format(d.cacheHits)}</TableCell>
                         <TableCell className="text-right tabular-nums">{nf.format(d.promptTokens)}</TableCell>
                         <TableCell className="text-right tabular-nums">{nf.format(d.completionTokens)}</TableCell>
                       </TableRow>

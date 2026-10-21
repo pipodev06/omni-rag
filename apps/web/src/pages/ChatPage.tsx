@@ -12,6 +12,7 @@ import {
   Square,
   Trash2,
   TriangleAlert,
+  Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -29,6 +30,8 @@ import { cn } from "@/lib/utils";
 import { SidebarSlot } from "@/components/AppLayout";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { AnswerMarkdown, CopyButton, SourcesList } from "@/components/chat/Answer";
+import { FeedbackButtons } from "@/components/chat/Feedback";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -231,7 +234,7 @@ export function ChatPage() {
             updateLast((m) => ({ ...m, sources: meta.sources }));
           },
           onToken: (t) => updateLast((m) => ({ ...m, content: m.content + t })),
-          onDone: (d) => updateLast((m) => ({ ...m, id: d.messageId, model: d.model, sources: d.sources })),
+          onDone: (d) => updateLast((m) => ({ ...m, id: d.messageId, model: d.model, sources: d.sources, fromCache: d.fromCache })),
           onError: (msg) => updateLast((m) => ({ ...m, error: msg })),
         },
         controller.signal,
@@ -368,8 +371,27 @@ export function ChatPage() {
                       )}
                       <SourcesList sources={m.sources} active={activeSource[i] ?? null} onToggle={(n) => cite(i, n)} />
                       {m.content && !(busy && i === messages.length - 1) && (
-                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <div className="flex flex-wrap items-center gap-0.5 text-xs text-muted-foreground">
                           <CopyButton text={m.content} />
+                          {m.id && m.sources.length > 0 && (
+                            <FeedbackButtons
+                              messageId={m.id}
+                              value={m.feedback}
+                              onChange={(v) => setMessages((prev) => prev.map((x) => (x.id === m.id ? { ...x, feedback: v } : x)))}
+                            />
+                          )}
+                          {m.fromCache && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px]">
+                                  <Zap className="size-3" /> Respuesta guardada
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent className="max-w-xs">
+                                Esta pregunta ya se había respondido con los mismos documentos, así que se reutilizó la respuesta sin consumir cupo. Si no es correcta, márcala con 👎.
+                              </TooltipContent>
+                            </Tooltip>
+                          )}
                           {m.model && <span className="ml-1">{m.model}</span>}
                         </div>
                       )}

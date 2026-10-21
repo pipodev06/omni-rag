@@ -5,9 +5,10 @@ import { config } from "../config.js";
 import { sqlOwner, withTenant, type TenantContext } from "../db/client.js";
 import { requireAuth, tenantCtx, type AppEnv } from "../auth/middleware.js";
 import { embedQuery } from "../ingest/embeddings.js";
+import { findCachedAnswer, markCacheHit, storeCachedAnswer } from "../rag/cache.js";
 import { streamChat } from "../rag/llm.js";
 import { buildMessages, citedSources, NO_CONTEXT_ANSWER, retrievalQuery, type ChatMessage } from "../rag/prompt.js";
-import { hybridSearch, type SearchHit } from "../rag/search.js";
+import { resolveScope, retrieve, type RankedHit } from "../rag/retrieve.js";
 import { HttpError, notFound } from "../lib/errors.js";
 import { parse, UUID_RE } from "../lib/validate.js";
 
@@ -26,7 +27,7 @@ export interface Source {
   cited: boolean;
 }
 
-const toSources = (hits: SearchHit[]): Source[] =>
+const toSources = (hits: RankedHit[]): Source[] =>
   hits.map((h, i) => ({
     n: i + 1,
     documentId: h.documentId,
@@ -38,7 +39,7 @@ const toSources = (hits: SearchHit[]): Source[] =>
     cited: false,
   }));
 
-/** Comprueba el límite diario de preguntas de la organización. */
+/** Comprueba el límite diario de preguntas al LLM de la organización. */
 async function checkDailyLimit(ctx: TenantContext): Promise<void> {
   const [tenant] = await sqlOwner<{ daily_question_limit: number | null }[]>`
     SELECT daily_question_limit FROM tenants WHERE id = ${ctx.tenantId}`;
@@ -60,15 +61,14 @@ const SearchBody = z.object({
 });
 
 /**
- * Búsqueda sin LLM: devuelve los trozos más relevantes.
- * No consume cupo de OpenRouter; útil para depurar la calidad de la recuperación.
+ * Búsqueda sin LLM: devuelve los fragmentos más relevantes (con re-ranking si
+ * está activo). No consume cupo de OpenRouter; útil para calibrar la recuperación.
  */
 chatRoutes.post("/search", async (c) => {
   const body = parse(SearchBody, await c.req.json().catch(() => ({})));
-  const vector = await embedQuery(body.query, c.req.raw.signal);
-  const results = await withTenant(tenantCtx(c), (tx) =>
-    hybridSearch(tx, { queryText: body.query, queryVector: vector, collectionIds: body.collectionIds, topK: body.topK }),
-  );
+  const ctx = tenantCtx(c);
+  const [vector, scope] = await Promise.all([embedQuery(body.query, c.req.raw.signal), resolveScope(ctx, body.collectionIds)]);
+  const results = await retrieve(ctx, { queryText: body.query, queryVector: vector, scope, topK: body.topK, signal: c.req.raw.signal });
   return c.json({ results });
 });
 
@@ -82,7 +82,7 @@ const ChatBody = z.object({
  * Pregunta al RAG. Responde con Server-Sent Events:
  *   event: meta    → { conversationId, sources }
  *   event: token   → fragmento de texto de la respuesta
- *   event: done    → { messageId, model, sources }  (sources con `cited` marcado)
+ *   event: done    → { messageId, model, sources, fromCache }  (sources con `cited` marcado)
  *   event: error   → { message }
  */
 chatRoutes.post("/chat", async (c) => {
@@ -91,66 +91,95 @@ chatRoutes.post("/chat", async (c) => {
   const user = c.get("user");
   const signal = c.req.raw.signal;
 
-  await checkDailyLimit(ctx);
+  // 1. Historial de la conversación (si continúa una existente).
+  const history = body.conversationId
+    ? await withTenant(ctx, async (tx) => {
+        const [conv] = await tx`SELECT id FROM conversations WHERE id = ${body.conversationId!}`;
+        if (!conv) throw notFound("Conversación no encontrada");
+        const rows = await tx<ChatMessage[]>`
+          SELECT role, content FROM (
+            SELECT role, content, created_at FROM messages
+             WHERE conversation_id = ${body.conversationId!}
+             ORDER BY created_at DESC LIMIT ${config.HISTORY_MESSAGES}
+          ) m ORDER BY created_at`;
+        return [...rows];
+      })
+    : [];
 
-  // 1. Conversación + historial reciente + guardar la pregunta.
-  const { conversationId, history } = await withTenant(ctx, async (tx) => {
+  // 2. Embedding de la búsqueda y colecciones consultables.
+  const query = retrievalQuery(body.question, history);
+  const [vector, scope] = await Promise.all([embedQuery(query, signal), resolveScope(ctx, body.collectionIds)]);
+  const cacheable = config.CACHE_ENABLED && history.length === 0;
+
+  // 3. ¿Ya se respondió esta misma pregunta con los mismos documentos?
+  const cached = cacheable
+    ? await withTenant(ctx, (tx) => findCachedAnswer(tx, { tenantId: ctx.tenantId, scope: scope.key, question: body.question, vector }))
+    : null;
+
+  // 4. Las respuestas nuevas cuentan para el límite diario (antes de guardar nada).
+  if (!cached) await checkDailyLimit(ctx);
+
+  // 5. Crear la conversación si es nueva y guardar la pregunta.
+  const conversationId = await withTenant(ctx, async (tx) => {
     let convId = body.conversationId;
-    if (convId) {
-      const [conv] = await tx`SELECT id FROM conversations WHERE id = ${convId}`;
-      if (!conv) throw notFound("Conversación no encontrada");
-    } else {
+    if (!convId) {
       const title = body.question.length > 80 ? `${body.question.slice(0, 77)}…` : body.question;
       const [conv] = await tx<{ id: string }[]>`
         INSERT INTO conversations (tenant_id, user_id, title) VALUES (${ctx.tenantId}, ${user.id}, ${title})
         RETURNING id`;
       convId = conv!.id;
     }
-    const previous = await tx<ChatMessage[]>`
-      SELECT role, content FROM (
-        SELECT role, content, created_at FROM messages
-         WHERE conversation_id = ${convId}
-         ORDER BY created_at DESC LIMIT ${config.HISTORY_MESSAGES}
-      ) m ORDER BY created_at`;
     await tx`
       INSERT INTO messages (tenant_id, user_id, conversation_id, role, content)
       VALUES (${ctx.tenantId}, ${user.id}, ${convId}, 'user', ${body.question})`;
     await tx`UPDATE conversations SET updated_at = now() WHERE id = ${convId}`;
-    return { conversationId: convId, history: [...previous] };
+    return convId;
   });
 
-  // 2. Recuperación (búsqueda híbrida respetando permisos).
-  const query = retrievalQuery(body.question, history);
-  const vector = await embedQuery(query, signal);
-  const hits = await withTenant(ctx, (tx) =>
-    hybridSearch(tx, { queryText: query, queryVector: vector, collectionIds: body.collectionIds }),
-  );
-  const sources = toSources(hits);
-
-  const saveAnswer = async (content: string, model: string | null, finalSources: Source[], tokens?: [number | null, number | null]) =>
+  const saveAnswer = async (
+    content: string,
+    opts: { model: string | null; sources: Source[]; tokens?: [number | null, number | null]; cacheId?: string; usage?: "question" | "cache_hit" },
+  ) =>
     withTenant(ctx, async (tx) => {
       const [msg] = await tx<{ id: string }[]>`
-        INSERT INTO messages (tenant_id, user_id, conversation_id, role, content, sources, model)
+        INSERT INTO messages (tenant_id, user_id, conversation_id, role, content, sources, model, from_cache, cache_id)
         VALUES (${ctx.tenantId}, ${user.id}, ${conversationId}, 'assistant', ${content},
-                ${tx.json(finalSources as never)}, ${model})
+                ${tx.json(opts.sources as never)}, ${opts.model}, ${opts.cacheId !== undefined}, ${opts.cacheId ?? null})
         RETURNING id`;
-      if (model) {
+      if (opts.usage) {
         await tx`
           INSERT INTO usage_events (tenant_id, user_id, kind, model, prompt_tokens, completion_tokens)
-          VALUES (${ctx.tenantId}, ${user.id}, 'question', ${model}, ${tokens?.[0] ?? null}, ${tokens?.[1] ?? null})`;
+          VALUES (${ctx.tenantId}, ${user.id}, ${opts.usage}, ${opts.model},
+                  ${opts.tokens?.[0] ?? null}, ${opts.tokens?.[1] ?? null})`;
       }
       return msg!.id;
     });
 
-  // 3. Respuesta en streaming.
+  // 6a. Respuesta desde la caché: no se llama al LLM ni consume cupo.
+  if (cached) {
+    const sources = cached.sources as Source[];
+    await withTenant(ctx, (tx) => markCacheHit(tx, cached.id));
+    const messageId = await saveAnswer(cached.answer, { model: cached.model, sources, cacheId: cached.id, usage: "cache_hit" });
+    return streamSSE(c, async (stream) => {
+      await stream.writeSSE({ event: "meta", data: JSON.stringify({ conversationId, sources }) });
+      await stream.writeSSE({ event: "token", data: JSON.stringify(cached.answer) });
+      await stream.writeSSE({ event: "done", data: JSON.stringify({ messageId, model: cached.model, sources, fromCache: true }) });
+    });
+  }
+
+  // 6b. Recuperación: búsqueda híbrida + re-ranking, respetando permisos.
+  const hits = await retrieve(ctx, { queryText: query, queryVector: vector, scope, signal });
+  const sources = toSources(hits);
+
+  // 7. Respuesta en streaming.
   return streamSSE(c, async (stream) => {
     await stream.writeSSE({ event: "meta", data: JSON.stringify({ conversationId, sources }) });
 
     if (hits.length === 0) {
       // Sin contexto no se llama al LLM: ahorra cupo y evita respuestas inventadas.
       await stream.writeSSE({ event: "token", data: JSON.stringify(NO_CONTEXT_ANSWER) });
-      const messageId = await saveAnswer(NO_CONTEXT_ANSWER, null, []);
-      await stream.writeSSE({ event: "done", data: JSON.stringify({ messageId, model: null, sources: [] }) });
+      const messageId = await saveAnswer(NO_CONTEXT_ANSWER, { model: null, sources: [] });
+      await stream.writeSSE({ event: "done", data: JSON.stringify({ messageId, model: null, sources: [], fromCache: false }) });
       return;
     }
 
@@ -163,10 +192,30 @@ chatRoutes.post("/chat", async (c) => {
         } else {
           const cited = citedSources(answer);
           const finalSources = sources.map((s) => ({ ...s, cited: cited.has(s.n) }));
-          const messageId = await saveAnswer(answer, ev.model, finalSources, [ev.promptTokens, ev.completionTokens]);
+          const messageId = await saveAnswer(answer, {
+            model: ev.model,
+            sources: finalSources,
+            tokens: [ev.promptTokens, ev.completionTokens],
+            usage: "question",
+          });
+          if (cacheable) {
+            await withTenant(ctx, (tx) =>
+              storeCachedAnswer(tx, {
+                tenantId: ctx.tenantId,
+                scope: scope.key,
+                collectionIds: scope.collectionIds,
+                question: body.question,
+                vector,
+                answer,
+                sources: finalSources,
+                model: ev.model,
+                messageId,
+              }),
+            ).catch((err) => console.warn("[cache] no se pudo guardar:", err));
+          }
           await stream.writeSSE({
             event: "done",
-            data: JSON.stringify({ messageId, model: ev.model, sources: finalSources }),
+            data: JSON.stringify({ messageId, model: ev.model, sources: finalSources, fromCache: false }),
           });
         }
       }
@@ -174,7 +223,7 @@ chatRoutes.post("/chat", async (c) => {
       if (signal.aborted) return;
       const message = err instanceof HttpError ? err.message : "Error generando la respuesta";
       console.error("[chat] error:", err);
-      if (answer) await saveAnswer(`${answer}\n\n_(respuesta interrumpida)_`, null, sources).catch(() => {});
+      if (answer) await saveAnswer(`${answer}\n\n_(respuesta interrumpida)_`, { model: null, sources }).catch(() => {});
       await stream.writeSSE({ event: "error", data: JSON.stringify({ message }) });
     }
   });
@@ -198,8 +247,10 @@ chatRoutes.get("/conversations/:id", async (c) => {
     const [conversation] = await tx`SELECT id, title, created_at AS "createdAt" FROM conversations WHERE id = ${id}`;
     if (!conversation) throw notFound("Conversación no encontrada");
     const messages = await tx`
-      SELECT id, role, content, sources, model, created_at AS "createdAt"
-        FROM messages WHERE conversation_id = ${id} ORDER BY created_at`;
+      SELECT m.id, m.role, m.content, m.sources, m.model, m.from_cache AS "fromCache",
+             m.created_at AS "createdAt", f.rating AS feedback
+        FROM messages m LEFT JOIN message_feedback f ON f.message_id = m.id
+       WHERE m.conversation_id = ${id} ORDER BY m.created_at`;
     return { conversation, messages };
   });
   return c.json(data);

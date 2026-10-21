@@ -1,5 +1,6 @@
 import { config } from "../config.js";
 import { toPgVector, withTenant, type TenantContext } from "../db/client.js";
+import { invalidateCollections } from "../rag/cache.js";
 import { readStoredFile } from "../storage/local.js";
 import { chunkDocument, embeddingText } from "./chunker.js";
 import { embedMany } from "./embeddings.js";
@@ -70,6 +71,8 @@ export async function ingestDocument(
                  ${slice.map((_, j) => toPgVector(vectors[i + j]!))}::text[]
                ) AS x(idx, heading, content, page_start, page_end, embedding)`;
     }
+    // Las respuestas en caché de esta colección pueden haber quedado desactualizadas.
+    await invalidateCollections(tx, [current.collection_id]);
     await tx`
       UPDATE documents
          SET status = 'ready', error = NULL, chunk_count = ${chunks.length},

@@ -62,6 +62,24 @@ const schema = z.object({
   FTS_LANGUAGE: z.string().default("spanish"),
   HISTORY_MESSAGES: z.coerce.number().int().nonnegative().default(6),
 
+  // Re-ranking: un modelo "cross-encoder" local reordena los candidatos de la búsqueda.
+  // Vacío = desactivado (se usa solo el orden de la búsqueda híbrida).
+  RERANKER_URL: z.string().default(""),
+  RERANK_CANDIDATES: z.coerce.number().int().positive().default(20),
+  // Puntuación mínima (0–1) para que un fragmento se envíe al LLM. Si ninguno la
+  // alcanza, se responde "no encontré información" sin gastar cupo.
+  RERANK_MIN_SCORE: z.coerce.number().min(0).max(1).default(0.02),
+
+  // Caché de respuestas (solo primeras preguntas de una conversación).
+  CACHE_ENABLED: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((v) => v === "true"),
+  CACHE_TTL_HOURS: z.coerce.number().positive().default(168),
+  // Distancia máxima entre preguntas para considerarlas iguales. Muy baja a propósito:
+  // preguntas distintas pueden estar a 0.03 (ver docs/operacion.md).
+  CACHE_MAX_DISTANCE: z.coerce.number().min(0).max(1).default(0.015),
+
   // Límite de preguntas al LLM por organización y día (protege el cupo gratuito compartido).
   TENANT_DAILY_QUESTION_LIMIT: z.coerce.number().int().nonnegative().default(200),
 });

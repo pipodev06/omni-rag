@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { withTenant } from "../db/client.js";
 import { requireAuth, requireRole, tenantCtx, type AppEnv } from "../auth/middleware.js";
+import { invalidateCollections } from "../rag/cache.js";
 import { removeStored } from "../storage/local.js";
 import { badRequest, HttpError, notFound } from "../lib/errors.js";
 import { parse, UUID_RE } from "../lib/validate.js";
@@ -64,6 +65,7 @@ collectionRoutes.delete("/:id", requireRole("admin"), async (c) => {
     const files = await tx<{ id: string }[]>`SELECT id FROM documents WHERE collection_id = ${id}`;
     const [row] = await tx`DELETE FROM collections WHERE id = ${id} RETURNING id`;
     if (!row) throw notFound("Colección no encontrada");
+    await invalidateCollections(tx, [id]);
     return files;
   });
   // Los trozos y documentos se borran en cascada; aquí se borran los archivos.

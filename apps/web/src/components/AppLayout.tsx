@@ -14,6 +14,7 @@ import {
   Moon,
   Settings,
   Sun,
+  ThumbsUp,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -52,6 +53,7 @@ function useNavItems(): NavItem[] {
     { to: "/chat", label: "Chat", icon: MessagesSquare, show: true },
     { to: "/documentos", label: "Documentos", icon: Files, show: true },
     { to: "/usuarios", label: "Usuarios", icon: Users, show: user.role === "admin" },
+    { to: "/calidad", label: "Calidad", icon: ThumbsUp, show: user.role === "admin" },
     { to: "/consumo", label: "Consumo", icon: ChartColumn, show: user.role === "admin" },
     { to: "/organizaciones", label: "Organizaciones", icon: Building2, show: user.isSuperadmin },
   ].filter((i) => i.show);

@@ -10,6 +10,7 @@ import { documentRoutes } from "./routes/documents.js";
 import { chatRoutes } from "./routes/chat.js";
 import { platformRoutes, usageRoutes } from "./routes/admin.js";
 import { healthRoutes } from "./routes/health.js";
+import { feedbackRoutes, qualityRoutes } from "./routes/feedback.js";
 
 /** Construye la aplicación HTTP (separado de server.ts para poder probarla). */
 export function createApp() {
@@ -24,6 +25,8 @@ export function createApp() {
   api.route("/documents", documentRoutes);
   api.route("/usage", usageRoutes);
   api.route("/platform", platformRoutes);
+  api.route("/messages", feedbackRoutes);
+  api.route("/quality", qualityRoutes);
   api.route("/", chatRoutes); // /chat, /search, /conversations
   app.route("/api", api);
 
