@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Building2, EllipsisVertical, Gauge, Layers, LifeBuoy, Loader2, Plus, Power } from "lucide-react";
 import { toast } from "sonner";
@@ -165,6 +165,11 @@ function LimitDialog({ tenant, onOpenChange, onSaved }: { tenant: TenantRow | nu
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
 
+  // El diálogo se abre desde fuera (por `tenant`): cargar el valor actual cada vez que cambia.
+  useEffect(() => {
+    if (tenant) setValue(tenant.dailyQuestionLimit?.toString() ?? "");
+  }, [tenant]);
+
   const save = async (limit: number | null) => {
     if (!tenant) return;
     setBusy(true);
@@ -181,13 +186,7 @@ function LimitDialog({ tenant, onOpenChange, onSaved }: { tenant: TenantRow | nu
   };
 
   return (
-    <Dialog
-      open={tenant !== null}
-      onOpenChange={(o) => {
-        if (o && tenant) setValue(tenant.dailyQuestionLimit?.toString() ?? "");
-        onOpenChange(o);
-      }}
-    >
+    <Dialog open={tenant !== null} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Límite diario de «{tenant?.name}»</DialogTitle>
@@ -222,6 +221,10 @@ function ChangePlanDialog({ tenant, onOpenChange, onSaved }: { tenant: TenantRow
   const [planId, setPlanId] = useState("");
   const [busy, setBusy] = useState(false);
 
+  useEffect(() => {
+    if (tenant) setPlanId(tenant.planId);
+  }, [tenant]);
+
   const save = async () => {
     if (!tenant || !planId) return;
     setBusy(true);
@@ -238,13 +241,7 @@ function ChangePlanDialog({ tenant, onOpenChange, onSaved }: { tenant: TenantRow
   };
 
   return (
-    <Dialog
-      open={tenant !== null}
-      onOpenChange={(o) => {
-        if (o && tenant) setPlanId(tenant.planId);
-        onOpenChange(o);
-      }}
-    >
+    <Dialog open={tenant !== null} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Plan de «{tenant?.name}»</DialogTitle>

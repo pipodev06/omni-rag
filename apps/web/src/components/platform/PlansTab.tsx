@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { EllipsisVertical, Layers, Loader2, Pencil, Star, Trash2, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
@@ -52,6 +52,11 @@ export function PlanDialog({ plan, open, onOpenChange, onSaved }: {
   const models = form.models.split(/[\n,]/).map((m) => m.trim()).filter(Boolean);
   const hasFree = models.some(isFree);
 
+  // El diálogo se abre desde fuera (por `open`): cargar el plan cada vez que se abre.
+  useEffect(() => {
+    if (open) setForm(toForm(plan ?? undefined));
+  }, [open, plan]);
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setBusy(true);
@@ -77,13 +82,7 @@ export function PlanDialog({ plan, open, onOpenChange, onSaved }: {
   };
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(o) => {
-        if (o) setForm(toForm(plan ?? undefined));
-        onOpenChange(o);
-      }}
-    >
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <form onSubmit={submit} className="space-y-5">
           <DialogHeader>

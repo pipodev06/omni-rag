@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AtSign, EllipsisVertical, KeyRound, Link2, Loader2, Search, Send, ShieldOff, UserPlus, UserRoundCheck, UserRoundX, Users } from "lucide-react";
 import { toast } from "sonner";
@@ -219,6 +219,10 @@ function EditAccessDialog({ user, onOpenChange, onSaved }: { user: TenantUser | 
   const [form, setForm] = useState({ username: "", email: "" });
   const [busy, setBusy] = useState(false);
 
+  useEffect(() => {
+    if (user) setForm({ username: user.username, email: user.email ?? "" });
+  }, [user]);
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (!user) return;
@@ -236,13 +240,7 @@ function EditAccessDialog({ user, onOpenChange, onSaved }: { user: TenantUser | 
   };
 
   return (
-    <Dialog
-      open={user !== null}
-      onOpenChange={(o) => {
-        if (o && user) setForm({ username: user.username, email: user.email ?? "" });
-        onOpenChange(o);
-      }}
-    >
+    <Dialog open={user !== null} onOpenChange={onOpenChange}>
       <DialogContent>
         <form onSubmit={submit} className="space-y-5">
           <DialogHeader>
