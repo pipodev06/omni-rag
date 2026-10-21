@@ -1,8 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { streamSSE } from "hono/streaming";
 import { config } from "../config.js";
-import { withTenant } from "../db/client.js";
+import { sqlOwner, withTenant } from "../db/client.js";
+import { subscribeDocumentEvents } from "../lib/documentEvents.js";
+import { completeChat } from "../rag/llm.js";
+import { buildSummaryMessages, parseSummary } from "../rag/summary.js";
+import { checkDailyLimit } from "./chat.js";
 import { requireAuth, requireRole, tenantCtx, type AppEnv } from "../auth/middleware.js";
 import { formatFor, SUPPORTED_EXTENSIONS } from "../ingest/formats.js";
 import { enqueueIngest } from "../queue.js";
@@ -14,10 +19,69 @@ import { UUID_RE } from "../lib/validate.js";
 export const documentRoutes = new Hono<AppEnv>();
 documentRoutes.use("*", requireAuth);
 
+/**
+ * Avisos en tiempo real (Server-Sent Events) de cambios de estado de los
+ * documentos que el usuario puede ver. Lo usa la interfaz para actualizarse
+ * sin consultar periódicamente y para avisar cuando un documento está listo.
+ */
+documentRoutes.get("/events", (c) => {
+  const user = c.get("user");
+  const ctx = tenantCtx(c);
+  return streamSSE(c, async (stream) => {
+    let accessible = new Set<string>();
+    const refreshAccess = async () => {
+      const rows = await withTenant(ctx, (tx) => tx<{ id: string }[]>`SELECT id FROM collections`);
+      accessible = new Set(rows.map((r) => r.id));
+    };
+    await refreshAccess();
+
+    const unsubscribe = await subscribeDocumentEvents((e) => {
+      if (e.tenantId !== user.tenantId) return;
+      if (user.role !== "admin" && !accessible.has(e.collectionId)) return;
+      void stream.writeSSE({
+        event: "document",
+        data: JSON.stringify({
+          op: e.op,
+          documentId: e.documentId,
+          collectionId: e.collectionId,
+          title: e.title,
+          status: e.status,
+          error: e.error,
+          mine: e.createdBy === user.id,
+        }),
+      }).catch(() => {}); // conexión cerrada: se ignora
+    });
+    stream.onAbort(unsubscribe);
+
+    await stream.writeSSE({ event: "ready", data: "{}" });
+    // Mantener viva la conexión (proxies) y refrescar los permisos cada minuto.
+    let ticks = 0;
+    while (!stream.aborted && !stream.closed) {
+      await stream.sleep(25_000);
+      await stream.writeSSE({ event: "ping", data: "{}" }).catch(() => {});
+      if (++ticks % 2 === 0) await refreshAccess().catch(() => {});
+    }
+    unsubscribe();
+  });
+});
+
+/** Preguntas sugeridas (de los resúmenes generados) para la pantalla inicial del chat. */
+documentRoutes.get("/suggestions", async (c) => {
+  const documentId = c.req.query("documentId");
+  if (documentId && !UUID_RE.test(documentId)) throw badRequest("documentId inválido");
+  const suggestions = await withTenant(tenantCtx(c), (tx) => tx`
+    SELECT d.id AS "documentId", d.title AS "documentTitle", q AS question
+      FROM documents d, unnest(d.suggested_questions) AS q
+     WHERE d.status = 'ready' AND (${documentId ?? null}::uuid IS NULL OR d.id = ${documentId ?? null}::uuid)
+     ORDER BY random() LIMIT 8`);
+  return c.json({ suggestions });
+});
+
 const DOC_FIELDS = `
   d.id, d.collection_id AS "collectionId", d.title, d.filename, d.mime_type AS "mimeType",
   d.size_bytes::float8 AS "sizeBytes", d.status, d.error, d.page_count AS "pageCount",
-  d.chunk_count AS "chunkCount", d.created_at AS "createdAt", d.updated_at AS "updatedAt"`;
+  d.chunk_count AS "chunkCount", d.created_at AS "createdAt", d.updated_at AS "updatedAt",
+  (d.summary IS NOT NULL) AS "hasSummary"`;
 
 const idParam = (id: string) => {
   if (!UUID_RE.test(id)) throw notFound("Documento no encontrado");
@@ -40,7 +104,9 @@ documentRoutes.get("/", async (c) => {
 documentRoutes.get("/:id", async (c) => {
   const id = idParam(c.req.param("id"));
   const [doc] = await withTenant(tenantCtx(c), (tx) => tx`
-    SELECT ${tx.unsafe(DOC_FIELDS)} FROM documents d WHERE d.id = ${id}`);
+    SELECT ${tx.unsafe(DOC_FIELDS)}, d.summary, d.suggested_questions AS "suggestedQuestions",
+           d.summary_model AS "summaryModel", d.summary_at AS "summaryAt"
+      FROM documents d WHERE d.id = ${id}`);
   if (!doc) throw notFound("Documento no encontrado");
   return c.json({ document: doc });
 });
@@ -149,6 +215,40 @@ documentRoutes.post(
     return c.json({ results }, 201);
   },
 );
+
+/**
+ * Genera (o regenera) el resumen y las preguntas sugeridas con el LLM.
+ * Consume una llamada del límite diario de la organización.
+ */
+documentRoutes.post("/:id/summary", async (c) => {
+  const id = idParam(c.req.param("id"));
+  const ctx = tenantCtx(c);
+  const { doc, chunks } = await withTenant(ctx, async (tx) => {
+    const [d] = await tx<{ title: string; status: string; tenant_id: string }[]>`
+      SELECT title, status, tenant_id FROM documents WHERE id = ${id}`;
+    if (!d) throw notFound("Documento no encontrado");
+    if (d.status !== "ready") throw badRequest("El documento todavía no está listo");
+    const rows = await tx<{ heading: string; content: string }[]>`
+      SELECT heading, content FROM chunks WHERE document_id = ${id} ORDER BY chunk_index LIMIT 40`;
+    return { doc: d, chunks: rows };
+  });
+
+  await checkDailyLimit(ctx);
+  const result = await completeChat(buildSummaryMessages(doc.title, chunks), c.req.raw.signal);
+  const { summary, questions } = parseSummary(result.text);
+
+  // El acceso ya se comprobó arriba con RLS; se guarda con la conexión propietaria
+  // para que también los lectores (que no pueden editar documentos) puedan generarlo.
+  await sqlOwner`
+    UPDATE documents SET summary = ${summary}, suggested_questions = ${questions}::text[],
+           summary_model = ${result.model}, summary_at = now()
+     WHERE id = ${id} AND tenant_id = ${doc.tenant_id}`;
+  await withTenant(ctx, (tx) => tx`
+    INSERT INTO usage_events (tenant_id, user_id, kind, model, prompt_tokens, completion_tokens)
+    VALUES (${ctx.tenantId}, ${ctx.userId}, 'summary', ${result.model}, ${result.promptTokens}, ${result.completionTokens})`);
+
+  return c.json({ summary, suggestedQuestions: questions, summaryModel: result.model });
+});
 
 /** Vuelve a procesar un documento (p. ej. tras cambiar el modelo de embeddings). */
 documentRoutes.post("/:id/reprocess", requireRole("admin", "editor"), async (c) => {

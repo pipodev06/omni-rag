@@ -34,8 +34,10 @@ Base: `http://localhost:8000/api` (a través de nginx) o `http://localhost:3001/
 ### `POST /chat`
 
 ```json
-{ "question": "¿Cuál es el plazo de preaviso?", "conversationId": "opcional", "collectionIds": ["opcional"] }
+{ "question": "¿Cuál es el plazo de preaviso?", "conversationId": "opcional", "collectionIds": ["opcional"], "documentIds": ["opcional"] }
 ```
+
+`documentIds` limita la búsqueda a esos documentos ("preguntar sobre este documento"). También lo acepta `/search`.
 
 Responde `text/event-stream` con estos eventos:
 
@@ -82,8 +84,11 @@ Los mensajes de `GET /conversations/:id` incluyen `fromCache` y `feedback` (`1`,
 
 | Método | Ruta | Acceso | Descripción |
 |---|---|---|---|
+| GET | `/documents/events` | todos | **Server-Sent Events** con los cambios de estado de los documentos visibles: `event: document` → `{ op, documentId, collectionId, title, status, error, mine }`. También envía `ready` al conectar y `ping` cada 25 s. |
+| GET | `/documents/suggestions?documentId=` | todos | Hasta 8 preguntas sugeridas (de los resúmenes generados) → `{ suggestions: [{ documentId, documentTitle, question }] }` |
+| POST | `/documents/:id/summary` | todos (con acceso) | Genera o regenera el resumen y las preguntas sugeridas con el LLM. **Cuenta para el límite diario.** → `{ summary, suggestedQuestions, summaryModel }` |
 | GET | `/documents?collectionId=` | todos | Documentos visibles + `supportedExtensions` |
-| GET | `/documents/:id` | todos | Un documento |
+| GET | `/documents/:id` | todos | Un documento, con `summary`, `suggestedQuestions`, `summaryModel` y `summaryAt` |
 | GET | `/documents/:id/chunks` | todos | Fragmentos generados (para revisar la fragmentación) |
 | GET | `/documents/:id/file` | todos | Descarga el original |
 | POST | `/documents` | admin, editor | `multipart/form-data`: `collectionId` + uno o varios `file` |

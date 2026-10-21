@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { useNavigate, useParams } from "react-router";
+import { useNavigate, useParams, useSearchParams } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowUp,
@@ -12,6 +12,7 @@ import {
   Square,
   Trash2,
   TriangleAlert,
+  X,
   Zap,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -31,6 +32,8 @@ import { SidebarSlot } from "@/components/AppLayout";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { AnswerMarkdown, CopyButton, SourcesList } from "@/components/chat/Answer";
 import { FeedbackButtons } from "@/components/chat/Feedback";
+import { useOpenDocument, type DocumentDetail } from "@/components/documents/DocumentViewer";
+import { FileTypeIcon } from "@/components/common";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import {
@@ -146,6 +149,9 @@ export function ChatPage() {
   const [selectedCollections, setSelectedCollections] = useState<string[]>([]);
   const [activeSource, setActiveSource] = useState<Record<number, number | null>>({});
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [docFilter, setDocFilter] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const openDocument = useOpenDocument();
 
   const abortRef = useRef<AbortController | null>(null);
   const createdHereRef = useRef<string | null>(null);
@@ -164,6 +170,24 @@ export function ChatPage() {
   });
   const readyDocs = (docsData?.documents ?? []).filter((d) => d.status === "ready");
 
+  // Documento al que se limita la conversación ("Preguntar sobre este documento").
+  const { data: filterDocData } = useQuery({
+    queryKey: ["document", docFilter],
+    queryFn: () => api.get<{ document: DocumentDetail }>(`/documents/${docFilter}`),
+    enabled: !!docFilter,
+  });
+  const filterDoc = filterDocData?.document;
+
+  // Preguntas sugeridas a partir de los resúmenes generados.
+  const { data: suggestionsData } = useQuery({
+    queryKey: ["suggestions", docFilter],
+    queryFn: () =>
+      api.get<{ suggestions: { documentId: string; documentTitle: string; question: string }[] }>(
+        `/documents/suggestions${docFilter ? `?documentId=${docFilter}` : ""}`,
+      ),
+    staleTime: 5 * 60_000,
+  });
+
   // Cargar la conversación al cambiar de URL (salvo si la acabamos de crear aquí).
   useEffect(() => {
     // La URL cambió porque acabamos de crear esta conversación: seguir con la respuesta en curso.
@@ -175,6 +199,7 @@ export function ChatPage() {
     setActiveSource({});
     if (!conversationId) {
       setMessages([]);
+      setDocFilter(null);
       return;
     }
     let cancelled = false;
@@ -192,6 +217,17 @@ export function ChatPage() {
       cancelled = true;
     };
   }, [conversationId, navigate]);
+
+  // Enlaces del tipo /chat?documento=<id>&q=<pregunta> (desde el visor o la lista de documentos).
+  useEffect(() => {
+    const doc = searchParams.get("documento");
+    const q = searchParams.get("q");
+    if (!doc && !q) return;
+    if (doc) setDocFilter(doc);
+    if (q) setInput(q);
+    setSearchParams({}, { replace: true });
+    textareaRef.current?.focus();
+  }, [searchParams, setSearchParams]);
 
   // Mantener la vista al final mientras llega la respuesta.
   useEffect(() => {
@@ -224,7 +260,12 @@ export function ChatPage() {
     abortRef.current = controller;
     try {
       await streamChat(
-        { question, conversationId, collectionIds: selectedCollections.length ? selectedCollections : undefined },
+        {
+          question,
+          conversationId,
+          collectionIds: selectedCollections.length ? selectedCollections : undefined,
+          documentIds: docFilter ? [docFilter] : undefined,
+        },
         {
           onMeta: (meta) => {
             if (!conversationId) {
@@ -265,11 +306,20 @@ export function ChatPage() {
     );
   };
 
-  const suggestions = [
-    ...readyDocs.slice(0, 2).map((d) => `Resume los puntos principales de «${d.title}»`),
-    "¿Qué plazos o fechas importantes aparecen en los documentos?",
-    "¿Qué obligaciones o requisitos se mencionan?",
-  ].slice(0, 4);
+  const generated = (suggestionsData?.suggestions ?? []).slice(0, 4).map((s) => ({ text: s.question, from: s.documentTitle }));
+  const suggestions =
+    generated.length > 0
+      ? generated
+      : filterDoc
+        ? [
+            { text: `Resume los puntos principales de «${filterDoc.title}»`, from: "" },
+            { text: "¿Qué plazos, fechas o importes aparecen?", from: "" },
+          ]
+        : [
+            ...readyDocs.slice(0, 2).map((d) => ({ text: `Resume los puntos principales de «${d.title}»`, from: "" })),
+            { text: "¿Qué plazos o fechas importantes aparecen en los documentos?", from: "" },
+            { text: "¿Qué obligaciones o requisitos se mencionan?", from: "" },
+          ].slice(0, 4);
 
   const filterLabel =
     selectedCollections.length === 0
@@ -315,7 +365,9 @@ export function ChatPage() {
               <div className="mb-5 grid size-12 place-items-center rounded-2xl bg-primary/10 text-primary">
                 <Sparkles className="size-6" />
               </div>
-              <h1 className="text-2xl font-semibold tracking-tight">Hola, {firstName}. ¿Qué quieres saber?</h1>
+              <h1 className="text-2xl font-semibold tracking-tight">
+                {filterDoc ? `¿Qué quieres saber de «${filterDoc.title}»?` : `Hola, ${firstName}. ¿Qué quieres saber?`}
+              </h1>
               <p className="mt-2 max-w-md text-sm text-muted-foreground">
                 Respondo usando solo los documentos a los que tienes acceso y te indico de dónde sale cada dato.
               </p>
@@ -323,12 +375,13 @@ export function ChatPage() {
                 <div className="mt-8 grid w-full gap-2 sm:grid-cols-2">
                   {suggestions.map((s) => (
                     <button
-                      key={s}
-                      onClick={() => void send(s)}
-                      className="rounded-xl border bg-card p-3.5 text-left text-sm transition-colors hover:border-primary/40 hover:bg-accent"
+                      key={s.text}
+                      onClick={() => void send(s.text)}
+                      className="flex flex-col rounded-xl border bg-card p-3.5 text-left text-sm transition-colors hover:border-primary/40 hover:bg-accent"
                     >
                       <MessageSquareText className="mb-2 size-4 text-primary" />
-                      {s}
+                      {s.text}
+                      {s.from && !filterDoc && <span className="mt-1.5 truncate text-xs text-muted-foreground">{s.from}</span>}
                     </button>
                   ))}
                 </div>
@@ -369,7 +422,12 @@ export function ChatPage() {
                           {m.error}
                         </div>
                       )}
-                      <SourcesList sources={m.sources} active={activeSource[i] ?? null} onToggle={(n) => cite(i, n)} />
+                      <SourcesList
+                        sources={m.sources}
+                        active={activeSource[i] ?? null}
+                        onToggle={(n) => cite(i, n)}
+                        onOpen={(s) => openDocument({ documentId: s.documentId, page: s.pageStart, highlight: s.excerpt })}
+                      />
                       {m.content && !(busy && i === messages.length - 1) && (
                         <div className="flex flex-wrap items-center gap-0.5 text-xs text-muted-foreground">
                           <CopyButton text={m.content} />
@@ -407,6 +465,20 @@ export function ChatPage() {
       {/* Caja de texto */}
       <div className="shrink-0 px-4 pb-4 sm:px-6">
         <div className="mx-auto w-full max-w-3xl">
+          {docFilter && (
+            <div className="mb-2 flex items-center gap-2 rounded-xl border bg-accent/60 px-3 py-2 text-sm">
+              <FileTypeIcon filename={filterDoc?.filename ?? ""} className="size-7" />
+              <span className="min-w-0 flex-1 truncate">
+                Preguntando solo sobre <b className="font-medium">«{filterDoc?.title ?? "…"}»</b>
+              </span>
+              <Button variant="ghost" size="sm" className="h-7" onClick={() => docFilter && openDocument({ documentId: docFilter })}>
+                Abrir
+              </Button>
+              <Button variant="ghost" size="icon" className="size-7" onClick={() => setDocFilter(null)} aria-label="Quitar filtro de documento">
+                <X />
+              </Button>
+            </div>
+          )}
           <div className="rounded-2xl border bg-card shadow-sm transition-colors focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-ring/20">
             <Textarea
               ref={textareaRef}

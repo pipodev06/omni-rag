@@ -110,3 +110,47 @@
     font-feature-settings: "cv11", "ss01";
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * Capa de texto de PDF.js (extracto de pdfjs-dist/web/pdf_viewer.css) y
+ * resaltado del fragmento citado.
+ * ------------------------------------------------------------------------- */
+.pdf-page .textLayer {
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  line-height: 1;
+  text-align: initial;
+  transform-origin: 0 0;
+  z-index: 0;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+.pdf-page .textLayer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+.pdf-page .textLayer > :not(.markedContent),
+.pdf-page .textLayer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+.pdf-page .textLayer .markedContent {
+  display: contents;
+}
+.pdf-page .textLayer ::selection {
+  background: color-mix(in oklch, var(--primary) 30%, transparent);
+}
+.pdf-page .textLayer .rag-highlight {
+  background: rgb(253 224 71 / 0.55);
+  border-radius: 2px;
+  box-shadow: 0 0 0 2px rgb(253 224 71 / 0.55);
+}

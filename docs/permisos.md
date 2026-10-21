@@ -62,6 +62,12 @@ El filtro de permisos se aplica **dentro** de la búsqueda vectorial, no despué
 - **Caché:** una respuesta guardada solo se reutiliza para usuarios de la **misma organización** que consultan **exactamente el mismo conjunto de colecciones**. Un usuario con menos acceso tiene otro conjunto, así que nunca recibe una respuesta construida con documentos que no puede ver. Al cambiar un documento de una colección se borran las respuestas que dependían de ella.
 - **Valoraciones:** las conversaciones son privadas, pero al marcar una respuesta con 👍 o 👎 se guarda una copia de la pregunta, la respuesta y las fuentes **visible para los administradores** de la organización (página Calidad). La interfaz lo avisa antes de enviar un 👎.
 
+## Avisos en tiempo real y resúmenes
+
+- Cada usuario solo recibe avisos de documentos de **su organización** y de **las colecciones a las que tiene acceso** (los administradores, de todas las de su organización).
+- El resumen de un documento lo puede generar cualquiera que pueda verlo (lectores incluidos); la API comprueba el acceso con RLS antes de guardarlo.
+- El filtro "preguntar sobre este documento" solo acepta documentos visibles para el usuario: un identificador ajeno se ignora y no devuelve nada.
+
 ## Cómo está probado
 
 - `apps/api/test/rls.integration.test.ts` ataca directamente la base de datos simulando errores del código: consultas sin filtro, inserciones en colecciones ajenas, lectores intentando borrar, un admin intentando hacerse superadministrador, etc.

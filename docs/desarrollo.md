@@ -55,6 +55,8 @@ Prueba de punta a punta contra un sistema en marcha: ver [instalacion.md §6](in
 | `apps/api/test/stream.test.ts` | Lectura de SSE, división por páginas, formatos admitidos |
 | `apps/api/test/misc.test.ts` | Limitador de intentos de login |
 | `apps/api/test/cache.test.ts` | Normalización de preguntas, números/códigos, clave de alcance y re-ranking |
+| `apps/api/test/summary.test.ts` | Interpretación de la respuesta JSON del resumen y límite de texto enviado |
+| `apps/web/src/lib/highlight.test.ts` | Localización del texto citado en la capa de texto de un PDF |
 | `apps/api/test/rls.integration.test.ts` | Aislamiento en la base de datos (se omite sin `RUN_DB_TESTS=1`) |
 
 La integración continua (`.github/workflows/ci.yml`) ejecuta todo lo anterior, incluidas las pruebas de RLS, en cada *push* y *pull request*.
@@ -81,6 +83,8 @@ La integración continua (`.github/workflows/ci.yml`) ejecuta todo lo anterior, 
 | `rag/rerank.ts` | Cliente del re-ranker (cross-encoder) y aplicación de puntuaciones |
 | `rag/retrieve.ts` | Colecciones consultables + búsqueda híbrida + re-ranking |
 | `rag/cache.ts` | Caché de respuestas: búsqueda, guardado e invalidación |
+| `rag/summary.ts` | Prompt e interpretación del resumen con preguntas sugeridas |
+| `lib/documentEvents.ts` | Escucha `LISTEN document_events` y reparte los avisos |
 | `routes/*` | Endpoints HTTP |
 | `scripts/*` | Primer administrador, `seed` y `reindex` |
 
