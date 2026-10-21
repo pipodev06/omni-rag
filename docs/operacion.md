@@ -157,6 +157,14 @@ Los usuarios valoran cada respuesta con 👍/👎 (el 👎 admite motivos y un c
 
 Un 👎 suele significar que falta un documento, que está desactualizado o que la información está dispersa. Revisa las fuentes citadas y, si hace falta, sube o actualiza el documento: la caché de esa colección se invalida sola.
 
+## Resúmenes y preguntas sugeridas
+
+Se generan **bajo demanda** (Documentos → abrir → Resumen → *Generar resumen*) porque cada uno es una llamada al LLM y **cuenta para el límite diario** de la organización. Cualquier usuario con acceso al documento puede generarlo; el resultado lo ven todos. Las preguntas sugeridas aparecen en la pantalla inicial del chat.
+
+## Avisos en tiempo real
+
+La interfaz recibe los cambios de estado de los documentos por `GET /api/documents/events` (Server-Sent Events). Si pones otro proxy delante (Caddy, Traefik, Cloudflare…), desactiva el *buffering* para `/api/` y permite conexiones largas; si no, los avisos llegarán tarde (la lista se refresca igualmente cada 20 s mientras haya documentos procesándose).
+
 ## Modelos gratuitos de OpenRouter
 
 - Si las respuestas fallan con *"Los modelos gratuitos están saturados…"*, espera unos minutos o añade más modelos a `LLM_MODELS`.
@@ -194,6 +202,9 @@ Reparte el cupo de OpenRouter (1.000 al día con créditos) entre tus clientes c
 | Chat: "límite de N preguntas por día" | Límite de la organización | Ajusta el límite (ver arriba) |
 | Siempre "No encontré información" | `RERANK_MIN_SCORE` demasiado alto, `RETRIEVAL_MAX_DISTANCE` demasiado bajo o documentos sin procesar | Revisa `rerankScore` y `distance` con `/api/search` |
 | `health` → `reranker: fetch failed` | El modelo se está descargando o no hay RAM suficiente | `docker compose logs reranker`; si sale `Killed`/`137`, falta memoria: desactívalo (ver "Re-ranking") |
+| El visor muestra "No se pudo mostrar el PDF" | PDF protegido con contraseña o dañado | Descarga el original; reprocesa el documento si lo sustituyes |
+| "El texto citado no está en esta página" | El fragmento empieza en una página y sigue en la siguiente, o es una tabla | Usa las flechas de página; el resaltado se calcula en cada página |
+| Los documentos no cambian de estado solos | Un proxy acumula la conexión en vivo | Ver "Avisos en tiempo real" |
 | Respuesta "guardada" desactualizada | Se cambió el documento fuera del sistema o el prompt/modelo | Márcala con 👎 o usa Calidad → Vaciar caché |
 | Las respuestas no llegan en streaming detrás de otro proxy | El proxy acumula la respuesta | Desactiva el *buffering* para `/api/chat` |
 | PDF escaneado con texto incorrecto | OCR con idioma equivocado | Ajusta `DOCLING_OCR_LANGS` y reprocesa |

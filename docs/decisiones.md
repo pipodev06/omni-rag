@@ -137,3 +137,22 @@ Flowbite está más orientado a HTML/plantillas; MUI y Mantine imponen un estilo
 además del mismo conjunto de colecciones, sin historial de conversación (las preguntas de seguimiento dependen del contexto), y que no haya pasado `CACHE_TTL_HOURS`. Un 👎 borra la entrada.
 
 **Consecuencia.** Se reutilizan menos respuestas que con una caché agresiva, pero nunca una respuesta equivocada por parecido superficial.
+
+## 14. Tiempo real con LISTEN/NOTIFY + Server-Sent Events
+
+**Alternativas:** consultar cada pocos segundos (versión anterior), WebSockets, Redis Pub/Sub.
+
+**Decisión.** Un *trigger* en `documents` publica cada cambio de estado con `pg_notify`; la API mantiene una única conexión `LISTEN` y lo reenvía por **Server-Sent Events** a cada navegador, filtrando por organización y colecciones accesibles.
+- SSE es unidireccional (justo lo que hace falta), funciona con la cookie de sesión y se reconecta solo.
+- PostgreSQL ya está; no hace falta Redis para avisar de procesos distintos (el worker).
+- Se mantiene una consulta de respaldo cada 20 s mientras haya documentos procesándose.
+
+## 15. Visor con PDF.js (versión "legacy")
+
+**Decisión.** El visor dibuja el PDF con PDF.js y localiza el fragmento citado en su capa de texto (`lib/highlight.ts`), tolerando mayúsculas, tildes, saltos de línea y formato Markdown. Se usa la compilación **legacy** de PDF.js: la estándar (v6) usa APIs de JavaScript muy recientes (`Map.getOrInsertComputed`) que todavía no tienen todos los navegadores, y fallaba en las pruebas. PDF.js (~1 MB) solo se descarga al abrir un PDF.
+
+Para Word, Excel y otros formatos se muestra el texto extraído y el fragmento citado; convertirlos a PDF para la vista previa es una mejora posible (Docling o LibreOffice).
+
+## 16. Resúmenes bajo demanda
+
+Generar el resumen al subir cada documento gastaría el cupo diario del LLM aunque nadie lo leyera. Por eso se genera solo cuando alguien lo pide, se guarda en `documents` y se reutiliza (también sus preguntas sugeridas en la pantalla inicial del chat).

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Check, ChevronDown, Copy, Download, FileText } from "lucide-react";
+import { Check, ChevronDown, Copy, Download, Eye, FileText } from "lucide-react";
 import { toast } from "sonner";
 import type { Source } from "@/api";
 import { cn } from "@/lib/utils";
@@ -81,7 +81,13 @@ export function ExcerptMarkdown({ text, className }: { text: string; className?:
 }
 
 /** Lista de fuentes: tarjetas compactas que se despliegan para ver el fragmento. */
-export function SourcesList({ sources, active, onToggle }: { sources: Source[]; active: number | null; onToggle: (n: number) => void }) {
+export function SourcesList({ sources, active, onToggle, onOpen }: {
+  sources: Source[];
+  active: number | null;
+  onToggle: (n: number) => void;
+  /** Abre el documento en el visor, en la página de la fuente y con el texto resaltado. */
+  onOpen?: (s: Source) => void;
+}) {
   if (sources.length === 0) return null;
   const cited = sources.filter((s) => s.cited);
   const shown = cited.length > 0 ? cited : sources;
@@ -117,11 +123,18 @@ export function SourcesList({ sources, active, onToggle }: { sources: Source[]; 
               <p className="truncate font-medium">{current.documentTitle}</p>
               <p className="truncate text-muted-foreground">{[pagesLabel(current), current.heading].filter(Boolean).join(" · ")}</p>
             </div>
-            <Button variant="ghost" size="sm" className="h-7 shrink-0 text-xs" asChild>
-              <a href={`/api/documents/${current.documentId}/file`}>
-                <Download /> Original
-              </a>
-            </Button>
+            <div className="flex shrink-0 gap-1">
+              {onOpen && (
+                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => onOpen(current)}>
+                  <Eye /> Ver en el documento
+                </Button>
+              )}
+              <Button variant="ghost" size="sm" className="h-7 text-xs" asChild>
+                <a href={`/api/documents/${current.documentId}/file`}>
+                  <Download /> Original
+                </a>
+              </Button>
+            </div>
           </div>
           <ExcerptMarkdown text={current.excerpt} className="max-h-64 overflow-y-auto" />
         </div>

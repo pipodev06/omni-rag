@@ -7,16 +7,33 @@ import { hybridSearch, type SearchHit } from "./search.js";
 export interface RetrievalScope {
   /** Colecciones en las que se busca (las accesibles ∩ el filtro pedido). */
   collectionIds: string[];
+  /** Documentos concretos (vacío = todos los de esas colecciones). */
+  documentIds: string[];
   /** Clave del conjunto anterior, para la caché. */
   key: string;
 }
 
 /** Colecciones que el usuario puede consultar, opcionalmente restringidas a un filtro. */
-export async function resolveScope(ctx: TenantContext, requested?: string[] | null): Promise<RetrievalScope> {
-  const accessible = await withTenant(ctx, (tx) => tx<{ id: string }[]>`SELECT id FROM collections`);
-  let ids = accessible.map((r) => r.id);
-  if (requested && requested.length > 0) ids = ids.filter((id) => requested.includes(id));
-  return { collectionIds: ids, key: scopeKey(ids) };
+export async function resolveScope(
+  ctx: TenantContext,
+  requested?: string[] | null,
+  requestedDocuments?: string[] | null,
+): Promise<RetrievalScope> {
+  return withTenant(ctx, async (tx) => {
+    const accessible = await tx<{ id: string }[]>`SELECT id FROM collections`;
+    let ids = accessible.map((r) => r.id);
+    if (requested && requested.length > 0) ids = ids.filter((id) => requested.includes(id));
+    let documentIds: string[] = [];
+    if (requestedDocuments && requestedDocuments.length > 0) {
+      // Solo documentos visibles (RLS) dentro de las colecciones elegidas.
+      const docs = await tx<{ id: string }[]>`
+        SELECT id FROM documents WHERE id = ANY(${requestedDocuments}::uuid[]) AND collection_id = ANY(${ids}::uuid[])`;
+      documentIds = docs.map((d) => d.id);
+      if (documentIds.length === 0) ids = []; // ninguno accesible → no buscar nada
+    }
+    const key = documentIds.length ? scopeKey([...ids, "docs", ...[...documentIds].sort()]) : scopeKey(ids);
+    return { collectionIds: ids, documentIds, key };
+  });
 }
 
 export type RankedHit = SearchHit & { rerankScore: number | null };
@@ -41,6 +58,7 @@ export async function retrieve(
       queryText: opts.queryText,
       queryVector: opts.queryVector,
       collectionIds: opts.scope.collectionIds,
+      documentIds: opts.scope.documentIds,
       topK: useReranker ? Math.max(config.RERANK_CANDIDATES, topK) : topK,
     }),
   );

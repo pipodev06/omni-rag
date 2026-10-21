@@ -72,6 +72,22 @@ worker
 
 Al terminar, se borran de la caché las respuestas que dependían de esa colección.
 
+## Avisos en tiempo real
+
+```
+worker / API cambia documents.status
+  │ trigger notify_document_event()  →  pg_notify('document_events', {…})
+  ▼
+API: una conexión LISTEN document_events (lib/documentEvents.ts)
+  │ filtra por organización y colecciones accesibles de cada usuario
+  ▼
+GET /api/documents/events (Server-Sent Events, ping cada 25 s)
+  ▼
+Navegador (useDocumentEvents): refresca listas y avisa "«X» está listo"
+```
+
+Funciona aunque el cambio lo haga otro proceso (el worker), sin Redis ni WebSockets. Si la conexión se corta, el navegador reconecta solo y la lista se refresca; además hay una consulta de respaldo cada 20 s mientras haya documentos procesándose.
+
 Si el worker falla en un paso transitorio (Docling ocupado, embeddings arrancando), pg-boss reintenta con espera exponencial (2 reintentos). Mientras tanto el documento muestra `Reintentando: …`.
 
 ## Flujo de consulta (chat)
@@ -121,6 +137,8 @@ tenants ─┬─< users ──────────────┐
 | `usage_events` | Una fila por respuesta: `question` (LLM, con tokens) o `cache_hit` (desde caché) |
 | `answer_cache` | Respuestas reutilizables, con su alcance (colecciones) y el embedding de la pregunta |
 | `message_feedback` | Valoraciones 👍/👎 con copia de pregunta, respuesta y fuentes para los administradores |
+
+`documents` incluye además `summary`, `suggested_questions`, `summary_model` y `summary_at` (resumen generado bajo demanda).
 
 Todas las tablas llevan `tenant_id` y claves foráneas **compuestas** `(id, tenant_id)`, de modo que es imposible enlazar filas de organizaciones distintas. Detalles en [permisos.md](permisos.md).
 
