@@ -1,319 +1,369 @@
-import { useCallback, useEffect, useRef, useState, type DragEvent, type FormEvent } from "react";
-import { api, formatBytes, formatDate, type Collection, type DocumentInfo, type TenantUser, type User } from "../api";
+import { useState } from "react";
+import { useNavigate, useParams } from "react-router";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useDropzone } from "react-dropzone";
+import {
+  CloudUpload,
+  Download,
+  EllipsisVertical,
+  Eye,
+  FolderOpen,
+  FolderPlus,
+  Loader2,
+  Pencil,
+  RotateCw,
+  Search,
+  Trash2,
+  UserRoundCog,
+} from "lucide-react";
+import { toast } from "sonner";
+import {
+  api,
+  errorMessage,
+  formatBytes,
+  timeAgo,
+  uploadDocuments,
+  type Collection,
+  type DocumentInfo,
+} from "@/api";
+import { useCurrentUser } from "@/hooks/useSession";
+import { cn } from "@/lib/utils";
+import { EmptyState, FileTypeIcon, Page, PageHeader, StatusBadge } from "@/components/common";
+import { useConfirm } from "@/components/ConfirmProvider";
+import { ChunksSheet } from "@/components/documents/ChunksSheet";
+import { CollectionFormDialog, MembersDialog } from "@/components/documents/CollectionDialogs";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
-const STATUS: Record<DocumentInfo["status"], { label: string; cls: string }> = {
-  pending: { label: "En cola", cls: "pending" },
-  processing: { label: "Procesando", cls: "processing" },
-  ready: { label: "Listo", cls: "ready" },
-  failed: { label: "Error", cls: "failed" },
-};
+function UploadZone({ collectionId, extensions, onUploaded }: { collectionId: string; extensions: string[]; onUploaded: () => void }) {
+  const [progress, setProgress] = useState<number | null>(null);
 
-interface UploadResult {
-  filename: string;
-  status: "queued" | "duplicate" | "rejected";
-  reason?: string;
-}
-
-export function DocumentsPage({ user }: { user: User }) {
-  const canEdit = user.role === "admin" || user.role === "editor";
-  const isAdmin = user.role === "admin";
-  const [collections, setCollections] = useState<Collection[]>([]);
-  const [collectionId, setCollectionId] = useState<string>("");
-  const [documents, setDocuments] = useState<DocumentInfo[]>([]);
-  const [extensions, setExtensions] = useState<string[]>([]);
-  const [uploading, setUploading] = useState(false);
-  const [results, setResults] = useState<UploadResult[]>([]);
-  const [error, setError] = useState("");
-  const [dragging, setDragging] = useState(false);
-  const [showMembers, setShowMembers] = useState(false);
-  const fileInput = useRef<HTMLInputElement>(null);
-
-  const loadCollections = useCallback(async () => {
-    const d = await api.get<{ collections: Collection[] }>("/collections");
-    setCollections(d.collections);
-    setCollectionId((cur) => (cur && d.collections.some((c) => c.id === cur) ? cur : (d.collections[0]?.id ?? "")));
-  }, []);
-
-  const loadDocuments = useCallback(async () => {
-    if (!collectionId) return setDocuments([]);
-    const d = await api.get<{ documents: DocumentInfo[]; supportedExtensions: string[] }>(
-      `/documents?collectionId=${collectionId}`,
-    );
-    setDocuments(d.documents);
-    setExtensions(d.supportedExtensions);
-  }, [collectionId]);
-
-  useEffect(() => void loadCollections(), [loadCollections]);
-  useEffect(() => void loadDocuments(), [loadDocuments]);
-
-  // Mientras haya documentos procesándose, refrescar cada 3 segundos.
-  const inProgress = documents.some((d) => d.status === "pending" || d.status === "processing");
-  useEffect(() => {
-    if (!inProgress) return;
-    const t = setInterval(() => void loadDocuments(), 3000);
-    return () => clearInterval(t);
-  }, [inProgress, loadDocuments]);
-
-  const upload = async (files: FileList | File[]) => {
-    if (!collectionId || files.length === 0) return;
-    setUploading(true);
-    setError("");
-    setResults([]);
+  const upload = async (files: File[]) => {
+    if (files.length === 0) return;
+    setProgress(0);
     try {
-      const form = new FormData();
-      form.append("collectionId", collectionId);
-      for (const f of Array.from(files)) form.append("file", f);
-      const r = await api.post<{ results: UploadResult[] }>("/documents", form);
-      setResults(r.results);
-      await loadDocuments();
-      void loadCollections();
+      const { results } = await uploadDocuments(collectionId, files, setProgress);
+      const queued = results.filter((r) => r.status === "queued").length;
+      if (queued) toast.success(`${queued} archivo${queued > 1 ? "s" : ""} en cola para procesar`);
+      for (const r of results.filter((x) => x.status !== "queued")) {
+        toast.warning(`${r.filename}: ${r.reason}`);
+      }
+      onUploaded();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Error subiendo archivos");
+      toast.error(errorMessage(err));
     } finally {
-      setUploading(false);
-      if (fileInput.current) fileInput.current.value = "";
+      setProgress(null);
     }
   };
 
-  const onDrop = (e: DragEvent) => {
-    e.preventDefault();
-    setDragging(false);
-    if (canEdit) void upload(e.dataTransfer.files);
-  };
-
-  const remove = async (d: DocumentInfo) => {
-    if (!confirm(`¿Borrar "${d.filename}"? Se eliminará también del índice de búsqueda.`)) return;
-    await api.del(`/documents/${d.id}`);
-    void loadDocuments();
-    void loadCollections();
-  };
-
-  const reprocess = async (d: DocumentInfo) => {
-    await api.post(`/documents/${d.id}/reprocess`);
-    void loadDocuments();
-  };
-
-  const createCollection = async () => {
-    const name = prompt("Nombre de la nueva colección:");
-    if (!name?.trim()) return;
-    try {
-      const r = await api.post<{ id: string }>("/collections", { name: name.trim() });
-      await loadCollections();
-      setCollectionId(r.id);
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Error");
-    }
-  };
-
-  const renameCollection = async (c: Collection) => {
-    const name = prompt("Nuevo nombre:", c.name);
-    if (!name?.trim() || name === c.name) return;
-    await api.patch(`/collections/${c.id}`, { name: name.trim() }).catch((e: Error) => alert(e.message));
-    void loadCollections();
-  };
-
-  const deleteCollection = async (c: Collection) => {
-    if (!confirm(`¿Borrar la colección "${c.name}" y sus ${c.documentCount} documentos? No se puede deshacer.`)) return;
-    await api.del(`/collections/${c.id}`);
-    setCollectionId("");
-    void loadCollections();
-  };
-
-  const current = collections.find((c) => c.id === collectionId);
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop: (files) => void upload(files),
+    disabled: progress !== null,
+    // Sin filtro aquí: el servidor valida y explica por qué rechaza cada archivo.
+  });
 
   return (
-    <div className="page">
-      <div className="page-head">
-        <h1>Documentos</h1>
-        {isAdmin && (
-          <button className="primary" onClick={createCollection}>
-            + Nueva colección
-          </button>
-        )}
-      </div>
-
-      {collections.length === 0 ? (
-        <div className="card muted">
-          {isAdmin ? "Crea una colección para empezar a subir documentos." : "Aún no tienes acceso a ninguna colección. Pide acceso a un administrador."}
-        </div>
-      ) : (
-        <>
-          <div className="tabs">
-            {collections.map((c) => (
-              <button key={c.id} className={c.id === collectionId ? "tab active" : "tab"} onClick={() => setCollectionId(c.id)}>
-                {c.name} <span className="muted">({c.documentCount})</span>
-              </button>
-            ))}
-          </div>
-
-          {current && isAdmin && (
-            <div className="row gap small">
-              <button className="link" onClick={() => setShowMembers(true)}>
-                Gestionar acceso ({current.memberIds.length} miembros)
-              </button>
-              <button className="link" onClick={() => void renameCollection(current)}>
-                Renombrar
-              </button>
-              <button className="link danger" onClick={() => void deleteCollection(current)}>
-                Borrar colección
-              </button>
-            </div>
-          )}
-
-          {canEdit && (
-            <div
-              className={`dropzone ${dragging ? "dragging" : ""}`}
-              onDragOver={(e) => {
-                e.preventDefault();
-                setDragging(true);
-              }}
-              onDragLeave={() => setDragging(false)}
-              onDrop={onDrop}
-              onClick={() => fileInput.current?.click()}
-            >
-              <input
-                ref={fileInput}
-                type="file"
-                multiple
-                hidden
-                accept={extensions.join(",")}
-                onChange={(e) => e.target.files && void upload(e.target.files)}
-              />
-              {uploading ? "Subiendo…" : "Arrastra archivos aquí o haz clic para elegirlos"}
-              <div className="muted tiny">{extensions.join(" ")}</div>
-            </div>
-          )}
-
-          {error && <div className="error">{error}</div>}
-          {results.length > 0 && (
-            <ul className="results">
-              {results.map((r, i) => (
-                <li key={i} className={r.status === "queued" ? "success" : "warn"}>
-                  {r.filename}: {r.status === "queued" ? "en cola para procesar" : r.reason}
-                </li>
-              ))}
-            </ul>
-          )}
-
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Documento</th>
-                <th>Estado</th>
-                <th>Tamaño</th>
-                <th>Páginas</th>
-                <th>Trozos</th>
-                <th>Subido</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {documents.map((d) => (
-                <tr key={d.id}>
-                  <td>
-                    <div>{d.title}</div>
-                    <div className="muted tiny">{d.filename}</div>
-                  </td>
-                  <td>
-                    <span className={`status ${STATUS[d.status].cls}`}>{STATUS[d.status].label}</span>
-                    {d.error && <div className="error tiny">{d.error}</div>}
-                  </td>
-                  <td>{formatBytes(d.sizeBytes)}</td>
-                  <td>{d.pageCount ?? "—"}</td>
-                  <td>{d.chunkCount}</td>
-                  <td className="small">
-                    {formatDate(d.createdAt)}
-                    {d.createdBy && <div className="muted tiny">{d.createdBy}</div>}
-                  </td>
-                  <td className="actions">
-                    <a href={`/api/documents/${d.id}/file`} title="Descargar original">
-                      ⬇
-                    </a>
-                    {canEdit && (
-                      <>
-                        <button className="icon" title="Reprocesar" onClick={() => void reprocess(d)}>
-                          ↻
-                        </button>
-                        <button className="icon danger" title="Borrar" onClick={() => void remove(d)}>
-                          ✕
-                        </button>
-                      </>
-                    )}
-                  </td>
-                </tr>
-              ))}
-              {documents.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="muted center-text">
-                    No hay documentos en esta colección.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </>
+    <div
+      {...getRootProps()}
+      className={cn(
+        "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-6 py-8 text-center transition-colors",
+        isDragActive ? "border-primary bg-primary/5" : "hover:border-primary/40 hover:bg-muted/40",
+        progress !== null && "pointer-events-none",
       )}
-
-      {showMembers && current && (
-        <MembersDialog
-          collection={current}
-          onClose={() => {
-            setShowMembers(false);
-            void loadCollections();
-          }}
-        />
+    >
+      <input {...getInputProps()} />
+      {progress === null ? (
+        <>
+          <div className="grid size-10 place-items-center rounded-full bg-primary/10 text-primary">
+            <CloudUpload className="size-5" />
+          </div>
+          <p className="text-sm font-medium">{isDragActive ? "Suelta los archivos aquí" : "Arrastra archivos o haz clic para elegirlos"}</p>
+          <p className="text-xs text-muted-foreground" title={extensions.join(" ")}>
+            PDF, Word, PowerPoint, Excel, CSV, HTML, imágenes y texto
+          </p>
+        </>
+      ) : (
+        <div className="w-full max-w-xs space-y-2">
+          <p className="text-sm font-medium">Subiendo… {Math.round(progress * 100)}%</p>
+          <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+            <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${progress * 100}%` }} />
+          </div>
+        </div>
       )}
     </div>
   );
 }
 
-function MembersDialog({ collection, onClose }: { collection: Collection; onClose: () => void }) {
-  const [users, setUsers] = useState<TenantUser[]>([]);
-  const [selected, setSelected] = useState<string[]>(collection.memberIds);
-  const [error, setError] = useState("");
+export function DocumentsPage() {
+  const { user } = useCurrentUser();
+  const canEdit = user.role === "admin" || user.role === "editor";
+  const isAdmin = user.role === "admin";
+  const { collectionId: routeCollection } = useParams();
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const confirm = useConfirm();
 
-  useEffect(() => {
-    void api.get<{ users: TenantUser[] }>("/users").then((d) => setUsers(d.users));
-  }, []);
+  const [search, setSearch] = useState("");
+  const [collectionDialog, setCollectionDialog] = useState<"new" | "edit" | null>(null);
+  const [membersOpen, setMembersOpen] = useState(false);
+  const [chunksDoc, setChunksDoc] = useState<DocumentInfo | null>(null);
 
-  const save = async (e: FormEvent) => {
-    e.preventDefault();
+  const collectionsQuery = useQuery({
+    queryKey: ["collections"],
+    queryFn: () => api.get<{ collections: Collection[] }>("/collections"),
+  });
+  const collections = collectionsQuery.data?.collections ?? [];
+  const current = collections.find((c) => c.id === routeCollection) ?? collections[0];
+
+  const docsQuery = useQuery({
+    queryKey: ["documents", current?.id],
+    queryFn: () => api.get<{ documents: DocumentInfo[]; supportedExtensions: string[] }>(`/documents?collectionId=${current!.id}`),
+    enabled: !!current,
+    // Mientras haya documentos procesándose, refrescar cada 3 segundos.
+    refetchInterval: (q) => (q.state.data?.documents.some((d) => d.status === "pending" || d.status === "processing") ? 3000 : false),
+  });
+  const documents = docsQuery.data?.documents ?? [];
+  const filtered = search
+    ? documents.filter((d) => `${d.title} ${d.filename}`.toLowerCase().includes(search.toLowerCase()))
+    : documents;
+
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: ["documents"] });
+    void qc.invalidateQueries({ queryKey: ["collections"] });
+  };
+
+  const run = async (fn: () => Promise<unknown>, success: string) => {
     try {
-      await api.put(`/collections/${collection.id}/members`, { userIds: selected });
-      onClose();
+      await fn();
+      toast.success(success);
+      refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Error");
+      toast.error(errorMessage(err));
     }
   };
 
+  const removeDocument = async (d: DocumentInfo) => {
+    const ok = await confirm({
+      title: `¿Borrar «${d.title}»?`,
+      description: "Se eliminará el archivo y dejará de aparecer en las respuestas. No se puede deshacer.",
+      confirmText: "Borrar",
+      destructive: true,
+    });
+    if (ok) await run(() => api.del(`/documents/${d.id}`), "Documento borrado");
+  };
+
+  const removeCollection = async (c: Collection) => {
+    const ok = await confirm({
+      title: `¿Borrar la colección «${c.name}»?`,
+      description: `Se borrarán también sus ${c.documentCount} documentos. No se puede deshacer.`,
+      confirmText: "Borrar colección",
+      destructive: true,
+    });
+    if (!ok) return;
+    await run(() => api.del(`/collections/${c.id}`), "Colección borrada");
+    navigate("/documentos");
+  };
+
+  if (collectionsQuery.isLoading) {
+    return (
+      <Page>
+        <Skeleton className="mb-6 h-8 w-48" />
+        <Skeleton className="h-64 w-full" />
+      </Page>
+    );
+  }
+
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <form className="card modal" onClick={(e) => e.stopPropagation()} onSubmit={save}>
-        <h2>Acceso a «{collection.name}»</h2>
-        <p className="muted small">Los administradores siempre tienen acceso a todas las colecciones.</p>
-        <div className="checklist">
-          {users
-            .filter((u) => u.role !== "admin")
-            .map((u) => (
-              <label key={u.id}>
-                <input
-                  type="checkbox"
-                  checked={selected.includes(u.id)}
-                  onChange={() => setSelected((s) => (s.includes(u.id) ? s.filter((x) => x !== u.id) : [...s, u.id]))}
-                />
-                {u.name} <span className="muted small">({u.email})</span>
-              </label>
-            ))}
-          {users.filter((u) => u.role !== "admin").length === 0 && <div className="muted">No hay editores ni lectores.</div>}
+    <Page>
+      <PageHeader
+        title="Documentos"
+        description="Los documentos se procesan automáticamente al subirlos y quedan disponibles en el chat."
+        actions={
+          isAdmin && (
+            <Button onClick={() => setCollectionDialog("new")}>
+              <FolderPlus /> Nueva colección
+            </Button>
+          )
+        }
+      />
+
+      {!current ? (
+        <EmptyState
+          icon={FolderOpen}
+          title={isAdmin ? "Crea tu primera colección" : "Aún no tienes acceso a ninguna colección"}
+          description={isAdmin ? "Las colecciones son carpetas de documentos con su propio control de acceso." : "Pide a un administrador que te dé acceso."}
+          action={isAdmin && <Button onClick={() => setCollectionDialog("new")}><FolderPlus /> Nueva colección</Button>}
+        />
+      ) : (
+        <div className="space-y-5">
+          {/* Selector de colección y acciones */}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <Select value={current.id} onValueChange={(id) => navigate(`/documentos/${id}`)}>
+              <SelectTrigger className="w-full justify-start sm:w-72 [&>svg:last-child]:ml-auto">
+                <FolderOpen className="text-muted-foreground" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {collections.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.name} <span className="text-muted-foreground">({c.documentCount})</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {isAdmin && (
+              <div className="flex gap-1">
+                <Button variant="outline" size="sm" onClick={() => setMembersOpen(true)}>
+                  <UserRoundCog /> Acceso
+                  <span className="text-muted-foreground">({current.memberIds.length})</span>
+                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="icon" className="size-8" aria-label="Más acciones de la colección">
+                      <EllipsisVertical />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onSelect={() => setCollectionDialog("edit")}>
+                      <Pencil /> Renombrar
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem variant="destructive" onSelect={() => void removeCollection(current)}>
+                      <Trash2 /> Borrar colección
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            )}
+            <div className="relative sm:ml-auto sm:w-64">
+              <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar por nombre…" className="pl-9" />
+            </div>
+          </div>
+          {current.description && <p className="-mt-2 text-sm text-muted-foreground">{current.description}</p>}
+
+          {canEdit && <UploadZone collectionId={current.id} extensions={docsQuery.data?.supportedExtensions ?? []} onUploaded={refresh} />}
+
+          {/* Tabla de documentos */}
+          {docsQuery.isLoading ? (
+            <Skeleton className="h-48 w-full" />
+          ) : filtered.length === 0 ? (
+            <EmptyState
+              icon={search ? Search : FolderOpen}
+              title={search ? "Sin resultados" : "Esta colección está vacía"}
+              description={search ? `Ningún documento coincide con «${search}».` : canEdit ? "Sube el primer documento con el recuadro de arriba." : undefined}
+            />
+          ) : (
+            <div className="overflow-hidden rounded-xl border bg-card">
+              <Table>
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="pl-4">Documento</TableHead>
+                    <TableHead>Estado</TableHead>
+                    <TableHead className="hidden md:table-cell">Tamaño</TableHead>
+                    <TableHead className="hidden md:table-cell">Páginas</TableHead>
+                    <TableHead className="hidden lg:table-cell">Fragmentos</TableHead>
+                    <TableHead className="hidden sm:table-cell">Subido</TableHead>
+                    <TableHead className="w-12" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filtered.map((d) => (
+                    <TableRow key={d.id}>
+                      <TableCell className="pl-4">
+                        <div className="flex items-center gap-3">
+                          <FileTypeIcon filename={d.filename} />
+                          <div className="min-w-0">
+                            <p className="max-w-[16rem] truncate font-medium lg:max-w-sm">{d.title}</p>
+                            <p className="max-w-[16rem] truncate text-xs text-muted-foreground lg:max-w-sm">{d.filename}</p>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {d.error ? (
+                          <Tooltip>
+                            <TooltipTrigger>
+                              <StatusBadge status={d.status} />
+                            </TooltipTrigger>
+                            <TooltipContent className="max-w-xs">{d.error}</TooltipContent>
+                          </Tooltip>
+                        ) : (
+                          <StatusBadge status={d.status} />
+                        )}
+                      </TableCell>
+                      <TableCell className="hidden text-muted-foreground md:table-cell">{formatBytes(d.sizeBytes)}</TableCell>
+                      <TableCell className="hidden text-muted-foreground md:table-cell">{d.pageCount ?? "—"}</TableCell>
+                      <TableCell className="hidden text-muted-foreground lg:table-cell">{d.chunkCount}</TableCell>
+                      <TableCell className="hidden sm:table-cell">
+                        <p className="text-sm">{timeAgo(d.createdAt)}</p>
+                        {d.createdBy && <p className="text-xs text-muted-foreground">{d.createdBy}</p>}
+                      </TableCell>
+                      <TableCell className="pr-3">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="size-8" aria-label="Acciones">
+                              <EllipsisVertical />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem asChild>
+                              <a href={`/api/documents/${d.id}/file`}>
+                                <Download /> Descargar original
+                              </a>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem disabled={d.status !== "ready"} onSelect={() => setChunksDoc(d)}>
+                              <Eye /> Ver fragmentos
+                            </DropdownMenuItem>
+                            {canEdit && (
+                              <>
+                                <DropdownMenuItem onSelect={() => void run(() => api.post(`/documents/${d.id}/reprocess`), "Reprocesando documento")}>
+                                  <RotateCw /> Reprocesar
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem variant="destructive" onSelect={() => void removeDocument(d)}>
+                                  <Trash2 /> Borrar
+                                </DropdownMenuItem>
+                              </>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+          {docsQuery.isFetching && !docsQuery.isLoading && (
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Loader2 className="size-3 animate-spin" /> Actualizando…
+            </p>
+          )}
         </div>
-        {error && <div className="error">{error}</div>}
-        <div className="row gap end">
-          <button type="button" onClick={onClose}>
-            Cancelar
-          </button>
-          <button className="primary">Guardar</button>
-        </div>
-      </form>
-    </div>
+      )}
+
+      <CollectionFormDialog
+        open={collectionDialog !== null}
+        onOpenChange={(o) => !o && setCollectionDialog(null)}
+        collection={collectionDialog === "edit" ? current : undefined}
+        onSaved={(id) => {
+          refresh();
+          navigate(`/documentos/${id}`);
+        }}
+      />
+      {current && <MembersDialog open={membersOpen} onOpenChange={setMembersOpen} collection={current} onSaved={refresh} />}
+      <ChunksSheet document={chunksDoc} onOpenChange={(o) => !o && setChunksDoc(null)} />
+    </Page>
   );
 }

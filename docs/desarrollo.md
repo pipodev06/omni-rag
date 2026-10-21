@@ -80,6 +80,32 @@ La integración continua (`.github/workflows/ci.yml`) ejecuta todo lo anterior, 
 | `routes/*` | Endpoints HTTP |
 | `scripts/*` | Primer administrador, `seed` y `reindex` |
 
+## Interfaz web
+
+Estructura de `apps/web/src`:
+
+| Ruta | Contenido |
+|---|---|
+| `main.tsx` | Proveedores: tema, TanStack Query, tooltips, confirmaciones, router y notificaciones |
+| `App.tsx` | Rutas (`/chat/:id`, `/documentos/:coleccion`, `/usuarios`…) con carga diferida por página |
+| `api.ts` | Cliente de la API, streaming del chat y subida con progreso |
+| `index.css` | Tema: variables de color (claro/oscuro), tipografía y radios |
+| `components/ui/` | Componentes de shadcn/ui (generados; se pueden editar) |
+| `components/` | Piezas propias: `AppLayout` (barra lateral), `common` (cabeceras, estados vacíos, iconos de archivo), `ConfirmProvider`, `chat/`, `documents/` |
+| `pages/` | Una página por sección |
+
+**Cambiar el color de marca:** edita `--primary` y `--ring` en `src/index.css`, tanto en `:root` (modo claro) como en `.dark` (modo oscuro). Los valores están en formato `oklch`. Un conversor como <https://oklch.com> sirve para pasar de HEX a `oklch`.
+
+**Añadir un componente de shadcn/ui** (desde `apps/web`):
+
+```bash
+npx shadcn@latest add popover
+```
+
+Tras añadirlo, revisa que los imports apunten a `@/lib/utils`.
+
+**Diálogos de confirmación:** usa `const confirm = useConfirm()` y `await confirm({ title, description, destructive: true })` en lugar de `window.confirm`. Para avisos, usa `toast.success(...)` / `toast.error(...)` de `sonner`.
+
 ## Convenciones
 
 - **Todo acceso a datos de un cliente pasa por `withTenant()`.** `sqlOwner` solo se usa en login, plataforma, límites y migraciones.

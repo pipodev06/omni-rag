@@ -92,3 +92,16 @@ En la planificación inicial se propuso MinIO. Para un único servidor, un volum
 - claves foráneas compuestas `(id, tenant_id)`.
 
 **Consecuencia.** Un error en una consulta no puede filtrar datos entre clientes. Coste: cada tabla nueva necesita sus políticas (ver convenciones en [desarrollo.md](desarrollo.md#convenciones)).
+
+## 11. shadcn/ui + Tailwind CSS + Lucide para la interfaz
+
+**Alternativas:** Flowbite React, MUI, Mantine, CSS propio (la primera versión).
+
+**Decisión.** [shadcn/ui](https://ui.shadcn.com) sobre Tailwind CSS 4:
+- los componentes se **copian al proyecto** (`apps/web/src/components/ui/`), así que se pueden modificar sin depender de la librería;
+- se basan en **Radix UI**: accesibles con teclado y lector de pantalla (diálogos, menús, selectores);
+- iconos de **Lucide**, notificaciones con **Sonner**, datos con **TanStack Query** y URLs reales con **React Router**.
+
+Flowbite está más orientado a HTML/plantillas; MUI y Mantine imponen un estilo propio difícil de cambiar.
+
+**Estilo: "neutro profesional".** Grises *zinc* y un único color de acento (índigo), tipografía Inter incluida en la imagen (sin llamadas a Google Fonts), modo claro, oscuro y automático. El acento se cambia en un solo sitio (ver [desarrollo.md](desarrollo.md#interfaz-web)).

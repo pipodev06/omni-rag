@@ -1,100 +1,60 @@
-import { useCallback, useEffect, useState } from "react";
-import { api, ROLE_LABELS, type Tenant, type User } from "./api";
-import { LoginPage } from "./pages/LoginPage";
-import { ChatPage } from "./pages/ChatPage";
-import { DocumentsPage } from "./pages/DocumentsPage";
-import { UsersPage } from "./pages/UsersPage";
-import { UsagePage } from "./pages/UsagePage";
-import { PlatformPage } from "./pages/PlatformPage";
-import { AccountPage } from "./pages/AccountPage";
+import { lazy, Suspense, type ReactNode } from "react";
+import { Navigate, Route, Routes, useLocation } from "react-router";
+import { Loader2 } from "lucide-react";
+import { useSession } from "@/hooks/useSession";
+import { AppLayout } from "@/components/AppLayout";
+import { LoginPage } from "@/pages/LoginPage";
 
-type Page = "chat" | "documents" | "users" | "usage" | "platform" | "account";
+// Cada página se descarga solo cuando se visita (carga inicial más ligera).
+const ChatPage = lazy(() => import("@/pages/ChatPage").then((m) => ({ default: m.ChatPage })));
+const DocumentsPage = lazy(() => import("@/pages/DocumentsPage").then((m) => ({ default: m.DocumentsPage })));
+const UsersPage = lazy(() => import("@/pages/UsersPage").then((m) => ({ default: m.UsersPage })));
+const UsagePage = lazy(() => import("@/pages/UsagePage").then((m) => ({ default: m.UsagePage })));
+const PlatformPage = lazy(() => import("@/pages/PlatformPage").then((m) => ({ default: m.PlatformPage })));
+const AccountPage = lazy(() => import("@/pages/AccountPage").then((m) => ({ default: m.AccountPage })));
 
-const readHash = (): Page => {
-  const h = window.location.hash.replace("#/", "") as Page;
-  return ["chat", "documents", "users", "usage", "platform", "account"].includes(h) ? h : "chat";
-};
+function FullScreenLoader() {
+  return (
+    <div className="grid h-full place-items-center text-muted-foreground">
+      <Loader2 className="size-6 animate-spin" />
+    </div>
+  );
+}
+
+/** Solo deja pasar si hay sesión (y, opcionalmente, si se cumple una condición de permisos). */
+function Protected({ children, allow = true }: { children: ReactNode; allow?: boolean }) {
+  const { data, isLoading } = useSession();
+  const location = useLocation();
+  if (isLoading) return <FullScreenLoader />;
+  if (!data) return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  if (!allow) return <Navigate to="/chat" replace />;
+  return <Suspense fallback={<FullScreenLoader />}>{children}</Suspense>;
+}
 
 export function App() {
-  const [session, setSession] = useState<{ user: User; tenant: Tenant } | null | undefined>(undefined);
-  const [page, setPage] = useState<Page>(readHash);
-
-  const loadSession = useCallback(async () => {
-    try {
-      setSession(await api.get<{ user: User; tenant: Tenant }>("/auth/me"));
-    } catch {
-      setSession(null);
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadSession();
-    const onHash = () => setPage(readHash());
-    const onUnauthorized = () => setSession(null);
-    window.addEventListener("hashchange", onHash);
-    window.addEventListener("rag:unauthorized", onUnauthorized);
-    return () => {
-      window.removeEventListener("hashchange", onHash);
-      window.removeEventListener("rag:unauthorized", onUnauthorized);
-    };
-  }, [loadSession]);
-
-  if (session === undefined) return <div className="center muted">Cargando…</div>;
-  if (session === null) return <LoginPage onLogin={loadSession} />;
-
-  const { user, tenant } = session;
-  const nav: { id: Page; label: string; show: boolean }[] = [
-    { id: "chat", label: "💬 Chat", show: true },
-    { id: "documents", label: "📄 Documentos", show: true },
-    { id: "users", label: "👥 Usuarios", show: user.role === "admin" },
-    { id: "usage", label: "📊 Consumo", show: user.role === "admin" },
-    { id: "platform", label: "🏢 Organizaciones", show: user.isSuperadmin },
-    { id: "account", label: "⚙️ Mi cuenta", show: true },
-  ];
-  const current = nav.find((n) => n.id === page && n.show) ? page : "chat";
-
-  const logout = async () => {
-    await api.post("/auth/logout").catch(() => {});
-    setSession(null);
-  };
+  const { data, isLoading } = useSession();
+  const user = data?.user;
 
   return (
-    <div className="layout">
-      <aside className="sidebar">
-        <div className="brand">
-          <span className="logo">R</span>
-          <div>
-            <div className="brand-name">RAG Project</div>
-            <div className="muted small">{tenant.name}</div>
-          </div>
-        </div>
-        <nav>
-          {nav
-            .filter((n) => n.show)
-            .map((n) => (
-              <a key={n.id} href={`#/${n.id}`} className={current === n.id ? "active" : ""}>
-                {n.label}
-              </a>
-            ))}
-        </nav>
-        <div className="sidebar-footer">
-          <div className="small">{user.name}</div>
-          <div className="muted small">
-            {user.email} · {ROLE_LABELS[user.role]}
-          </div>
-          <button className="link" onClick={logout}>
-            Cerrar sesión
-          </button>
-        </div>
-      </aside>
-      <main className="content">
-        {current === "chat" && <ChatPage />}
-        {current === "documents" && <DocumentsPage user={user} />}
-        {current === "users" && <UsersPage me={user} />}
-        {current === "usage" && <UsagePage />}
-        {current === "platform" && <PlatformPage />}
-        {current === "account" && <AccountPage />}
-      </main>
-    </div>
+    <Routes>
+      <Route path="/login" element={isLoading ? <FullScreenLoader /> : data ? <Navigate to="/chat" replace /> : <LoginPage />} />
+      <Route
+        element={
+          <Protected>
+            <AppLayout />
+          </Protected>
+        }
+      >
+        <Route path="/chat" element={<ChatPage />} />
+        <Route path="/chat/:conversationId" element={<ChatPage />} />
+        <Route path="/documentos" element={<DocumentsPage />} />
+        <Route path="/documentos/:collectionId" element={<DocumentsPage />} />
+        <Route path="/usuarios" element={<Protected allow={user?.role === "admin"}><UsersPage /></Protected>} />
+        <Route path="/consumo" element={<Protected allow={user?.role === "admin"}><UsagePage /></Protected>} />
+        <Route path="/organizaciones" element={<Protected allow={user?.isSuperadmin === true}><PlatformPage /></Protected>} />
+        <Route path="/cuenta" element={<AccountPage />} />
+      </Route>
+      <Route path="*" element={<Navigate to="/chat" replace />} />
+    </Routes>
   );
 }
