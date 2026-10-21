@@ -18,7 +18,8 @@ Base: `http://localhost:8000/api` (a través de nginx) o `http://localhost:3001/
 |---|---|---|---|
 | POST | `/auth/login` | `{ email, password }` | `{ token, user }` + cookie. Máx. 10 intentos / 15 min por IP y email. |
 | POST | `/auth/logout` | — | Borra la cookie |
-| GET | `/auth/me` | — | `{ user, tenant }` |
+| GET | `/auth/me` | — | `{ user, tenant, support }`. `support` = `{ name, email }` del superadministrador si la sesión es de soporte, o `null` |
+| POST | `/auth/exit-support` | — | Sale del modo soporte y vuelve a la sesión del superadministrador: `{ token, user }` + cookie |
 | POST | `/auth/change-password` | `{ currentPassword, newPassword }` | `{ ok }` (mín. 10 caracteres) |
 | GET | `/auth/config` | — | `{ emailEnabled }` (si hay SMTP configurado) |
 | POST | `/auth/forgot` | `{ email }` | `{ ok }` siempre (no revela si el email existe). Envía un enlace si hay SMTP. Máx. 5 / hora por IP y email |
@@ -143,6 +144,7 @@ curl localhost:8000/api/documents -H "authorization: Bearer $TOKEN" \
 |---|---|---|
 | GET | `/platform/tenants` | → lista con nº de usuarios y documentos |
 | POST | `/platform/tenants` | `{ name, slug, dailyQuestionLimit?, admin: { email, name, password? } }` → crea la organización, su admin y la colección "General". Sin `password`, el admin recibe una invitación (`inviteUrl`, `emailSent`) |
+| POST | `/platform/tenants/:id/enter` | — → entra en la organización como soporte (rol admin) y cambia la cookie de sesión. Queda en su auditoría (`support.entered`) |
 | PATCH | `/platform/tenants/:id` | `{ name?, isActive?, dailyQuestionLimit? }` (`null` = límite global, `0` = sin límite) |
 
 ## Auditoría — `/audit` (admin)

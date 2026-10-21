@@ -240,7 +240,7 @@ export function timeAgo(iso: string): string {
 export const initials = (name: string) =>
   name
     .split(/\s+/)
-    .filter(Boolean)
+    .filter((w) => /^\p{L}/u.test(w)) // solo palabras que empiezan por letra, p. ej. no "(soporte)"
     .slice(0, 2)
     .map((w) => w[0]!.toUpperCase())
     .join("") || "?";
@@ -256,4 +256,6 @@ export const ROLE_DESCRIPTIONS: Record<Role, string> = {
 export interface Session {
   user: User;
   tenant: Tenant;
+  /** Presente cuando el superadministrador está dentro de esta organización como soporte. */
+  support: { name: string; email: string } | null;
 }

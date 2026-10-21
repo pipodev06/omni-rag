@@ -156,6 +156,21 @@ describe.skipIf(!enabled)("Row Level Security", async () => {
     await expect(withTenant(as("a", "admin"), (tx) => tx`DELETE FROM audit_log`)).rejects.toThrow(/permission denied/);
   });
 
+  it("el admin del cliente no puede modificar ni borrar la cuenta de soporte", async () => {
+    const [sup] = await sqlOwner`
+      INSERT INTO users (tenant_id, email, name, password_hash, role, support_for)
+      VALUES (${ids.tenant_a!}, ${`soporte-${tag}@rls.test`}, 'soporte', NULL, 'admin', ${ids.admin_b!}) RETURNING id`;
+    const updated = await withTenant(as("a", "admin"), (tx) => tx`UPDATE users SET is_active = false WHERE id = ${sup!.id} RETURNING id`);
+    const deleted = await withTenant(as("a", "admin"), (tx) => tx`DELETE FROM users WHERE id = ${sup!.id} RETURNING id`);
+    expect(updated).toHaveLength(0);
+    expect(deleted).toHaveLength(0);
+    await expect(
+      withTenant(as("a", "admin"), (tx) => tx`
+        INSERT INTO users (tenant_id, email, name, password_hash, role, support_for)
+        VALUES (${ids.tenant_a!}, ${`falso-${tag}@rls.test`}, 'x', NULL, 'admin', ${ids.admin_a!})`),
+    ).rejects.toThrow(/row-level security/);
+  });
+
   it("sin contexto de organización no se ve nada", async () => {
     const { sqlApp } = await import("../src/db/client.js");
     const rows = await sqlApp`SELECT id FROM chunks`;

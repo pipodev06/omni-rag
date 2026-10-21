@@ -223,6 +223,7 @@ Reparte el cupo de OpenRouter (1.000 al día con créditos) entre tus clientes c
 | El invitado dice que el enlace "no es válido o ha caducado" | Caducó, ya se usó o se generó uno más nuevo | Usuarios → ⋮ → *Reenviar invitación* |
 | No llegan los correos | SMTP mal configurado o bloqueado por spam | `docker compose logs api \| grep correo`; revisa `SMTP_*`, SPF/DKIM; prueba con Mailpit |
 | Caddy no obtiene el certificado | DNS aún sin propagar o puertos 80/443 cerrados | `docker compose logs caddy`; comprueba el registro A y el cortafuegos |
+| Tras actualizar, una página muestra "Hay una versión nueva de la aplicación" | La pestaña tenía abierta la versión anterior | Pulsa **Recargar** (la app intenta recargarse sola una vez) |
 | `password authentication failed for user "rag_owner"` | Se cambió `POSTGRES_PASSWORD` después del primer arranque | Ver "Cambiar contraseñas de la base de datos" |
 
 ## Usuarios: invitaciones y contraseñas
@@ -231,6 +232,10 @@ Reparte el cupo de OpenRouter (1.000 al día con créditos) entre tus clientes c
 - **Reenviar invitación / enlace para restablecer**: menú ⋮ del usuario. Cada enlace nuevo anula el anterior.
 - **¿Olvidaste la contraseña?** (pantalla de login): requiere SMTP. Responde lo mismo exista o no el email, para no revelar quién tiene cuenta. El enlace caduca en `RESET_EXPIRES_MINUTES` (60 min).
 - Los enlaces solo se guardan como hash SHA-256 en la base de datos.
+
+## Entrar en una organización como soporte
+
+El superadministrador puede ver y gestionar cualquier organización con su propio usuario: **Organizaciones → ⋮ → Entrar como soporte**. Arriba aparece un aviso con **Volver a mi organización**. Se entra con permisos de administrador y queda registrado en la auditoría del cliente (categoría *Soporte*). Detalles en [permisos.md](permisos.md#acceso-de-soporte-del-superadministrador).
 
 ## Auditoría
 

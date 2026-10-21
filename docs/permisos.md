@@ -6,7 +6,7 @@
 |---|---|
 | **Organización** (*tenant*) | Un cliente. Sus usuarios, colecciones, documentos y conversaciones están completamente separados de los de otras organizaciones. |
 | **Colección** | Carpeta de documentos dentro de una organización. Sirve para dar acceso a grupos de documentos. |
-| **Superadministrador** | El dueño de la plataforma (tú). Crea organizaciones y puede desactivarlas. Se crea al primer arranque con `SEED_ADMIN_EMAIL`. |
+| **Superadministrador** | El dueño de la plataforma (tú). Crea organizaciones, puede desactivarlas y puede **entrar en cualquiera como soporte** (ver abajo). Se crea al primer arranque con `SEED_ADMIN_EMAIL`. |
 
 ## Roles dentro de una organización
 
@@ -74,13 +74,25 @@ El filtro de permisos se aplica **dentro** de la búsqueda vectorial, no despué
 - La tabla de enlaces (`user_tokens`) **no es accesible** para la conexión normal de la API (`rag_app`): tiene RLS activado sin políticas ni permisos. Solo la usan el login y la creación de enlaces, con la conexión `rag_owner`. Se guarda el hash del enlace, no el enlace.
 - El **registro de auditoría** se escribe con `rag_owner` (así ningún usuario puede insertar entradas falsas ni borrarlas) y lo pueden **leer solo los administradores** de cada organización, por RLS. Los editores y lectores no lo ven.
 
+## Acceso de soporte del superadministrador
+
+Con un solo usuario puedes entrar en cualquier organización: **Organizaciones → ⋮ → Entrar como soporte**.
+
+- Se usa una **cuenta de soporte** de esa organización, enlazada a tu usuario (`users.support_for`), con rol administrador. Así el aislamiento por RLS sigue funcionando igual: dentro, solo ves esa organización, y tu historial de chat de soporte queda en ella.
+- La cuenta **no tiene contraseña** y no se puede usar para iniciar sesión: solo vale dentro de tu sesión (el token lleva tu identificador y se comprueba en cada petición que sigues siendo superadministrador y estás activo).
+- No aparece en la lista de usuarios del cliente ni en los recuentos, y sus administradores **no pueden modificarla ni borrarla** (política RLS).
+- La entrada, la salida y todo lo que hagas se registran en la **auditoría del cliente** con tu email real seguido de "(soporte)".
+- Mientras estás dentro se muestra un aviso fijo con **Volver a mi organización**. En modo soporte no se puede gestionar la plataforma ni cambiar la contraseña.
+
+Si tus contratos lo requieren, informa a tus clientes de que el proveedor puede acceder como soporte y de que esos accesos quedan en su auditoría.
+
 ## Cómo está probado
 
-- `apps/api/test/rls.integration.test.ts` ataca directamente la base de datos simulando errores del código: consultas sin filtro, inserciones en colecciones ajenas, lectores intentando borrar, un admin intentando hacerse superadministrador, que `rag_app` no pueda leer `user_tokens`, que la auditoría de una organización no se vea desde otra ni por un lector, etc.
+- `apps/api/test/rls.integration.test.ts` ataca directamente la base de datos simulando errores del código: consultas sin filtro, inserciones en colecciones ajenas, lectores intentando borrar, un admin intentando hacerse superadministrador o modificar la cuenta de soporte, que `rag_app` no pueda leer `user_tokens`, que la auditoría de una organización no se vea desde otra ni por un lector, etc.
 - `scripts/smoke-test.mjs` crea dos organizaciones reales, sube un secreto a una y comprueba por la API que la otra no lo encuentra.
 
 ## Límites conocidos
 
 - RLS protege frente a **errores del código**. Si alguien pudiera ejecutar SQL arbitrario como `rag_app` (inyección SQL), podría cambiar `app.tenant_id`. Por eso todo el SQL usa parámetros (`postgres` con *tagged templates*) y nunca concatena texto del usuario.
-- El superadministrador usa la conexión `rag_owner` solo en las rutas `/api/platform/*` y en el login.
+- El superadministrador usa la conexión `rag_owner` solo en las rutas `/api/platform/*` y en el login. Para ver los datos de un cliente entra como soporte, con las mismas reglas que un administrador de esa organización.
 - Los **administradores de una organización** ven todos sus documentos. Si un cliente necesita documentos que ni su administrador vea, crea otra organización.

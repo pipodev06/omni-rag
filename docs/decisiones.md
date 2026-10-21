@@ -178,3 +178,13 @@ Medido con el sistema completo: TEI reservaba memoria para lotes grandes que est
 ## 21. Revisión con React Doctor
 
 La interfaz se revisa con [React Doctor](https://www.npmjs.com/package/react-doctor) (`pnpm --filter @rag/web run doctor`). La primera pasada dio 63/100; se corrigieron: comprobar `res.ok` antes de leer la respuesta, valores de contexto memorizados, estados que no se reiniciaban si había error, claves estables en las listas del chat, búsquedas con `Set` en lugar de recorrer arrays y la división de páginas grandes (chat, documentos, calidad) en componentes y *hooks*. Puntuación actual: 100/100.
+
+## 22. Acceso de soporte con una cuenta por organización
+
+**Alternativas:** dar al superadministrador una conexión que se salte el RLS; permitir que su sesión cambie `tenant_id` sin más.
+
+**Decisión.** Al entrar en una organización se usa una cuenta de soporte de esa organización enlazada al superadministrador (`support_for`), sin contraseña, válida solo dentro de su sesión. Saltarse el RLS rompería la garantía principal del sistema, y cambiar solo `tenant_id` fallaría con las claves foráneas compuestas (las conversaciones deben pertenecer a un usuario de la misma organización). Con la cuenta de soporte todo funciona como para un administrador normal, y cada acceso queda en la auditoría del cliente. Al entrar o salir se recarga la página para no mezclar datos ni avisos en tiempo real de dos organizaciones.
+
+## 23. Cierre de sesión sin `queryClient.clear()`
+
+Al cerrar sesión se borraba toda la caché de TanStack Query, incluida la consulta de sesión que observaban las rutas. Unas rutas seguían viendo la sesión anterior y otras ninguna, y la app saltaba sin fin entre `/login` y `/chat`. Ahora primero se marca la sesión como vacía y después se descartan solo los demás datos (`clearSession`). Además, cada página tiene un *error boundary*: si falta un archivo de la app tras una actualización, se recarga una vez (como mucho cada 30 s) y si no, muestra un botón **Recargar** en lugar de quedarse en blanco.

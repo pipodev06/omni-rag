@@ -1,15 +1,15 @@
 import { Hono, type Context } from "hono";
-import { deleteCookie, setCookie } from "hono/cookie";
+import { deleteCookie } from "hono/cookie";
 import { z } from "zod";
 import { sqlOwner, type Role } from "../db/client.js";
-import { signSession } from "../auth/jwt.js";
+import { issueSession } from "../auth/session.js";
 import { requireAuth, SESSION_COOKIE, type AppEnv } from "../auth/middleware.js";
 import { hashPassword, passwordProblem, verifyPassword } from "../auth/password.js";
 import { audit, auditLog } from "../lib/audit.js";
 import { badRequest, HttpError, notFound, unauthorized } from "../lib/errors.js";
 import { emailEnabled } from "../lib/mailer.js";
 import { RateLimiter } from "../lib/rateLimit.js";
-import { clientIp, secureCookie } from "../lib/request.js";
+import { clientIp } from "../lib/request.js";
 import { createUserLink, emailLink, findValidToken } from "../lib/tokens.js";
 import { parse } from "../lib/validate.js";
 
@@ -35,15 +35,7 @@ interface SessionUser {
 
 /** Firma la sesión, pone la cookie y devuelve el cuerpo de respuesta del login. */
 async function startSession(c: Context<AppEnv>, user: SessionUser) {
-  await sqlOwner`UPDATE users SET last_login_at = now() WHERE id = ${user.id}`;
-  const token = await signSession({ userId: user.id, tenantId: user.tenant_id, role: user.role });
-  setCookie(c, SESSION_COOKIE, token, {
-    httpOnly: true,
-    secure: secureCookie(c),
-    sameSite: "Lax",
-    path: "/",
-    maxAge: 60 * 60 * 24 * 7,
-  });
+  const token = await issueSession(c, { userId: user.id, tenantId: user.tenant_id, role: user.role });
   return {
     token, // para clientes que no usan cookies (scripts, integraciones)
     user: { id: user.id, email: user.email, name: user.name, role: user.role, isSuperadmin: user.is_superadmin },
@@ -91,7 +83,22 @@ authRoutes.post("/logout", (c) => {
 authRoutes.get("/me", requireAuth, async (c) => {
   const u = c.get("user");
   const [tenant] = await sqlOwner<{ name: string; slug: string }[]>`SELECT name, slug FROM tenants WHERE id = ${u.tenantId}`;
-  return c.json({ user: { id: u.id, email: u.email, name: u.name, role: u.role, isSuperadmin: u.isSuperadmin }, tenant });
+  return c.json({
+    user: { id: u.id, email: u.email, name: u.name, role: u.role, isSuperadmin: u.isSuperadmin },
+    tenant,
+    support: u.support ? { name: u.support.name, email: u.support.email } : null,
+  });
+});
+
+/** Sale del modo soporte y vuelve a la sesión normal del superadministrador. */
+authRoutes.post("/exit-support", requireAuth, async (c) => {
+  const u = c.get("user");
+  if (!u.support) throw badRequest("No estás en modo soporte");
+  const [actor] = await sqlOwner<SessionUser[]>`
+    SELECT id, tenant_id, name, email, role, is_superadmin FROM users WHERE id = ${u.support.id}`;
+  if (!actor) throw unauthorized();
+  await audit(c, "support.exited");
+  return c.json(await startSession(c, actor));
 });
 
 const ChangePasswordBody = z.object({ currentPassword: z.string().min(1), newPassword: z.string() });
@@ -101,6 +108,7 @@ authRoutes.post("/change-password", requireAuth, async (c) => {
   const problem = passwordProblem(body.newPassword);
   if (problem) throw badRequest(problem);
   const u = c.get("user");
+  if (u.support) throw badRequest("En modo soporte no se puede cambiar la contraseña");
   const [row] = await sqlOwner<{ password_hash: string | null }[]>`SELECT password_hash FROM users WHERE id = ${u.id}`;
   if (!row?.password_hash || !(await verifyPassword(body.currentPassword, row.password_hash))) {
     throw badRequest("La contraseña actual no es correcta");

@@ -47,7 +47,7 @@ Guía completa paso a paso: **[docs/instalacion.md](docs/instalacion.md)**.
 
 ## Cómo se usa
 
-1. **Organizaciones (superadministrador):** crea una organización por cliente, con su primer administrador.
+1. **Organizaciones (superadministrador):** crea una organización por cliente, con su primer administrador. Con **Entrar como soporte** accedes a cualquiera de ellas con tu propio usuario (queda en su auditoría).
 2. **Documentos (administrador/editor):** crea colecciones (carpetas) y arrastra archivos. Se procesan en segundo plano: *En cola → Procesando → Listo*.
 3. **Usuarios (administrador):** invita editores y lectores por email (o crea su contraseña tú) y dales acceso a las colecciones que correspondan. En **Auditoría** ves quién hizo qué.
 4. **Chat (todos):** pregunta. La respuesta cita las fuentes `[1]`; despliégalas y pulsa **Ver en el documento** para abrir el PDF en la página citada con el texto resaltado.

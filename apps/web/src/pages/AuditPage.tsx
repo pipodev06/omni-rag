@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { Building2, FileText, FolderOpen, KeyRound, Loader2, ScrollText, ThumbsUp, Users, type LucideIcon } from "lucide-react";
+import { Building2, FileText, FolderOpen, KeyRound, LifeBuoy, Loader2, ScrollText, ThumbsUp, Users, type LucideIcon } from "lucide-react";
 import { api, formatDate, ROLE_LABELS } from "@/api";
 import { EmptyState, Page, PageHeader } from "@/components/common";
 import { Badge } from "@/components/ui/badge";
@@ -28,6 +28,7 @@ const CATEGORIES: { value: string; label: string; icon: LucideIcon }[] = [
   { value: "document", label: "Documentos", icon: FileText },
   { value: "quality", label: "Calidad", icon: ThumbsUp },
   { value: "tenant", label: "Organizaciones", icon: Building2 },
+  { value: "support", label: "Soporte", icon: LifeBuoy },
 ];
 
 const ACTIONS: Record<string, string> = {
@@ -52,6 +53,8 @@ const ACTIONS: Record<string, string> = {
   "quality.feedback_resolved": "Revisó una valoración",
   "tenant.created": "Creó una organización",
   "tenant.updated": "Modificó una organización",
+  "support.entered": "Entró como soporte",
+  "support.exited": "Salió del modo soporte",
 };
 
 const DETAIL_LABELS: Record<string, string> = {

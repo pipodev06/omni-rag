@@ -139,7 +139,7 @@ tenants ─┬─< users ─< user_tokens (invitación / restablecer)
 | Tabla | Contenido |
 |---|---|
 | `tenants` | Organizaciones (clientes); límite diario opcional |
-| `users` | Usuarios con rol `admin`/`editor`/`viewer`; `is_superadmin` para el dueño de la plataforma |
+| `users` | Usuarios con rol `admin`/`editor`/`viewer`; `is_superadmin` para el dueño de la plataforma; `support_for` marca la cuenta de soporte del superadministrador en cada organización |
 | `collections` | Carpetas de documentos |
 | `collection_members` | Qué editores/lectores ven cada colección |
 | `documents` | Archivo subido, estado de procesamiento, nº de páginas y trozos |

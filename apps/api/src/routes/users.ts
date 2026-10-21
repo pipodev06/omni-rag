@@ -24,6 +24,7 @@ userRoutes.get("/", async (c) => {
            coalesce(array_agg(m.collection_id) FILTER (WHERE m.collection_id IS NOT NULL), '{}') AS "collectionIds"
       FROM users u
       LEFT JOIN collection_members m ON m.user_id = u.id
+     WHERE u.support_for IS NULL
      GROUP BY u.id
      ORDER BY u.created_at`);
   return c.json({ users });
@@ -87,7 +88,7 @@ userRoutes.post("/:id/link", async (c) => {
   if (!UUID_RE.test(id)) throw notFound();
   const ctx = tenantCtx(c);
   const [u] = await withTenant(ctx, (tx) => tx<{ id: string; email: string; name: string; pending: boolean; is_active: boolean }[]>`
-    SELECT id, email, name, (password_hash IS NULL) AS pending, is_active FROM users WHERE id = ${id} AND is_superadmin = false`);
+    SELECT id, email, name, (password_hash IS NULL) AS pending, is_active FROM users WHERE id = ${id} AND is_superadmin = false AND support_for IS NULL`);
   if (!u) throw notFound("Usuario no encontrado");
   if (!u.is_active) throw badRequest("El usuario está desactivado");
   const kind = u.pending ? "invite" : "reset";
@@ -126,7 +127,7 @@ userRoutes.patch("/:id", async (c) => {
         role = coalesce(${body.role ?? null}::user_role, role),
         is_active = coalesce(${body.isActive ?? null}::boolean, is_active),
         password_hash = coalesce(${hash}, password_hash)
-      WHERE id = ${id} AND is_superadmin = false
+      WHERE id = ${id} AND is_superadmin = false AND support_for IS NULL
       RETURNING id`;
     return u;
   });

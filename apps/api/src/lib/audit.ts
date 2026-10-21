@@ -12,7 +12,7 @@ import { clientIp } from "./request.js";
  * user.link_created, collection.created, collection.updated, collection.deleted,
  * collection.members_updated, document.uploaded, document.deleted, document.reprocessed,
  * document.summary, quality.cache_cleared, quality.feedback_resolved,
- * tenant.created, tenant.updated.
+ * tenant.created, tenant.updated, support.entered, support.exited.
  */
 export interface AuditActor {
   tenantId: string | null;
@@ -41,5 +41,7 @@ export async function auditLog(actor: AuditActor, action: string, entry: AuditEn
 /** Atajo para rutas autenticadas: el actor es el usuario de la sesión. */
 export function audit(c: Context<AppEnv>, action: string, entry: AuditEntry = {}): Promise<void> {
   const u = c.get("user");
-  return auditLog({ tenantId: u.tenantId, userId: u.id, email: u.email, ip: clientIp(c) }, action, entry);
+  // En modo soporte se registra el email real del superadministrador.
+  const email = u.support ? `${u.support.email} (soporte)` : u.email;
+  return auditLog({ tenantId: u.tenantId, userId: u.id, email, ip: clientIp(c) }, action, entry);
 }

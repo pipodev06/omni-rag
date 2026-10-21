@@ -7,6 +7,8 @@ import {
   ChartColumn,
   ChevronsUpDown,
   Files,
+  LifeBuoy,
+  Loader2,
   LogOut,
   Menu,
   MessagesSquare,
@@ -16,11 +18,13 @@ import {
   Settings,
   Sun,
   ThumbsUp,
+  Undo2,
   Users,
   type LucideIcon,
 } from "lucide-react";
-import { api, initials, ROLE_LABELS } from "@/api";
-import { useCurrentUser } from "@/hooks/useSession";
+import { toast } from "sonner";
+import { api, errorMessage, initials, ROLE_LABELS } from "@/api";
+import { clearSession, switchOrganization, useCurrentUser } from "@/hooks/useSession";
 import { useTheme, type Theme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import { Logo } from "@/components/common";
@@ -77,9 +81,8 @@ function UserMenu() {
 
   const logout = async () => {
     await api.post("/auth/logout").catch(() => {});
-    qc.clear();
-    qc.setQueryData(["session"], null);
-    navigate("/login");
+    clearSession(qc);
+    navigate("/login", { replace: true });
   };
 
   return (
@@ -188,6 +191,7 @@ export function AppLayout() {
         </Sheet>
 
         <div className="flex min-w-0 flex-1 flex-col">
+          <SupportBanner />
           <header className="flex h-14 shrink-0 items-center gap-2 border-b px-3 md:hidden">
             <Button variant="ghost" size="icon" onClick={() => setMobileOpen(true)} aria-label="Abrir menú">
               <Menu />
@@ -201,6 +205,35 @@ export function AppLayout() {
       </div>
       </DocumentViewerProvider>
     </SidebarSlotContext.Provider>
+  );
+}
+
+/** Aviso fijo mientras el superadministrador está dentro de una organización como soporte. */
+function SupportBanner() {
+  const { tenant, support } = useCurrentUser();
+  const [busy, setBusy] = useState(false);
+  if (!support) return null;
+  const exit = async () => {
+    setBusy(true);
+    try {
+      await api.post("/auth/exit-support");
+      switchOrganization("/organizaciones");
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 bg-primary px-3 py-1.5 text-center text-sm text-primary-foreground">
+      <LifeBuoy className="size-4 shrink-0" />
+      <span>
+        Estás en <strong>{tenant.name}</strong> como soporte. Lo que hagas queda registrado en su auditoría.
+      </span>
+      <Button size="sm" variant="secondary" className="h-7" onClick={() => void exit()} disabled={busy}>
+        {busy ? <Loader2 className="animate-spin" /> : <Undo2 />} Volver a mi organización
+      </Button>
+    </div>
   );
 }
 

@@ -3,7 +3,9 @@ import { z } from "zod";
 import { sqlOwner, withTenant } from "../db/client.js";
 import { requireAuth, requireRole, requireSuperadmin, tenantCtx, type AppEnv } from "../auth/middleware.js";
 import { hashPassword, passwordProblem } from "../auth/password.js";
-import { audit } from "../lib/audit.js";
+import { issueSession } from "../auth/session.js";
+import { audit, auditLog } from "../lib/audit.js";
+import { clientIp } from "../lib/request.js";
 import { createUserLink, emailLink } from "../lib/tokens.js";
 import { badRequest, HttpError, notFound } from "../lib/errors.js";
 import { parse, UUID_RE } from "../lib/validate.js";
@@ -32,7 +34,7 @@ usageRoutes.get("/", async (c) => {
     const [totals] = await tx`
       SELECT (SELECT count(*)::int FROM documents) AS documents,
              (SELECT count(*)::int FROM chunks) AS chunks,
-             (SELECT count(*)::int FROM users) AS users`;
+             (SELECT count(*)::int FROM users WHERE support_for IS NULL) AS users`;
     return { daily, byModel, totals };
   });
   return c.json(data);
@@ -49,7 +51,7 @@ platformRoutes.get("/tenants", async (c) => {
   const tenants = await sqlOwner`
     SELECT t.id, t.name, t.slug, t.is_active AS "isActive", t.daily_question_limit AS "dailyQuestionLimit",
            t.created_at AS "createdAt",
-           (SELECT count(*)::int FROM users u WHERE u.tenant_id = t.id) AS users,
+           (SELECT count(*)::int FROM users u WHERE u.tenant_id = t.id AND u.support_for IS NULL) AS users,
            (SELECT count(*)::int FROM documents d WHERE d.tenant_id = t.id) AS documents
       FROM tenants t ORDER BY t.created_at`;
   return c.json({ tenants });
@@ -128,6 +130,34 @@ platformRoutes.patch("/tenants/:id", async (c) => {
     WHERE id = ${id} RETURNING id`;
   if (!row) throw notFound("Organización no encontrada");
   await audit(c, "tenant.updated", { targetType: "tenant", targetId: id, details: body });
+  return c.json({ ok: true });
+});
+
+/**
+ * Entra en una organización como soporte, con permisos de administrador.
+ * Usa (o crea) la cuenta de soporte del superadministrador en esa organización
+ * y deja constancia en la auditoría del cliente.
+ */
+platformRoutes.post("/tenants/:id/enter", async (c) => {
+  const id = c.req.param("id");
+  if (!UUID_RE.test(id)) throw notFound();
+  const me = c.get("user");
+  if (id === me.tenantId) throw badRequest("Ya estás en tu organización");
+  const [tenant] = await sqlOwner<{ id: string; name: string; is_active: boolean }[]>`
+    SELECT id, name, is_active FROM tenants WHERE id = ${id}`;
+  if (!tenant) throw notFound("Organización no encontrada");
+  if (!tenant.is_active) throw badRequest("La organización está desactivada; actívala para entrar");
+
+  const [support] = await sqlOwner<{ id: string }[]>`
+    INSERT INTO users (tenant_id, email, name, password_hash, role, support_for)
+    VALUES (${id}, ${`soporte.${me.id}.${id}@soporte.invalid`}, ${`${me.name} (soporte)`}, NULL, 'admin', ${me.id})
+    ON CONFLICT (support_for, tenant_id) WHERE support_for IS NOT NULL
+      DO UPDATE SET name = EXCLUDED.name, role = 'admin', is_active = true
+    RETURNING id`;
+
+  await issueSession(c, { userId: support!.id, tenantId: id, role: "admin", actorId: me.id });
+  await auditLog({ tenantId: id, userId: support!.id, email: `${me.email} (soporte)`, ip: clientIp(c) }, "support.entered");
+  await audit(c, "support.entered", { targetType: "tenant", targetId: id, details: { name: tenant.name } });
   return c.json({ ok: true });
 });
 

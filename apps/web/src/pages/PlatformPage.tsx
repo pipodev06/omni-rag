@@ -1,11 +1,11 @@
 import { useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Building2, EllipsisVertical, Gauge, Loader2, Plus, Power } from "lucide-react";
+import { Building2, EllipsisVertical, Gauge, LifeBuoy, Loader2, Plus, Power } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage, timeAgo, type LinkResult } from "@/api";
 import { LinkResultDialog } from "@/components/LinkResultDialog";
 import { AccessModeTabs, type AccessMode } from "@/components/AccessModeTabs";
-import { useCurrentUser } from "@/hooks/useSession";
+import { switchOrganization, useCurrentUser } from "@/hooks/useSession";
 import { cn } from "@/lib/utils";
 import { EmptyState, Page, PageHeader } from "@/components/common";
 import { useConfirm } from "@/components/ConfirmProvider";
@@ -199,6 +199,22 @@ export function PlatformPage() {
     }
   };
 
+  const enter = async (t: TenantRow) => {
+    const ok = await confirm({
+      title: `¿Entrar en «${t.name}» como soporte?`,
+      description:
+        "Verás sus documentos, usuarios y conversaciones con permisos de administrador. La entrada y lo que hagas quedan registrados en su auditoría. Para volver, usa el aviso de arriba.",
+      confirmText: "Entrar",
+    });
+    if (!ok) return;
+    try {
+      await api.post(`/platform/tenants/${t.id}/enter`);
+      switchOrganization("/chat");
+    } catch (err) {
+      toast.error(errorMessage(err));
+    }
+  };
+
   const tenants = data?.tenants ?? [];
 
   return (
@@ -261,6 +277,11 @@ export function PlatformPage() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
+                        {t.slug !== myTenant.slug && t.isActive && (
+                          <DropdownMenuItem onSelect={() => void enter(t)}>
+                            <LifeBuoy /> Entrar como soporte
+                          </DropdownMenuItem>
+                        )}
                         <DropdownMenuItem onSelect={() => setLimitTenant(t)}>
                           <Gauge /> Límite diario
                         </DropdownMenuItem>

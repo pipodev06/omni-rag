@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation } from "react-router";
 import { Loader2 } from "lucide-react";
 import { useSession } from "@/hooks/useSession";
 import { AppLayout } from "@/components/AppLayout";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { LoginPage } from "@/pages/LoginPage";
 import { ForgotPasswordPage, LinkPage } from "@/pages/AuthLinkPages";
 
@@ -31,16 +32,28 @@ function Protected({ children, allow = true }: { children: ReactNode; allow?: bo
   if (isLoading) return <FullScreenLoader />;
   if (!data) return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   if (!allow) return <Navigate to="/chat" replace />;
-  return <Suspense fallback={<FullScreenLoader />}>{children}</Suspense>;
+  return (
+    <ErrorBoundary>
+      <Suspense fallback={<FullScreenLoader />}>{children}</Suspense>
+    </ErrorBoundary>
+  );
+}
+
+/** Pantalla de login; con sesión iniciada lleva a la página que se quería ver. */
+function LoginRoute() {
+  const { data, isLoading } = useSession();
+  const from = (useLocation().state as { from?: string } | null)?.from;
+  if (isLoading) return <FullScreenLoader />;
+  if (data) return <Navigate to={from && from !== "/login" ? from : "/chat"} replace />;
+  return <LoginPage />;
 }
 
 export function App() {
-  const { data, isLoading } = useSession();
-  const user = data?.user;
+  const user = useSession().data?.user;
 
   return (
     <Routes>
-      <Route path="/login" element={isLoading ? <FullScreenLoader /> : data ? <Navigate to="/chat" replace /> : <LoginPage />} />
+      <Route path="/login" element={<LoginRoute />} />
       <Route path="/recuperar" element={<ForgotPasswordPage />} />
       <Route path="/activar" element={<LinkPage />} />
       <Route path="/restablecer" element={<LinkPage />} />
