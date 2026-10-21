@@ -1,5 +1,12 @@
-import { useEffect, useState } from "react";
-import { api } from "../api";
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Bot, Files, Layers, MessagesSquare, Users, type LucideIcon } from "lucide-react";
+import { api } from "@/api";
+import { cn } from "@/lib/utils";
+import { Page, PageHeader } from "@/components/common";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface Usage {
   daily: { day: string; questions: number; promptTokens: number; completionTokens: number }[];
@@ -7,78 +14,192 @@ interface Usage {
   totals: { documents: number; chunks: number; users: number };
 }
 
-export function UsagePage() {
-  const [data, setData] = useState<Usage | null>(null);
-  useEffect(() => void api.get<Usage>("/usage").then(setData), []);
-  if (!data) return <div className="page muted">Cargando…</div>;
-  const max = Math.max(1, ...data.daily.map((d) => d.questions));
+const nf = new Intl.NumberFormat("es");
+const dayLabel = (iso: string, opts: Intl.DateTimeFormatOptions = { day: "numeric", month: "short" }) =>
+  new Date(`${iso}T00:00:00Z`).toLocaleDateString("es", { ...opts, timeZone: "UTC" });
+
+function StatTile({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: number }) {
+  return (
+    <div className="rounded-xl border bg-card p-4">
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Icon className="size-4" />
+        {label}
+      </div>
+      <p className="mt-2 text-3xl font-semibold tracking-tight tabular-nums">{nf.format(value)}</p>
+    </div>
+  );
+}
+
+/** Últimos 30 días, rellenando con 0 los días sin preguntas. */
+function last30(daily: Usage["daily"]) {
+  const byDay = new Map(daily.map((d) => [d.day, d]));
+  const out: Usage["daily"] = [];
+  const today = new Date();
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - i));
+    const key = d.toISOString().slice(0, 10);
+    out.push(byDay.get(key) ?? { day: key, questions: 0, promptTokens: 0, completionTokens: 0 });
+  }
+  return out;
+}
+
+/** Gráfico de barras de una sola serie (preguntas por día) con tooltip al pasar el ratón. */
+function DailyChart({ days }: { days: Usage["daily"] }) {
+  const [hover, setHover] = useState<number | null>(null);
+  const max = Math.max(1, ...days.map((d) => d.questions));
+  const h = days[hover ?? -1];
 
   return (
-    <div className="page">
-      <h1>Consumo (últimos 30 días)</h1>
-      <div className="stats">
-        <div className="card stat">
-          <div className="stat-value">{data.daily.reduce((n, d) => n + d.questions, 0)}</div>
-          <div className="muted small">preguntas</div>
+    <div className="relative">
+      <div className="mb-1 flex justify-between text-xs text-muted-foreground tabular-nums">
+        <span>{nf.format(max)}</span>
+      </div>
+      <div className="relative flex h-48 items-end gap-[2px] border-b border-border" onMouseLeave={() => setHover(null)}>
+        {/* Línea de referencia del máximo, discreta */}
+        <div className="pointer-events-none absolute inset-x-0 top-0 border-t border-dashed border-border" />
+        {days.map((d, i) => (
+          <div
+            key={d.day}
+            className="group relative flex h-full flex-1 items-end"
+            onMouseEnter={() => setHover(i)}
+            onFocus={() => setHover(i)}
+            tabIndex={0}
+            aria-label={`${dayLabel(d.day)}: ${d.questions} preguntas`}
+          >
+            <div
+              className="w-full rounded-t-[4px] bg-primary transition-opacity"
+              style={{ height: `${(d.questions / max) * 100}%`, minHeight: d.questions ? 2 : 0, opacity: hover === null || hover === i ? 1 : 0.45 }}
+            />
+          </div>
+        ))}
+      </div>
+      <div className="mt-1.5 flex justify-between text-xs text-muted-foreground">
+        <span>{dayLabel(days[0]!.day)}</span>
+        <span>{dayLabel(days[14]!.day)}</span>
+        <span>Hoy</span>
+      </div>
+      {h && (
+        <div
+          className={cn(
+            "pointer-events-none absolute top-0 z-10 rounded-lg border bg-popover px-3 py-2 text-xs whitespace-nowrap shadow-md",
+            hover! < days.length / 3 ? "translate-x-0" : hover! > (days.length * 2) / 3 ? "-translate-x-full" : "-translate-x-1/2",
+          )}
+          style={{ left: `${((hover! + 0.5) / days.length) * 100}%` }}
+        >
+          <p className="font-medium">{dayLabel(h.day, { weekday: "short", day: "numeric", month: "long" })}</p>
+          <p className="mt-1 text-muted-foreground">
+            <span className="font-semibold text-foreground tabular-nums">{nf.format(h.questions)}</span> preguntas
+          </p>
+          {h.questions > 0 && (
+            <p className="text-muted-foreground tabular-nums">
+              {nf.format(h.promptTokens)} tokens entrada · {nf.format(h.completionTokens)} salida
+            </p>
+          )}
         </div>
-        <div className="card stat">
-          <div className="stat-value">{data.totals.documents}</div>
-          <div className="muted small">documentos</div>
+      )}
+    </div>
+  );
+}
+
+export function UsagePage() {
+  const { data, isLoading } = useQuery({ queryKey: ["usage"], queryFn: () => api.get<Usage>("/usage") });
+  const days = useMemo(() => (data ? last30(data.daily) : []), [data]);
+
+  if (isLoading || !data) {
+    return (
+      <Page>
+        <Skeleton className="mb-6 h-8 w-48" />
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {[0, 1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-24" />
+          ))}
         </div>
-        <div className="card stat">
-          <div className="stat-value">{data.totals.chunks}</div>
-          <div className="muted small">trozos indexados</div>
-        </div>
-        <div className="card stat">
-          <div className="stat-value">{data.totals.users}</div>
-          <div className="muted small">usuarios</div>
-        </div>
+      </Page>
+    );
+  }
+
+  const totalQuestions = data.daily.reduce((n, d) => n + d.questions, 0);
+  const maxModel = Math.max(1, ...data.byModel.map((m) => m.questions));
+
+  return (
+    <Page>
+      <PageHeader title="Consumo" description="Actividad de tu organización en los últimos 30 días (días en UTC)." />
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <StatTile icon={MessagesSquare} label="Preguntas (30 días)" value={totalQuestions} />
+        <StatTile icon={Files} label="Documentos" value={data.totals.documents} />
+        <StatTile icon={Layers} label="Fragmentos indexados" value={data.totals.chunks} />
+        <StatTile icon={Users} label="Usuarios" value={data.totals.users} />
       </div>
 
-      <h2>Preguntas por día</h2>
-      <table className="table">
-        <thead>
-          <tr>
-            <th>Día (UTC)</th>
-            <th>Preguntas</th>
-            <th></th>
-            <th>Tokens entrada</th>
-            <th>Tokens salida</th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.daily.map((d) => (
-            <tr key={d.day}>
-              <td>{d.day}</td>
-              <td>{d.questions}</td>
-              <td className="bar-cell">
-                <div className="bar" style={{ width: `${(d.questions / max) * 100}%` }} />
-              </td>
-              <td>{d.promptTokens.toLocaleString("es")}</td>
-              <td>{d.completionTokens.toLocaleString("es")}</td>
-            </tr>
-          ))}
-          {data.daily.length === 0 && (
-            <tr>
-              <td colSpan={5} className="muted center-text">
-                Sin preguntas todavía.
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+      <div className="mt-6 grid gap-4 lg:grid-cols-3">
+        <section className="rounded-xl border bg-card p-5 lg:col-span-2">
+          <Tabs defaultValue="chart">
+            <div className="mb-4 flex items-center justify-between gap-2">
+              <h2 className="font-medium">Preguntas por día</h2>
+              <TabsList className="h-8">
+                <TabsTrigger value="chart" className="text-xs">Gráfico</TabsTrigger>
+                <TabsTrigger value="table" className="text-xs">Tabla</TabsTrigger>
+              </TabsList>
+            </div>
+            <TabsContent value="chart">
+              {totalQuestions === 0 ? (
+                <p className="py-16 text-center text-sm text-muted-foreground">Todavía no hay preguntas en este periodo.</p>
+              ) : (
+                <DailyChart days={days} />
+              )}
+            </TabsContent>
+            <TabsContent value="table">
+              <div className="max-h-72 overflow-y-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Día</TableHead>
+                      <TableHead className="text-right">Preguntas</TableHead>
+                      <TableHead className="text-right">Tokens entrada</TableHead>
+                      <TableHead className="text-right">Tokens salida</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {[...days].reverse().filter((d) => d.questions > 0).map((d) => (
+                      <TableRow key={d.day}>
+                        <TableCell>{dayLabel(d.day, { weekday: "short", day: "numeric", month: "short" })}</TableCell>
+                        <TableCell className="text-right tabular-nums">{nf.format(d.questions)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{nf.format(d.promptTokens)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{nf.format(d.completionTokens)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </TabsContent>
+          </Tabs>
+        </section>
 
-      <h2>Modelos usados</h2>
-      <table className="table">
-        <tbody>
-          {data.byModel.map((m) => (
-            <tr key={m.model}>
-              <td>{m.model}</td>
-              <td>{m.questions}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+        <section className="rounded-xl border bg-card p-5">
+          <h2 className="mb-4 font-medium">Modelos usados</h2>
+          {data.byModel.length === 0 ? (
+            <p className="py-10 text-center text-sm text-muted-foreground">Sin datos.</p>
+          ) : (
+            <ul className="space-y-3">
+              {data.byModel.map((m) => (
+                <li key={m.model} className="space-y-1.5">
+                  <div className="flex items-center justify-between gap-2 text-sm">
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <Bot className="size-3.5 shrink-0 text-muted-foreground" />
+                      <span className="truncate" title={m.model}>{m.model}</span>
+                    </span>
+                    <span className="text-muted-foreground tabular-nums">{nf.format(m.questions)}</span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-muted">
+                    <div className="h-full rounded-full bg-primary" style={{ width: `${(m.questions / maxModel) * 100}%` }} />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
+    </Page>
   );
 }

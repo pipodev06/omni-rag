@@ -163,10 +163,77 @@ export async function streamChat(
   }
 }
 
+/**
+ * Sube archivos con progreso (fetch no informa del progreso de subida).
+ * onProgress recibe un valor entre 0 y 1.
+ */
+export function uploadDocuments(
+  collectionId: string,
+  files: File[],
+  onProgress: (fraction: number) => void,
+): Promise<{ results: { filename: string; id?: string; status: "queued" | "duplicate" | "rejected"; reason?: string }[] }> {
+  return new Promise((resolve, reject) => {
+    const form = new FormData();
+    form.append("collectionId", collectionId);
+    for (const f of files) form.append("file", f);
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/documents");
+    xhr.withCredentials = true;
+    xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total);
+    xhr.onload = () => {
+      let data: { error?: string } = {};
+      try {
+        data = JSON.parse(xhr.responseText);
+      } catch {
+        /* respuesta sin JSON */
+      }
+      if (xhr.status >= 200 && xhr.status < 300) resolve(data as never);
+      else {
+        if (xhr.status === 401) window.dispatchEvent(new Event("rag:unauthorized"));
+        reject(new ApiError(xhr.status, data.error ?? `Error ${xhr.status}`));
+      }
+    };
+    xhr.onerror = () => reject(new ApiError(0, "Error de red al subir los archivos"));
+    xhr.send(form);
+  });
+}
+
+export const errorMessage = (err: unknown) => (err instanceof Error ? err.message : "Error inesperado");
+
 export const formatBytes = (n: number) =>
   n < 1024 ? `${n} B` : n < 1024 ** 2 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 ** 2).toFixed(1)} MB`;
 
 export const formatDate = (iso: string | null) =>
   iso ? new Date(iso).toLocaleString("es", { dateStyle: "short", timeStyle: "short" }) : "—";
 
+/** "hace 5 min", "ayer"… */
+export function timeAgo(iso: string): string {
+  const diff = (Date.now() - new Date(iso).getTime()) / 1000;
+  const rtf = new Intl.RelativeTimeFormat("es", { numeric: "auto" });
+  if (diff < 60) return "ahora";
+  if (diff < 3600) return rtf.format(-Math.round(diff / 60), "minute");
+  if (diff < 86400) return rtf.format(-Math.round(diff / 3600), "hour");
+  if (diff < 86400 * 7) return rtf.format(-Math.round(diff / 86400), "day");
+  return new Date(iso).toLocaleDateString("es", { day: "numeric", month: "short" });
+}
+
+export const initials = (name: string) =>
+  name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]!.toUpperCase())
+    .join("") || "?";
+
 export const ROLE_LABELS: Record<Role, string> = { admin: "Administrador", editor: "Editor", viewer: "Lector" };
+
+export const ROLE_DESCRIPTIONS: Record<Role, string> = {
+  admin: "Gestiona usuarios, colecciones y todos los documentos",
+  editor: "Sube y borra documentos en sus colecciones",
+  viewer: "Solo pregunta sobre sus colecciones",
+};
+
+export interface Session {
+  user: User;
+  tenant: Tenant;
+}
