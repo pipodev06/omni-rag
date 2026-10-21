@@ -7,7 +7,7 @@ RUN pnpm install --frozen-lockfile --filter @rag/web...
 COPY apps/web apps/web
 RUN pnpm --filter @rag/web build
 
-FROM nginx:1.29-alpine
+FROM nginx:1.31-alpine
 COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf
 COPY apps/web/security-headers.conf /etc/nginx/security-headers.conf
 COPY --from=build /app/apps/web/dist /usr/share/nginx/html
