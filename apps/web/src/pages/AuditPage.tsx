@@ -54,6 +54,7 @@ const ACTIONS: Record<string, string> = {
   "quality.feedback_resolved": "Revisó una valoración",
   "tenant.created": "Creó una organización",
   "tenant.updated": "Modificó una organización",
+  "tenant.deleted": "Borró una organización",
   "tenant.plan_changed": "Cambiaron el plan de la organización",
   "tenant.limit_changed": "Cambiaron el límite diario de preguntas",
   "plan.edited": "Se modificaron las condiciones de su plan",

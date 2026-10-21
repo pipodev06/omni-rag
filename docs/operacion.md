@@ -248,6 +248,12 @@ Reparte el cupo de OpenRouter (1.000 al día con créditos) entre tus clientes c
 - **¿Olvidaste la contraseña?** (pantalla de login): requiere SMTP y que la cuenta tenga email. Se puede pedir con el usuario o con el email. Responde lo mismo exista o no la cuenta, para no revelar quién la tiene. Los usuarios sin email (o si no hay SMTP) piden a un administrador que restablezca su contraseña desde *Usuarios → Definir contraseña*. El enlace caduca en `RESET_EXPIRES_MINUTES` (60 min).
 - Los enlaces solo se guardan como hash SHA-256 en la base de datos.
 
+## Borrar una organización
+
+**Organizaciones → ⋮ → Borrar definitivamente.** Solo aparece en organizaciones ya **desactivadas** (primero se desactiva) y pide escribir su identificador. Borra usuarios, documentos, fragmentos, conversaciones, caché, auditoría y los archivos subidos. No se puede deshacer, y queda constancia (`tenant.deleted`, con nombre, usuarios y documentos) en la auditoría de tu organización.
+
+> Las **copias de seguridad** conservan sus datos hasta que caducan (`BACKUP_KEEP_DAYS`, 7 por defecto). Si un cliente exige el borrado total, elimina también las copias anteriores de `./backups`.
+
 ## Entrar en una organización como soporte
 
 El superadministrador puede ver y gestionar cualquier organización con su propio usuario: **Organizaciones → ⋮ → Entrar como soporte**. Arriba aparece un aviso con **Volver a mi organización**. Se entra con permisos de administrador y queda registrado en la auditoría del cliente (categoría *Soporte*). Detalles en [permisos.md](permisos.md#acceso-de-soporte-del-superadministrador).
@@ -271,6 +277,9 @@ El worker ejecuta cada día a las 03:15 (UTC) una limpieza: auditoría más anti
 - **Límites por usuario** (no por IP, que se puede falsear): 20 preguntas, 60 búsquedas, 30 subidas y 10 resúmenes por minuto. Se suman al límite diario de cada plan. Al pasarlos, la API responde `429`.
 - **2FA obligatorio para el superadministrador:** `REQUIRE_SUPERADMIN_2FA` = `auto` (por defecto: solo cuando `DOMAIN` es un dominio real), `true` o `false`. Si está activo y la cuenta aún no tiene 2FA, la plataforma solo la deja ir a **Mi cuenta** hasta activarlo (la API responde `403` con `code: mfa_setup_required` al resto de rutas). Para un administrador normal sigue siendo opcional.
 - **Aviso de modo soporte:** cada entrada y salida queda en la auditoría del cliente (`support.entered`); no hay aviso aparte porque el único que puede entrar eres tú.
+- **Cabeceras de seguridad** (nginx, `apps/web/security-headers.conf`): `Content-Security-Policy` estricta (solo recursos del propio sitio; el visor de PDF usa un worker propio), `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy: same-origin` y `Permissions-Policy` sin cámara, micrófono ni geolocalización. `Strict-Transport-Security` la añade Caddy con HTTPS. Si añades un recurso externo (fuentes, analítica), hay que permitirlo en esa CSP.
+- **Dependencias:** el CI ejecuta `pnpm audit --audit-level=high` y falla con vulnerabilidades altas o críticas; Dependabot abre un PR semanal agrupado (npm, GitHub Actions y las imágenes Docker). Para revisarlo a mano: `pnpm audit`.
+- **Aislamiento entre organizaciones:** las pruebas de Row Level Security corren siempre en el CI (`RUN_DB_TESTS=1` con PostgreSQL). Si algún cambio rompe el aislamiento, no se puede fusionar.
 - **nginx y la API:** nginx vuelve a resolver el nombre `api` cada 5 s; si recreas la API ya no hace falta reiniciar `web` (antes daba `502 Bad Gateway`).
 
 ## Lista para producción

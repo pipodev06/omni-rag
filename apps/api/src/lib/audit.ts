@@ -13,7 +13,7 @@ import { clientIp } from "./request.js";
  * user.link_created, collection.created, collection.updated, collection.deleted,
  * collection.members_updated, document.uploaded, document.deleted, document.reprocessed,
  * document.summary, quality.cache_cleared, quality.feedback_resolved,
- * tenant.created, tenant.updated, tenant.plan_changed, tenant.limit_changed, plan.edited, plan.created, plan.updated, plan.deleted, support.entered, support.exited.
+ * tenant.created, tenant.updated, tenant.deleted, tenant.plan_changed, tenant.limit_changed, plan.edited, plan.created, plan.updated, plan.deleted, support.entered, support.exited.
  */
 export interface AuditActor {
   tenantId: string | null;

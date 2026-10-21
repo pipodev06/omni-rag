@@ -2,3 +2,6 @@ packages:
   - "apps/*"
 onlyBuiltDependencies:
   - esbuild
+# Corrige una vulnerabilidad moderada (CPU) de una dependencia de @tailwindcss/typography.
+overrides:
+  "postcss-selector-parser@<7.1.6": ">=7.1.6"

@@ -158,6 +158,7 @@ curl localhost:8000/api/documents -H "authorization: Bearer $TOKEN" \
 | DELETE | `/platform/plans/:id` | `409` si lo usa alguna organización; no se puede borrar el plan por defecto |
 | POST | `/platform/tenants` | `{ name, slug, dailyQuestionLimit?, planId?, admin: { username, email?, name, password? } }` → crea la organización, su admin y la colección "General". Sin `password`, el admin recibe una invitación (`inviteUrl`, `emailSent`) |
 | POST | `/platform/tenants/:id/enter` | — → entra en la organización como soporte (rol admin) y cambia la cookie de sesión. Queda en su auditoría (`support.entered`) |
+| DELETE | `/platform/tenants/:id` | `{ confirmSlug }`: borra la organización y todos sus datos. Exige que esté desactivada y que `confirmSlug` coincida con su identificador |
 | PATCH | `/platform/tenants/:id` | `{ name?, isActive?, dailyQuestionLimit?, planId? }` (`dailyQuestionLimit`: `null` = el del plan, `0` = sin límite) |
 
 ## Auditoría — `/audit` (admin)
