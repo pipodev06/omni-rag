@@ -21,19 +21,30 @@ Volúmenes con datos:
 
 ## Copias de seguridad
 
-```bash
-# Base de datos
-docker compose exec -T db pg_dump -U rag_owner -Fc rag > backup-$(date +%F).dump
-# Archivos originales
-docker run --rm -v rag_uploads:/data -v "$PWD":/backup alpine tar czf /backup/uploads-$(date +%F).tgz -C /data .
+El servicio `backup` hace una copia automática cada `BACKUP_INTERVAL_HOURS` horas (24 por defecto) en la carpeta **`./backups`** del proyecto y conserva `BACKUP_KEEP_DAYS` días (7):
+
+```
+backups/db_2026-10-21_0300.dump       # base de datos (pg_dump)
+backups/uploads_2026-10-21_0300.tgz   # archivos originales
 ```
 
-Restaurar (con el sistema parado salvo `db`):
+Copia inmediata (por ejemplo, antes de actualizar):
 
 ```bash
-docker compose up -d db
-docker compose exec -T db pg_restore -U rag_owner -d rag --clean --if-exists < backup-AAAA-MM-DD.dump
-docker run --rm -v rag_uploads:/data -v "$PWD":/backup alpine tar xzf /backup/uploads-AAAA-MM-DD.tgz -C /data
+docker compose exec backup sh /backup.sh --once
+docker compose logs backup          # ver el resultado de las copias
+```
+
+> La carpeta `./backups` está en el mismo disco: cópiala también **fuera del servidor** (ver [produccion.md](produccion.md#6-copias-de-seguridad-fuera-del-servidor)).
+
+### Restaurar una copia
+
+Con el sistema parado salvo `db` (sustituye la fecha):
+
+```bash
+docker compose stop api worker web backup
+docker compose exec -T db pg_restore -U rag_owner -d rag --clean --if-exists < backups/db_AAAA-MM-DD_HHMM.dump
+docker run --rm -v rag_uploads:/data -v "$PWD/backups":/backup alpine sh -c "rm -rf /data/* && tar xzf /backup/uploads_AAAA-MM-DD_HHMM.tgz -C /data"
 docker compose up -d
 ```
 
@@ -209,15 +220,26 @@ Reparte el cupo de OpenRouter (1.000 al día con créditos) entre tus clientes c
 | Las respuestas no llegan en streaming detrás de otro proxy | El proxy acumula la respuesta | Desactiva el *buffering* para `/api/chat` |
 | PDF escaneado con texto incorrecto | OCR con idioma equivocado | Ajusta `DOCLING_OCR_LANGS` y reprocesa |
 | `ports are not available … bind: Intento de acceso a un socket no permitido` (Windows) o `address already in use` | El puerto está ocupado (p. ej. un PostgreSQL instalado) o reservado por Windows/Hyper-V | Cambia `WEB_PORT`, `DB_PORT`, `EMBEDDINGS_PORT` o `DOCLING_PORT` en `.env`. En Windows, los rangos reservados se ven con `netsh interface ipv4 show excludedportrange protocol=tcp` |
+| El invitado dice que el enlace "no es válido o ha caducado" | Caducó, ya se usó o se generó uno más nuevo | Usuarios → ⋮ → *Reenviar invitación* |
+| No llegan los correos | SMTP mal configurado o bloqueado por spam | `docker compose logs api \| grep correo`; revisa `SMTP_*`, SPF/DKIM; prueba con Mailpit |
+| Caddy no obtiene el certificado | DNS aún sin propagar o puertos 80/443 cerrados | `docker compose logs caddy`; comprueba el registro A y el cortafuegos |
 | `password authentication failed for user "rag_owner"` | Se cambió `POSTGRES_PASSWORD` después del primer arranque | Ver "Cambiar contraseñas de la base de datos" |
+
+## Usuarios: invitaciones y contraseñas
+
+- **Invitar** (Usuarios → Nuevo usuario → *Enviar invitación*): se crea el usuario sin contraseña y se genera un enlace de un solo uso (caduca en `INVITE_EXPIRES_HOURS`, 72 h). Si hay SMTP se envía por correo; siempre se muestra al administrador para que pueda copiarlo.
+- **Reenviar invitación / enlace para restablecer**: menú ⋮ del usuario. Cada enlace nuevo anula el anterior.
+- **¿Olvidaste la contraseña?** (pantalla de login): requiere SMTP. Responde lo mismo exista o no el email, para no revelar quién tiene cuenta. El enlace caduca en `RESET_EXPIRES_MINUTES` (60 min).
+- Los enlaces solo se guardan como hash SHA-256 en la base de datos.
+
+## Auditoría
+
+Página **Auditoría** (administradores): inicios de sesión (también los fallidos), invitaciones, cambios de rol y de acceso, documentos subidos/borrados, resúmenes, vaciados de caché, organizaciones… con fecha, usuario, detalles e IP. Se conserva `AUDIT_RETENTION_DAYS` días (365).
+
+## Mantenimiento automático
+
+El worker ejecuta cada día a las 03:15 (UTC) una limpieza: auditoría más antigua que la retención, enlaces usados o caducados y respuestas en caché vencidas. No requiere intervención.
 
 ## Lista para producción
 
-- [ ] Contraseñas y `JWT_SECRET` aleatorios y distintos; `.env` fuera del control de versiones (ya está en `.gitignore`).
-- [ ] HTTPS delante de `:8000` y `COOKIE_SECURE=true`.
-- [ ] Contraseña del superadministrador cambiada tras el primer acceso.
-- [ ] Copias de seguridad automáticas (base de datos y `rag_uploads`) guardadas fuera del servidor y restauración probada.
-- [ ] Créditos de OpenRouter (1.000 peticiones al día) y límites por organización ajustados.
-- [ ] Política de privacidad de OpenRouter revisada y aceptada por los clientes.
-- [ ] Cortafuegos: solo 443 (o 8000) abierto; los puertos de `db`, `embeddings` y `docling` ya escuchan solo en `127.0.0.1`.
-- [ ] Monitorización de `GET /api/health` y del espacio en disco.
+Ver la lista completa en [produccion.md](produccion.md#lista-de-comprobación).

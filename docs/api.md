@@ -20,6 +20,10 @@ Base: `http://localhost:8000/api` (a través de nginx) o `http://localhost:3001/
 | POST | `/auth/logout` | — | Borra la cookie |
 | GET | `/auth/me` | — | `{ user, tenant }` |
 | POST | `/auth/change-password` | `{ currentPassword, newPassword }` | `{ ok }` (mín. 10 caracteres) |
+| GET | `/auth/config` | — | `{ emailEnabled }` (si hay SMTP configurado) |
+| POST | `/auth/forgot` | `{ email }` | `{ ok }` siempre (no revela si el email existe). Envía un enlace si hay SMTP. Máx. 5 / hora por IP y email |
+| GET | `/auth/link?token=` | — | `{ kind: "invite" \| "reset", email, name }` o `404` si caducó o ya se usó |
+| POST | `/auth/link` | `{ token, password, name? }` | Fija la contraseña (y el nombre en invitaciones), invalida el enlace e inicia sesión: `{ token, user }` + cookie |
 
 ## Chat y búsqueda
 
@@ -124,8 +128,9 @@ curl localhost:8000/api/documents -H "authorization: Bearer $TOKEN" \
 
 | Método | Ruta | Cuerpo |
 |---|---|---|
-| GET | `/users` | → `{ users: [{ id, email, name, role, isActive, lastLoginAt, collectionIds }] }` |
-| POST | `/users` | `{ email, name, password, role, collectionIds? }` |
+| GET | `/users` | → `{ users: [{ id, email, name, role, isActive, lastLoginAt, pendingInvite, collectionIds }] }` |
+| POST | `/users` | `{ email, name, password?, role, collectionIds? }`. Sin `password` se crea una **invitación**: → `{ id, inviteUrl, emailSent }` |
+| POST | `/users/:id/link` | Genera un enlace nuevo (invitación si aún no la aceptó, o restablecer contraseña) → `{ url, kind, emailSent }`. Anula los enlaces anteriores |
 | PATCH | `/users/:id` | `{ name?, role?, isActive?, password? }` (no puedes quitarte el rol de admin ni desactivarte) |
 
 ## Consumo — `/usage` (admin)
@@ -137,7 +142,15 @@ curl localhost:8000/api/documents -H "authorization: Bearer $TOKEN" \
 | Método | Ruta | Cuerpo |
 |---|---|---|
 | GET | `/platform/tenants` | → lista con nº de usuarios y documentos |
-| POST | `/platform/tenants` | `{ name, slug, dailyQuestionLimit?, admin: { email, name, password } }` → crea la organización, su admin y la colección "General" |
+| POST | `/platform/tenants` | `{ name, slug, dailyQuestionLimit?, admin: { email, name, password? } }` → crea la organización, su admin y la colección "General". Sin `password`, el admin recibe una invitación (`inviteUrl`, `emailSent`) |
 | PATCH | `/platform/tenants/:id` | `{ name?, isActive?, dailyQuestionLimit? }` (`null` = límite global, `0` = sin límite) |
+
+## Auditoría — `/audit` (admin)
+
+`GET /audit?category=&userId=&before=&limit=` → `{ items: [{ id, action, userId, userEmail, targetType, targetId, details, ip, createdAt }], nextBefore }`.
+
+- `category`: `auth`, `user`, `collection`, `document`, `quality` o `tenant` (prefijo de `action`, p. ej. `document.deleted`).
+- Paginación hacia atrás: pasa `before=<nextBefore>` para la página siguiente (`limit` máx. 200, por defecto 50).
+- Cada administrador ve solo lo de su organización (RLS).
 
 Desactivar una organización bloquea el acceso de todos sus usuarios de inmediato sin borrar datos.

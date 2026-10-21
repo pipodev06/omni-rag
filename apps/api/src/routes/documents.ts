@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { audit } from "../lib/audit.js";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { streamSSE } from "hono/streaming";
@@ -209,6 +210,7 @@ documentRoutes.post(
         continue;
       }
       await enqueueIngest({ tenantId: ctx.tenantId, documentId: id });
+      await audit(c, "document.uploaded", { targetType: "document", targetId: id, details: { filename, collectionId, size: file.size } });
       results.push({ filename, id, status: "queued" });
     }
 
@@ -247,6 +249,7 @@ documentRoutes.post("/:id/summary", async (c) => {
     INSERT INTO usage_events (tenant_id, user_id, kind, model, prompt_tokens, completion_tokens)
     VALUES (${ctx.tenantId}, ${ctx.userId}, 'summary', ${result.model}, ${result.promptTokens}, ${result.completionTokens})`);
 
+  await audit(c, "document.summary", { targetType: "document", targetId: id, details: { title: doc.title } });
   return c.json({ summary, suggestedQuestions: questions, summaryModel: result.model });
 });
 
@@ -259,6 +262,7 @@ documentRoutes.post("/:id/reprocess", requireRole("admin", "editor"), async (c) 
      WHERE id = ${id} RETURNING id`);
   if (!doc) throw notFound("Documento no encontrado");
   await enqueueIngest({ tenantId: ctx.tenantId, documentId: id });
+  await audit(c, "document.reprocessed", { targetType: "document", targetId: id });
   return c.json({ ok: true });
 });
 
@@ -266,11 +270,13 @@ documentRoutes.delete("/:id", requireRole("admin", "editor"), async (c) => {
   const id = idParam(c.req.param("id"));
   const ctx = tenantCtx(c);
   const doc = await withTenant(ctx, async (tx) => {
-    const [d] = await tx<{ collection_id: string }[]>`DELETE FROM documents WHERE id = ${id} RETURNING collection_id`;
+    const [d] = await tx<{ collection_id: string; filename: string }[]>`
+      DELETE FROM documents WHERE id = ${id} RETURNING collection_id, filename`;
     if (d) await invalidateCollections(tx, [d.collection_id]);
     return d;
   });
   if (!doc) throw notFound("Documento no encontrado");
   await removeStored(`${ctx.tenantId}/${id}`);
+  await audit(c, "document.deleted", { targetType: "document", targetId: id, details: { filename: doc.filename } });
   return c.json({ ok: true });
 });

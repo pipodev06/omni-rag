@@ -68,9 +68,15 @@ El filtro de permisos se aplica **dentro** de la búsqueda vectorial, no despué
 - El resumen de un documento lo puede generar cualquiera que pueda verlo (lectores incluidos); la API comprueba el acceso con RLS antes de guardarlo.
 - El filtro "preguntar sobre este documento" solo acepta documentos visibles para el usuario: un identificador ajeno se ignora y no devuelve nada.
 
+## Invitaciones, contraseñas y auditoría
+
+- Solo los **administradores** invitan usuarios o generan enlaces para restablecer contraseñas, y solo dentro de su organización.
+- La tabla de enlaces (`user_tokens`) **no es accesible** para la conexión normal de la API (`rag_app`): tiene RLS activado sin políticas ni permisos. Solo la usan el login y la creación de enlaces, con la conexión `rag_owner`. Se guarda el hash del enlace, no el enlace.
+- El **registro de auditoría** se escribe con `rag_owner` (así ningún usuario puede insertar entradas falsas ni borrarlas) y lo pueden **leer solo los administradores** de cada organización, por RLS. Los editores y lectores no lo ven.
+
 ## Cómo está probado
 
-- `apps/api/test/rls.integration.test.ts` ataca directamente la base de datos simulando errores del código: consultas sin filtro, inserciones en colecciones ajenas, lectores intentando borrar, un admin intentando hacerse superadministrador, etc.
+- `apps/api/test/rls.integration.test.ts` ataca directamente la base de datos simulando errores del código: consultas sin filtro, inserciones en colecciones ajenas, lectores intentando borrar, un admin intentando hacerse superadministrador, que `rag_app` no pueda leer `user_tokens`, que la auditoría de una organización no se vea desde otra ni por un lector, etc.
 - `scripts/smoke-test.mjs` crea dos organizaciones reales, sube un secreto a una y comprueba por la API que la otra no lo encuentra.
 
 ## Límites conocidos

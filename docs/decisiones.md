@@ -156,3 +156,25 @@ Para Word, Excel y otros formatos se muestra el texto extraído y el fragmento c
 ## 16. Resúmenes bajo demanda
 
 Generar el resumen al subir cada documento gastaría el cupo diario del LLM aunque nadie lo leyera. Por eso se genera solo cuando alguien lo pide, se guarda en `documents` y se reutiliza (también sus preguntas sugeridas en la pantalla inicial del chat).
+
+## 17. HTTPS con Caddy activado desde `.env`
+
+**Alternativas:** Traefik, nginx + certbot, un proxy externo (Cloudflare).
+
+**Decisión.** Caddy obtiene y renueva certificados de Let's Encrypt solo, con un `Caddyfile` de cuatro líneas. Va en un **perfil** de Docker Compose (`https`): en local no arranca; en producción se activa con `COMPOSE_PROFILES=https` y `DOMAIN=...`. La URL pública de los enlaces de correo (`APP_PUBLIC_URL`) y la cookie `Secure` se deducen solas, así que pasar a producción **no requiere cambiar código**.
+
+## 18. Correo opcional, con enlaces para copiar
+
+Exigir SMTP para dar de alta usuarios complicaría el uso en local. Si no hay SMTP, la API devuelve el enlace de invitación o de restablecimiento y la interfaz lo muestra para copiarlo y enviarlo por otro medio. Para probar los correos reales en local se incluye Mailpit (perfil `correo-pruebas`).
+
+## 19. Auditoría escrita con la conexión del propietario
+
+`audit_log` se inserta con `rag_owner` y `rag_app` solo puede leerla (con RLS, solo administradores). Así un error en una ruta no puede falsear ni borrar el registro, y escribir la auditoría nunca hace fallar la acción principal (los errores al registrar solo se anotan en el log). El mantenimiento diario (pg-boss, 03:15) borra lo que supera `AUDIT_RETENTION_DAYS`, los enlaces usados o caducados y la caché vencida.
+
+## 20. Ajuste de memoria para equipos de 8 GB
+
+Medido con el sistema completo: TEI reservaba memoria para lotes grandes que este uso no necesita. Con `--max-batch-tokens 4096` los embeddings bajan de 3,2 a 2,3 GB y el re-ranker de 1,9 a 1,6 GB, sin diferencia de velocidad apreciable. Docling llega a ~2,9 GB por conversión, así que por defecto procesa **un documento a la vez** (`DOCLING_WORKERS=1`). Resultado: ≈ 5,2 GB en reposo y 6,9 GB de pico. Ver [requisitos.md](requisitos.md).
+
+## 21. Revisión con React Doctor
+
+La interfaz se revisa con [React Doctor](https://www.npmjs.com/package/react-doctor) (`pnpm --filter @rag/web run doctor`). La primera pasada dio 63/100; se corrigieron: comprobar `res.ok` antes de leer la respuesta, valores de contexto memorizados, estados que no se reiniciaban si había error, claves estables en las listas del chat, búsquedas con `Set` en lugar de recorrer arrays y la división de páginas grandes (chat, documentos, calidad) en componentes y *hooks*. Puntuación actual: 100/100.

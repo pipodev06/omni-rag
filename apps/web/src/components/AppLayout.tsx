@@ -12,6 +12,7 @@ import {
   MessagesSquare,
   Monitor,
   Moon,
+  ScrollText,
   Settings,
   Sun,
   ThumbsUp,
@@ -57,6 +58,7 @@ function useNavItems(): NavItem[] {
     { to: "/usuarios", label: "Usuarios", icon: Users, show: user.role === "admin" },
     { to: "/calidad", label: "Calidad", icon: ThumbsUp, show: user.role === "admin" },
     { to: "/consumo", label: "Consumo", icon: ChartColumn, show: user.role === "admin" },
+    { to: "/auditoria", label: "Auditoría", icon: ScrollText, show: user.role === "admin" },
     { to: "/organizaciones", label: "Organizaciones", icon: Building2, show: user.isSuperadmin },
   ].filter((i) => i.show);
 }

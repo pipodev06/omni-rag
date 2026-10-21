@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { useLocation, useNavigate } from "react-router";
+import { Link, useLocation, useNavigate } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { FileSearch, Loader2, Lock, Mail, Quote, ShieldCheck } from "lucide-react";
 import { api, errorMessage } from "@/api";
@@ -73,7 +73,11 @@ export function LoginPage() {
                 {busy ? "Entrando…" : "Entrar"}
               </Button>
             </div>
-            <p className="text-center text-xs text-muted-foreground">¿Olvidaste la contraseña? Pide a tu administrador que la restablezca.</p>
+            <p className="text-center text-sm">
+              <Link to="/recuperar" className="text-primary hover:underline">
+                ¿Olvidaste la contraseña?
+              </Link>
+            </p>
           </form>
         </div>
       </div>

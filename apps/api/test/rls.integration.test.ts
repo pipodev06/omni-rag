@@ -134,6 +134,28 @@ describe.skipIf(!enabled)("Row Level Security", async () => {
     expect(otherTenant).toHaveLength(0);
   });
 
+  it("la aplicación no puede leer los enlaces de acceso (solo la conexión propietaria)", async () => {
+    await sqlOwner`
+      INSERT INTO user_tokens (tenant_id, user_id, kind, token_hash, expires_at)
+      VALUES (${ids.tenant_a!}, ${ids.viewer_a!}, 'reset', ${`hash-${tag}`}, now() + interval '1 hour')`;
+    await expect(withTenant(as("a", "admin"), (tx) => tx`SELECT * FROM user_tokens`)).rejects.toThrow(/permission denied/);
+  });
+
+  it("la auditoría solo la leen los administradores de su organización y no se puede escribir", async () => {
+    await sqlOwner`
+      INSERT INTO audit_log (tenant_id, user_id, action) VALUES (${ids.tenant_a!}, ${ids.admin_a!}, 'test.accion')`;
+    const admin = await withTenant(as("a", "admin"), (tx) => tx`SELECT action FROM audit_log WHERE action = 'test.accion'`);
+    expect(admin).toHaveLength(1);
+    const viewer = await withTenant(as("a", "viewer"), (tx) => tx`SELECT action FROM audit_log`);
+    expect(viewer).toHaveLength(0);
+    const otherTenant = await withTenant(as("b", "admin"), (tx) => tx`SELECT action FROM audit_log WHERE action = 'test.accion'`);
+    expect(otherTenant).toHaveLength(0);
+    await expect(
+      withTenant(as("a", "admin"), (tx) => tx`INSERT INTO audit_log (tenant_id, action) VALUES (${ids.tenant_a!}, 'falsa')`),
+    ).rejects.toThrow(/permission denied/);
+    await expect(withTenant(as("a", "admin"), (tx) => tx`DELETE FROM audit_log`)).rejects.toThrow(/permission denied/);
+  });
+
   it("sin contexto de organización no se ve nada", async () => {
     const { sqlApp } = await import("../src/db/client.js");
     const rows = await sqlApp`SELECT id FROM chunks`;

@@ -4,6 +4,7 @@ import { Loader2 } from "lucide-react";
 import { useSession } from "@/hooks/useSession";
 import { AppLayout } from "@/components/AppLayout";
 import { LoginPage } from "@/pages/LoginPage";
+import { ForgotPasswordPage, LinkPage } from "@/pages/AuthLinkPages";
 
 // Cada página se descarga solo cuando se visita (carga inicial más ligera).
 const ChatPage = lazy(() => import("@/pages/ChatPage").then((m) => ({ default: m.ChatPage })));
@@ -12,6 +13,7 @@ const UsersPage = lazy(() => import("@/pages/UsersPage").then((m) => ({ default:
 const UsagePage = lazy(() => import("@/pages/UsagePage").then((m) => ({ default: m.UsagePage })));
 const PlatformPage = lazy(() => import("@/pages/PlatformPage").then((m) => ({ default: m.PlatformPage })));
 const QualityPage = lazy(() => import("@/pages/QualityPage").then((m) => ({ default: m.QualityPage })));
+const AuditPage = lazy(() => import("@/pages/AuditPage").then((m) => ({ default: m.AuditPage })));
 const AccountPage = lazy(() => import("@/pages/AccountPage").then((m) => ({ default: m.AccountPage })));
 
 function FullScreenLoader() {
@@ -39,6 +41,9 @@ export function App() {
   return (
     <Routes>
       <Route path="/login" element={isLoading ? <FullScreenLoader /> : data ? <Navigate to="/chat" replace /> : <LoginPage />} />
+      <Route path="/recuperar" element={<ForgotPasswordPage />} />
+      <Route path="/activar" element={<LinkPage />} />
+      <Route path="/restablecer" element={<LinkPage />} />
       <Route
         element={
           <Protected>
@@ -52,6 +57,7 @@ export function App() {
         <Route path="/documentos/:collectionId" element={<DocumentsPage />} />
         <Route path="/usuarios" element={<Protected allow={user?.role === "admin"}><UsersPage /></Protected>} />
         <Route path="/calidad" element={<Protected allow={user?.role === "admin"}><QualityPage /></Protected>} />
+        <Route path="/auditoria" element={<Protected allow={user?.role === "admin"}><AuditPage /></Protected>} />
         <Route path="/consumo" element={<Protected allow={user?.role === "admin"}><UsagePage /></Protected>} />
         <Route path="/organizaciones" element={<Protected allow={user?.isSuperadmin === true}><PlatformPage /></Protected>} />
         <Route path="/cuenta" element={<AccountPage />} />

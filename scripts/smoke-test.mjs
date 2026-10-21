@@ -16,6 +16,8 @@
  *     respeto de permisos en la caché y valoraciones 👍/👎.
  *  8. Avisos en tiempo real aislados por organización, resumen con preguntas
  *     sugeridas y filtro por documento.
+ *  9. Invitaciones, restablecimiento de contraseña y auditoría. Con
+ *     --mailpit http://localhost:8025 comprueba además que llegan los correos.
  * Las organizaciones de prueba quedan desactivadas al final.
  */
 import { readFile } from "node:fs/promises";
@@ -243,6 +245,61 @@ if (!skipChat && files.length) {
   ok((onlyDoc.data.results ?? []).every((r) => r.documentId === firstDoc.id), "«preguntar sobre este documento» limita la búsqueda a ese documento");
   const foreignDoc = await call("POST", "/search", { token: B.token, json: { query: question, documentIds: [firstDoc.id] } });
   ok((foreignDoc.data.results ?? []).length === 0, "no se puede filtrar por un documento de otra organización");
+}
+
+// ---------------------------------------------------------------------------
+// Fase 4: invitaciones, restablecimiento de contraseña y auditoría
+// ---------------------------------------------------------------------------
+{
+  const inviteEmail = `invitado-${stamp}@smoke.test`;
+  const inv = await call("POST", "/users", { token: A.token, json: { email: inviteEmail, name: "Invitado", role: "viewer" } });
+  ok(inv.status === 201 && inv.data.inviteUrl, `invitación creada (correo enviado: ${inv.data.emailSent ? "sí" : "no"})`);
+  const loginBefore = await call("POST", "/auth/login", { json: { email: inviteEmail, password: "lo-que-sea-123" } });
+  ok(loginBefore.status === 401, "un invitado no puede entrar antes de activar su cuenta");
+
+  if (args.mailpit) {
+    await new Promise((r) => setTimeout(r, 1500));
+    const box = await (await fetch(`${args.mailpit.replace(/\/$/, "")}/api/v1/search?query=${encodeURIComponent(`to:${inviteEmail}`)}`)).json();
+    ok(box.messages?.length > 0, "el correo de invitación llegó al buzón");
+  }
+
+  const token = new URL(inv.data.inviteUrl).searchParams.get("token");
+  const info = await call("GET", `/auth/link?token=${encodeURIComponent(token)}`);
+  ok(info.status === 200 && info.data.kind === "invite" && info.data.email === inviteEmail, "el enlace de invitación es válido");
+  const newPass = `Nueva-${stamp}-clave`;
+  const accepted = await call("POST", "/auth/link", { json: { token, password: newPass, name: "Invitada Activa" } });
+  ok(accepted.status === 200 && accepted.data.user?.name === "Invitada Activa", "el invitado elige contraseña y entra");
+  const reuse = await call("POST", "/auth/link", { json: { token, password: newPass } });
+  ok(reuse.status === 404, "el enlace no se puede usar dos veces");
+  const loginAfter = await call("POST", "/auth/login", { json: { email: inviteEmail, password: newPass } });
+  ok(loginAfter.status === 200, "ya puede iniciar sesión con su contraseña");
+
+  // Restablecer contraseña desde el administrador (funciona sin correo configurado).
+  const reset = await call("POST", `/users/${inv.data.id}/link`, { token: A.token });
+  ok(reset.status === 200 && reset.data.kind === "reset", "el administrador genera un enlace para restablecer");
+  const resetToken = new URL(reset.data.url).searchParams.get("token");
+  const resetDone = await call("POST", "/auth/link", { json: { token: resetToken, password: `Otra-${stamp}-clave` } });
+  ok(resetDone.status === 200, "la contraseña se restablece con el enlace");
+  const oldFails = await call("POST", "/auth/login", { json: { email: inviteEmail, password: newPass } });
+  ok(oldFails.status === 401, "la contraseña anterior deja de funcionar");
+
+  // "¿Olvidaste la contraseña?" responde igual exista o no el email.
+  const f1 = await call("POST", "/auth/forgot", { json: { email: inviteEmail } });
+  const f2 = await call("POST", "/auth/forgot", { json: { email: `no-existe-${stamp}@smoke.test` } });
+  ok(f1.status === 200 && JSON.stringify(f1.data) === JSON.stringify(f2.data), "«olvidé mi contraseña» no revela qué emails existen");
+  if (args.mailpit && f1.data.emailEnabled) {
+    await new Promise((r) => setTimeout(r, 1500));
+    const box = await (await fetch(`${args.mailpit.replace(/\/$/, "")}/api/v1/search?query=${encodeURIComponent(`to:${inviteEmail} subject:Restablecer`)}`)).json();
+    ok(box.messages?.length > 0, "el correo para restablecer la contraseña llegó al buzón");
+  }
+
+  const auditA = await call("GET", "/audit?limit=200", { token: A.token });
+  const actions = new Set((auditA.data.items ?? []).map((i) => i.action));
+  ok(["user.invited", "auth.link_used", "user.link_created", "document.uploaded", "collection.members_updated"].every((a) => actions.has(a)), "la auditoría registra las acciones");
+  const auditB = await call("GET", "/audit?limit=200", { token: B.token });
+  ok(!(auditB.data.items ?? []).some((i) => i.userEmail === inviteEmail), "otra organización no ve esa auditoría");
+  const auditViewer = await call("GET", "/audit", { token: vt });
+  ok(auditViewer.status === 403, "un lector no puede ver la auditoría");
 }
 
 for (const t of [A, B]) await call("PATCH", `/platform/tenants/${t.id}`, { token: root, json: { isActive: false } });

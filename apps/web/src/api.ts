@@ -55,6 +55,8 @@ export interface Source {
 
 export interface Message {
   id?: string;
+  /** Identificador local (mensajes creados en esta pantalla), estable mientras llega la respuesta. */
+  localId?: string;
   role: "user" | "assistant";
   content: string;
   sources: Source[];
@@ -80,6 +82,15 @@ export interface TenantUser {
   isActive: boolean;
   lastLoginAt: string | null;
   collectionIds: string[];
+  /** Invitado que aún no ha elegido contraseña. */
+  pendingInvite: boolean;
+}
+
+/** Resultado de crear un enlace de invitación o de restablecimiento. */
+export interface LinkResult {
+  kind: "invite" | "reset";
+  url: string;
+  emailSent: boolean;
 }
 
 export class ApiError extends Error {
@@ -99,12 +110,13 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
     headers: body && !isForm ? { "content-type": "application/json" } : undefined,
     body: body === undefined ? undefined : isForm ? body : JSON.stringify(body),
   });
-  const data = await res.json().catch(() => ({}));
   if (!res.ok) {
+    // La API devuelve { error } con un mensaje legible también en los errores.
+    const data = await res.json().catch(() => ({}));
     if (res.status === 401 && url !== "/auth/login") window.dispatchEvent(new Event("rag:unauthorized"));
     throw new ApiError(res.status, (data as { error?: string }).error ?? `Error ${res.status}`);
   }
-  return data as T;
+  return (await res.json().catch(() => ({}))) as T;
 }
 
 export const api = {
@@ -208,18 +220,21 @@ export const errorMessage = (err: unknown) => (err instanceof Error ? err.messag
 export const formatBytes = (n: number) =>
   n < 1024 ? `${n} B` : n < 1024 ** 2 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 ** 2).toFixed(1)} MB`;
 
-export const formatDate = (iso: string | null) =>
-  iso ? new Date(iso).toLocaleString("es", { dateStyle: "short", timeStyle: "short" }) : "—";
+const dateFormat = new Intl.DateTimeFormat("es", { dateStyle: "short", timeStyle: "short" });
+const shortDateFormat = new Intl.DateTimeFormat("es", { day: "numeric", month: "short" });
+const relativeFormat = new Intl.RelativeTimeFormat("es", { numeric: "auto" });
+
+export const formatDate = (iso: string | null) => (iso ? dateFormat.format(new Date(iso)) : "—");
 
 /** "hace 5 min", "ayer"… */
 export function timeAgo(iso: string): string {
   const diff = (Date.now() - new Date(iso).getTime()) / 1000;
-  const rtf = new Intl.RelativeTimeFormat("es", { numeric: "auto" });
+  const rtf = relativeFormat;
   if (diff < 60) return "ahora";
   if (diff < 3600) return rtf.format(-Math.round(diff / 60), "minute");
   if (diff < 86400) return rtf.format(-Math.round(diff / 3600), "hour");
   if (diff < 86400 * 7) return rtf.format(-Math.round(diff / 86400), "day");
-  return new Date(iso).toLocaleDateString("es", { day: "numeric", month: "short" });
+  return shortDateFormat.format(new Date(iso));
 }
 
 export const initials = (name: string) =>
