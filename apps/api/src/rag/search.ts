@@ -21,6 +21,8 @@ export interface SearchOptions {
   queryVector: number[];
   /** Limitar a estas colecciones (además de las restricciones de permisos). */
   collectionIds?: string[] | null;
+  /** Limitar a estos documentos ("preguntar sobre este documento"). */
+  documentIds?: string[] | null;
   topK?: number;
   candidates?: number;
 }
@@ -40,6 +42,7 @@ export async function hybridSearch(tx: Tx, opts: SearchOptions): Promise<SearchH
   const topK = opts.topK ?? config.RETRIEVAL_TOP_K;
   const candidates = opts.candidates ?? config.RETRIEVAL_CANDIDATES;
   const collections = opts.collectionIds && opts.collectionIds.length > 0 ? opts.collectionIds : null;
+  const documents = opts.documentIds && opts.documentIds.length > 0 ? opts.documentIds : null;
   const vector = toPgVector(opts.queryVector);
 
   // Con filtros (RLS / colección), el escaneo iterativo de pgvector >= 0.8
@@ -71,6 +74,7 @@ export async function hybridSearch(tx: Tx, opts: SearchOptions): Promise<SearchH
             FROM chunks c
            WHERE c.tenant_id = app_tenant_id()
              AND (${collections}::uuid[] IS NULL OR c.collection_id = ANY(${collections}::uuid[]))
+             AND (${documents}::uuid[] IS NULL OR c.document_id = ANY(${documents}::uuid[]))
            ORDER BY c.embedding <=> ${vector}::vector
            LIMIT ${candidates}
         ) s
@@ -90,6 +94,7 @@ export async function hybridSearch(tx: Tx, opts: SearchOptions): Promise<SearchH
              AND c.tsv @@ q.query
              AND c.tenant_id = app_tenant_id()
              AND (${collections}::uuid[] IS NULL OR c.collection_id = ANY(${collections}::uuid[]))
+             AND (${documents}::uuid[] IS NULL OR c.document_id = ANY(${documents}::uuid[]))
            ORDER BY rank DESC
            LIMIT ${candidates}
         ) s

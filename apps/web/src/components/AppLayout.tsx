@@ -39,6 +39,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { DocumentViewerProvider } from "@/components/documents/DocumentViewer";
+import { useDocumentEvents } from "@/hooks/useDocumentEvents";
 
 interface NavItem {
   to: string;
@@ -166,9 +168,11 @@ function SidebarContent({ onNavigate, slotRef }: { onNavigate?: () => void; slot
 export function AppLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [slotEl, setSlotEl] = useState<HTMLElement | null>(null);
+  useDocumentEvents();
 
   return (
     <SidebarSlotContext.Provider value={slotEl}>
+      <DocumentViewerProvider>
       <div className="flex h-full">
         <aside className="hidden w-64 shrink-0 border-r border-sidebar-border bg-sidebar md:block">
           <SidebarContent slotRef={setSlotEl} />
@@ -193,6 +197,7 @@ export function AppLayout() {
           </main>
         </div>
       </div>
+      </DocumentViewerProvider>
     </SidebarSlotContext.Provider>
   );
 }

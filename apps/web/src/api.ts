@@ -39,6 +39,7 @@ export interface DocumentInfo {
   chunkCount: number;
   createdAt: string;
   createdBy?: string | null;
+  hasSummary?: boolean;
 }
 
 export interface Source {
@@ -123,7 +124,7 @@ export interface ChatHandlers {
 
 /** Envía una pregunta y procesa la respuesta en streaming (Server-Sent Events). */
 export async function streamChat(
-  body: { question: string; conversationId?: string; collectionIds?: string[] },
+  body: { question: string; conversationId?: string; collectionIds?: string[]; documentIds?: string[] },
   handlers: ChatHandlers,
   signal: AbortSignal,
 ): Promise<void> {

@@ -14,6 +14,8 @@
  *  6. Re-ranking activo (si el servicio está en marcha).
  *  7. Pregunta al chat (requiere OPENROUTER_API_KEY), caché de respuestas,
  *     respeto de permisos en la caché y valoraciones 👍/👎.
+ *  8. Avisos en tiempo real aislados por organización, resumen con preguntas
+ *     sugeridas y filtro por documento.
  * Las organizaciones de prueba quedan desactivadas al final.
  */
 import { readFile } from "node:fs/promises";
@@ -149,6 +151,43 @@ async function ask(token, q, extra = {}) {
   return { status: 200, answer, done: done ? JSON.parse(done.data) : null, error: error?.data };
 }
 
+/** Escucha los avisos en tiempo real de un usuario durante `ms` milisegundos. */
+async function listenEvents(token, ms) {
+  const controller = new AbortController();
+  const res = await fetch(`${BASE}/api/documents/events`, { headers: { authorization: `Bearer ${token}` }, signal: controller.signal });
+  const events = [];
+  const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      for (const block of value.split("\n\n")) {
+        if (block.includes("event: document")) events.push(JSON.parse(block.split("data: ")[1]));
+      }
+    }
+  } catch {
+    /* fin de la escucha */
+  }
+  clearTimeout(timer);
+  return events;
+}
+
+// Avisos en tiempo real: A los recibe; B (otra organización) no.
+{
+  const listenA = listenEvents(A.token, 15000);
+  const listenB = listenEvents(B.token, 15000);
+  await new Promise((r) => setTimeout(r, 500));
+  const notePath = path.join(process.env.TMPDIR ?? "/tmp", `aviso-${stamp}.txt`);
+  await (await import("node:fs/promises")).writeFile(notePath, `Nota interna ${stamp}: la reunión anual es el 12 de marzo.`);
+  const up = await upload(A.token, A.collectionId, notePath);
+  await waitReady(A.token, [up.id]);
+  const [evA, evB] = await Promise.all([listenA, listenB]);
+  ok(evA.some((e) => e.documentId === up.id && e.status === "ready" && e.mine), "aviso en tiempo real: «documento listo» llega a quien lo subió");
+  ok(!evB.some((e) => e.documentId === up.id), "otra organización NO recibe los avisos de A");
+  docsA.push({ id: up.id, status: "ready" });
+}
+
 if (files.length) {
   const s = await call("POST", "/search", { token: A.token, json: { query: question } });
   const reranked = s.data.results?.[0]?.rerankScore;
@@ -189,6 +228,21 @@ if (!skipChat && files.length) {
     const vq = await call("GET", "/quality", { token: vt });
     ok(vq.status === 403, "un lector no puede ver la página de Calidad");
   }
+
+  // Resumen y preguntas sugeridas de un documento.
+  const firstDoc = docsA.find((d) => d.filename === path.basename(files[0]));
+  const sum = await call("POST", `/documents/${firstDoc.id}/summary`, { token: A.token });
+  ok(sum.status === 200 && sum.data.summary?.length > 0, `resumen generado (${sum.data.suggestedQuestions?.length ?? 0} preguntas sugeridas)`);
+  const sug = await call("GET", "/documents/suggestions", { token: A.token });
+  ok(sug.data.suggestions?.some((x) => x.documentId === firstDoc.id), "las preguntas sugeridas aparecen para el chat");
+  const sugB = await call("GET", "/documents/suggestions", { token: B.token });
+  ok(!sugB.data.suggestions?.some((x) => x.documentId === firstDoc.id), "otra organización no ve esas sugerencias");
+
+  // Filtro por documento: solo devuelve fragmentos de ese documento.
+  const onlyDoc = await call("POST", "/search", { token: A.token, json: { query: question, documentIds: [firstDoc.id] } });
+  ok((onlyDoc.data.results ?? []).every((r) => r.documentId === firstDoc.id), "«preguntar sobre este documento» limita la búsqueda a ese documento");
+  const foreignDoc = await call("POST", "/search", { token: B.token, json: { query: question, documentIds: [firstDoc.id] } });
+  ok((foreignDoc.data.results ?? []).length === 0, "no se puede filtrar por un documento de otra organización");
 }
 
 for (const t of [A, B]) await call("PATCH", `/platform/tenants/${t.id}`, { token: root, json: { isActive: false } });

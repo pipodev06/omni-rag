@@ -39,15 +39,15 @@ const toSources = (hits: RankedHit[]): Source[] =>
     cited: false,
   }));
 
-/** Comprueba el límite diario de preguntas al LLM de la organización. */
-async function checkDailyLimit(ctx: TenantContext): Promise<void> {
+/** Comprueba el límite diario de llamadas al LLM (preguntas y resúmenes) de la organización. */
+export async function checkDailyLimit(ctx: TenantContext): Promise<void> {
   const [tenant] = await sqlOwner<{ daily_question_limit: number | null }[]>`
     SELECT daily_question_limit FROM tenants WHERE id = ${ctx.tenantId}`;
   const limit = tenant?.daily_question_limit ?? config.TENANT_DAILY_QUESTION_LIMIT;
   if (limit === 0) return; // 0 = sin límite
   const [row] = await sqlOwner<{ n: number }[]>`
     SELECT count(*)::int AS n FROM usage_events
-     WHERE tenant_id = ${ctx.tenantId} AND kind = 'question'
+     WHERE tenant_id = ${ctx.tenantId} AND kind IN ('question', 'summary')
        AND created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`;
   if ((row?.n ?? 0) >= limit) {
     throw new HttpError(429, `Tu organización alcanzó el límite de ${limit} preguntas por día.`);
@@ -57,6 +57,7 @@ async function checkDailyLimit(ctx: TenantContext): Promise<void> {
 const SearchBody = z.object({
   query: z.string().trim().min(1).max(2000),
   collectionIds: z.array(z.string().regex(UUID_RE)).max(100).optional(),
+  documentIds: z.array(z.string().regex(UUID_RE)).max(50).optional(),
   topK: z.number().int().min(1).max(50).optional(),
 });
 
@@ -67,7 +68,7 @@ const SearchBody = z.object({
 chatRoutes.post("/search", async (c) => {
   const body = parse(SearchBody, await c.req.json().catch(() => ({})));
   const ctx = tenantCtx(c);
-  const [vector, scope] = await Promise.all([embedQuery(body.query, c.req.raw.signal), resolveScope(ctx, body.collectionIds)]);
+  const [vector, scope] = await Promise.all([embedQuery(body.query, c.req.raw.signal), resolveScope(ctx, body.collectionIds, body.documentIds)]);
   const results = await retrieve(ctx, { queryText: body.query, queryVector: vector, scope, topK: body.topK, signal: c.req.raw.signal });
   return c.json({ results });
 });
@@ -76,6 +77,7 @@ const ChatBody = z.object({
   question: z.string().trim().min(1).max(4000),
   conversationId: z.string().regex(UUID_RE).optional(),
   collectionIds: z.array(z.string().regex(UUID_RE)).max(100).optional(),
+  documentIds: z.array(z.string().regex(UUID_RE)).max(50).optional(),
 });
 
 /**
@@ -108,7 +110,7 @@ chatRoutes.post("/chat", async (c) => {
 
   // 2. Embedding de la búsqueda y colecciones consultables.
   const query = retrievalQuery(body.question, history);
-  const [vector, scope] = await Promise.all([embedQuery(query, signal), resolveScope(ctx, body.collectionIds)]);
+  const [vector, scope] = await Promise.all([embedQuery(query, signal), resolveScope(ctx, body.collectionIds, body.documentIds)]);
   const cacheable = config.CACHE_ENABLED && history.length === 0;
 
   // 3. ¿Ya se respondió esta misma pregunta con los mismos documentos?

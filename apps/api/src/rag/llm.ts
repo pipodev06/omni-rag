@@ -152,3 +152,13 @@ export async function* sseData(body: ReadableStream<Uint8Array>): AsyncGenerator
   const last = buffer.trim();
   if (last.startsWith("data:")) yield last.slice(5).trimStart();
 }
+
+/** Llamada sin streaming: devuelve el texto completo, el modelo y los tokens. */
+export async function completeChat(messages: ChatMessage[], signal?: AbortSignal) {
+  let text = "";
+  for await (const ev of streamChat(messages, signal)) {
+    if (ev.type === "token") text += ev.text;
+    else return { text, model: ev.model, promptTokens: ev.promptTokens, completionTokens: ev.completionTokens };
+  }
+  return { text, model: null, promptTokens: null, completionTokens: null };
+}

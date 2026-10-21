@@ -7,6 +7,9 @@ Sistema **RAG (Retrieval-Augmented Generation)** multi-cliente para hacer pregun
 - 🔎 **Búsqueda híbrida + re-ranking:** semántica (pgvector) + palabras clave (texto completo de PostgreSQL), combinadas con *Reciprocal Rank Fusion* y reordenadas por un modelo *cross-encoder* local.
 - ⚡ **Caché de respuestas:** las preguntas repetidas se responden al instante sin gastar cupo del LLM, respetando permisos.
 - 👍 **Valoraciones y página de Calidad:** los usuarios valoran respuestas y los administradores revisan las que fallan.
+- 📑 **Visor con la cita resaltada:** al pulsar una fuente se abre el PDF en la página exacta con el texto citado marcado.
+- 🔔 **Tiempo real:** el estado de los documentos se actualiza al instante y avisa cuando un documento está listo.
+- ✨ **Resumen y preguntas sugeridas** por documento, y opción de preguntar solo sobre un documento concreto.
 - 🆓 **Coste cero en modelos:** embeddings **locales** (gratis, privados, sin límites) y LLMs **gratuitos de OpenRouter** con cambio automático de modelo si uno falla.
 - 🐳 **Todo en Docker:** un solo `docker compose up`.
 
@@ -42,7 +45,8 @@ Guía completa paso a paso: **[docs/instalacion.md](docs/instalacion.md)**.
 1. **Organizaciones (superadministrador):** crea una organización por cliente, con su primer administrador.
 2. **Documentos (administrador/editor):** crea colecciones (carpetas) y arrastra archivos. Se procesan en segundo plano: *En cola → Procesando → Listo*.
 3. **Usuarios (administrador):** crea editores y lectores y dales acceso a las colecciones que correspondan.
-4. **Chat (todos):** pregunta. La respuesta cita las fuentes `[1]`, que puedes desplegar para ver el fragmento original o descargar el documento.
+4. **Chat (todos):** pregunta. La respuesta cita las fuentes `[1]`; despliégalas y pulsa **Ver en el documento** para abrir el PDF en la página citada con el texto resaltado.
+5. **Resumen:** en Documentos, abre un archivo → pestaña **Resumen** → *Generar resumen*. Sus preguntas sugeridas aparecen en el chat, y *Preguntar sobre este documento* limita la conversación a ese archivo.
 
 ---
 

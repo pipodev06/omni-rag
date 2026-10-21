@@ -9,10 +9,13 @@ import {
   Eye,
   FolderOpen,
   FolderPlus,
+  Layers,
   Loader2,
+  MessageSquareText,
   Pencil,
   RotateCw,
   Search,
+  Sparkles,
   Trash2,
   UserRoundCog,
 } from "lucide-react";
@@ -30,7 +33,7 @@ import { useCurrentUser } from "@/hooks/useSession";
 import { cn } from "@/lib/utils";
 import { EmptyState, FileTypeIcon, Page, PageHeader, StatusBadge } from "@/components/common";
 import { useConfirm } from "@/components/ConfirmProvider";
-import { ChunksSheet } from "@/components/documents/ChunksSheet";
+import { useOpenDocument } from "@/components/documents/DocumentViewer";
 import { CollectionFormDialog, MembersDialog } from "@/components/documents/CollectionDialogs";
 import { Button } from "@/components/ui/button";
 import {
@@ -117,7 +120,7 @@ export function DocumentsPage() {
   const [search, setSearch] = useState("");
   const [collectionDialog, setCollectionDialog] = useState<"new" | "edit" | null>(null);
   const [membersOpen, setMembersOpen] = useState(false);
-  const [chunksDoc, setChunksDoc] = useState<DocumentInfo | null>(null);
+  const openDocument = useOpenDocument();
 
   const collectionsQuery = useQuery({
     queryKey: ["collections"],
@@ -130,8 +133,9 @@ export function DocumentsPage() {
     queryKey: ["documents", current?.id],
     queryFn: () => api.get<{ documents: DocumentInfo[]; supportedExtensions: string[] }>(`/documents?collectionId=${current!.id}`),
     enabled: !!current,
-    // Mientras haya documentos procesándose, refrescar cada 3 segundos.
-    refetchInterval: (q) => (q.state.data?.documents.some((d) => d.status === "pending" || d.status === "processing") ? 3000 : false),
+    // Los cambios llegan en tiempo real (useDocumentEvents). Esto es solo un
+    // respaldo por si la conexión en vivo falla mientras hay documentos procesándose.
+    refetchInterval: (q) => (q.state.data?.documents.some((d) => d.status === "pending" || d.status === "processing") ? 20_000 : false),
   });
   const documents = docsQuery.data?.documents ?? [];
   const filtered = search
@@ -285,7 +289,13 @@ export function DocumentsPage() {
                         <div className="flex items-center gap-3">
                           <FileTypeIcon filename={d.filename} />
                           <div className="min-w-0">
-                            <p className="max-w-[16rem] truncate font-medium lg:max-w-sm">{d.title}</p>
+                            <button
+                              className="flex max-w-[16rem] items-center gap-1.5 text-left font-medium hover:text-primary hover:underline lg:max-w-sm"
+                              onClick={() => openDocument({ documentId: d.id })}
+                            >
+                              <span className="truncate">{d.title}</span>
+                              {d.hasSummary && <Sparkles className="size-3.5 shrink-0 text-primary" aria-label="Tiene resumen" />}
+                            </button>
                             <p className="max-w-[16rem] truncate text-xs text-muted-foreground lg:max-w-sm">{d.filename}</p>
                           </div>
                         </div>
@@ -322,8 +332,17 @@ export function DocumentsPage() {
                                 <Download /> Descargar original
                               </a>
                             </DropdownMenuItem>
-                            <DropdownMenuItem disabled={d.status !== "ready"} onSelect={() => setChunksDoc(d)}>
-                              <Eye /> Ver fragmentos
+                            <DropdownMenuItem onSelect={() => openDocument({ documentId: d.id })}>
+                              <Eye /> Abrir
+                            </DropdownMenuItem>
+                            <DropdownMenuItem disabled={d.status !== "ready"} onSelect={() => openDocument({ documentId: d.id, tab: "summary" })}>
+                              <Sparkles /> Resumen y preguntas
+                            </DropdownMenuItem>
+                            <DropdownMenuItem disabled={d.status !== "ready"} onSelect={() => navigate(`/chat?documento=${d.id}`)}>
+                              <MessageSquareText /> Preguntar sobre este documento
+                            </DropdownMenuItem>
+                            <DropdownMenuItem disabled={d.status !== "ready"} onSelect={() => openDocument({ documentId: d.id, tab: "chunks" })}>
+                              <Layers /> Ver fragmentos
                             </DropdownMenuItem>
                             {canEdit && (
                               <>
@@ -363,7 +382,6 @@ export function DocumentsPage() {
         }}
       />
       {current && <MembersDialog open={membersOpen} onOpenChange={setMembersOpen} collection={current} onSaved={refresh} />}
-      <ChunksSheet document={chunksDoc} onOpenChange={(o) => !o && setChunksDoc(null)} />
     </Page>
   );
 }
