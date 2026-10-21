@@ -25,7 +25,7 @@ jobs:
       JWT_SECRET: ci-secret-ci-secret-ci-secret-ci-secret
       RUN_DB_TESTS: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -44,7 +44,7 @@ jobs:
   docker:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Imagen de la API
         run: docker build -f apps/api/Dockerfile -t rag-api .
       - name: Imagen de la web
