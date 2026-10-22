@@ -196,17 +196,25 @@ authRoutes.post("/exit-support", requireAuth, async (c) => {
   return c.json(await startSession(c, actor));
 });
 
-const ChangePasswordBody = z.object({ currentPassword: z.string().min(1), newPassword: z.string() });
+const ChangePasswordBody = z.object({ newPassword: z.string(), code: z.string().trim().max(32).optional() });
 
+/**
+ * Cambia la contraseña de la sesión abierta. No pide la contraseña anterior: basta la sesión. Si la
+ * cuenta tiene verificación en dos pasos, exige un código (TOTP o de recuperación) para que una sesión
+ * robada no pueda quedarse con la cuenta.
+ */
 authRoutes.post("/change-password", requireAuth, async (c) => {
   const body = parse(ChangePasswordBody, await c.req.json().catch(() => ({})));
   const problem = passwordProblem(body.newPassword);
   if (problem) throw badRequest(problem);
   const u = c.get("user");
   if (u.support) throw badRequest("En modo soporte no se puede cambiar la contraseña");
-  const [row] = await sqlOwner<{ password_hash: string | null }[]>`SELECT password_hash FROM users WHERE id = ${u.id}`;
-  if (!row?.password_hash || !(await verifyPassword(body.currentPassword, row.password_hash))) {
-    throw badRequest("La contraseña actual no es correcta");
+  const mfa = await loadTotp(u.id);
+  if (mfa?.totp_enabled_at) {
+    if (!mfaLimiter.hit(u.id)) throw new HttpError(429, "Demasiados intentos. Espera unos minutos.");
+    if (!body.code) throw badRequest("Escribe el código de tu app autenticadora para cambiar la contraseña");
+    if (!(await consumeSecondFactor(mfa, body.code))) throw badRequest("Código de verificación incorrecto");
+    mfaLimiter.reset(u.id);
   }
   await sqlOwner`UPDATE users SET password_hash = ${await hashPassword(body.newPassword)} WHERE id = ${u.id}`;
   // Las sesiones abiertas en otros dispositivos dejan de valer; esta se renueva para no sacar al usuario.

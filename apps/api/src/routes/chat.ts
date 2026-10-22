@@ -47,6 +47,11 @@ const toSources = (hits: RankedHit[]): Source[] =>
  */
 export async function checkDailyLimit(ctx: TenantContext): Promise<TenantPlan> {
   const plan = await getTenantPlan(ctx.tenantId);
+  // Tope personal (si el plan lo define): una sola persona no puede agotar el cupo de toda la organización.
+  const own = plan.userDailyQuestionLimit;
+  if (own !== null && ctx.userId && (await questionsToday(ctx.tenantId, ctx.userId)) >= own) {
+    throw new HttpError(429, `Alcanzaste tu límite personal de ${own} preguntas por día. Se renueva a las 00:00 UTC.`);
+  }
   const limit = plan.dailyQuestionLimit;
   if (limit === 0) return plan; // 0 = sin límite
   if ((await questionsToday(ctx.tenantId)) >= limit) {
@@ -63,7 +68,16 @@ chatRoutes.get("/quota", async (c) => {
   const ctx = tenantCtx(c);
   const [plan, used] = await Promise.all([getTenantPlan(ctx.tenantId), questionsToday(ctx.tenantId)]);
   const limit = plan.dailyQuestionLimit;
-  return c.json({ used, limit, level: quotaLevel(used, limit, config.QUOTA_WARN_PERCENT), warnPercent: config.QUOTA_WARN_PERCENT });
+  const own = plan.userDailyQuestionLimit;
+  const ownUsed = own === null || !ctx.userId ? 0 : await questionsToday(ctx.tenantId, ctx.userId);
+  return c.json({
+    used,
+    limit,
+    level: quotaLevel(used, limit, config.QUOTA_WARN_PERCENT),
+    warnPercent: config.QUOTA_WARN_PERCENT,
+    // Cuota personal: solo si el plan la define.
+    user: own === null ? null : { used: ownUsed, limit: own, level: quotaLevel(ownUsed, own, config.QUOTA_WARN_PERCENT) },
+  });
 });
 
 const SearchBody = z.object({
@@ -247,11 +261,32 @@ chatRoutes.post("/chat", userRateLimit(20, 60_000, "preguntas"), async (c) => {
 // Conversaciones (cada usuario ve solo las suyas; lo garantiza RLS)
 // ---------------------------------------------------------------------------
 
+const ConversationsQuery = z.object({ q: z.string().trim().max(100).optional() });
+
+/** Conversaciones del usuario, con búsqueda opcional (`q`) en el título y en el texto de los mensajes. */
 chatRoutes.get("/conversations", async (c) => {
+  const { q } = parse(ConversationsQuery, c.req.query());
+  // Se escapan «%», «_» y «\» para que se busquen como texto literal.
+  const pattern = q ? `%${q.replace(/[\\%_]/g, "\\$&")}%` : null;
   const conversations = await withTenant(tenantCtx(c), (tx) => tx`
-    SELECT id, title, created_at AS "createdAt", updated_at AS "updatedAt"
-      FROM conversations ORDER BY updated_at DESC LIMIT 200`);
+    SELECT c.id, c.title, c.created_at AS "createdAt", c.updated_at AS "updatedAt"
+      FROM conversations c
+     WHERE ${pattern}::text IS NULL
+        OR c.title ILIKE ${pattern}
+        OR EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id AND m.content ILIKE ${pattern})
+     ORDER BY c.updated_at DESC LIMIT 200`);
   return c.json({ conversations });
+});
+
+const RenameConversationBody = z.object({ title: z.string().trim().min(1).max(120) });
+
+chatRoutes.patch("/conversations/:id", async (c) => {
+  const id = c.req.param("id");
+  if (!UUID_RE.test(id)) throw notFound();
+  const { title } = parse(RenameConversationBody, await c.req.json().catch(() => ({})));
+  const [row] = await withTenant(tenantCtx(c), (tx) => tx`UPDATE conversations SET title = ${title} WHERE id = ${id} RETURNING id`);
+  if (!row) throw notFound("Conversación no encontrada");
+  return c.json({ ok: true });
 });
 
 chatRoutes.get("/conversations/:id", async (c) => {

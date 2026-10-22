@@ -8,6 +8,7 @@ Cambiarlos solo si el usuario lo pide de forma explícita.
 
 - **Stack de UI:** shadcn/ui + Tailwind CSS + iconos Lucide. Componentes base en `apps/web/src/components/ui/`.
 - **Ancho de página:** `Page` (`components/common.tsx`) ocupa todo el ancho disponible; no hay `max-w` global. Solo `Cuenta` se limita a `max-w-3xl`.
+- **Lista de documentos:** las columnas ordenan al pulsarlas, hay filtros por estado y tipo (`lib/documentView.ts`, todo en el navegador) y las acciones en lote (mover, reprocesar, borrar) salen de la barra de selección, con los botones a la derecha. El botón destructivo es rojo sólido (`red-600`) en ambos temas.
 - **Tablas:** una sola pieza compartida, `TableCard` (`components/common.tsx`). Alto dinámico: la tabla ocupa el alto libre de la pantalla, hace scroll interno con la cabecera fija y la página no scrollea. Se usa dentro de `<Page fill>`. No reimplementar el borde/scroll inline.
 - **Scroll y paginación:** el scroll interno sirve hasta cientos de filas (la API limita a 1000). Más allá hay que paginar en el servidor.
 - **Paginación:** Auditoría usa «Cargar más» (50 por carga, debajo de la tabla). Documentos no pagina: la API devuelve hasta 1000 por colección y la tabla hace scroll.
@@ -20,7 +21,7 @@ Cambiarlos solo si el usuario lo pide de forma explícita.
 - **Límite diario:** se muestra siempre el valor efectivo (`200 / día` o `Sin límite`), nunca «Global». Sale de la excepción de la organización o, si no hay, de su plan (`planDailyQuestionLimit`).
 - **Borrar organización:** solo desactivada y escribiendo su identificador; borra todo (incluidos archivos). Las copias de seguridad la conservan hasta caducar.
 - **Aviso de cuota:** `QuotaBanner` en el chat avisa a todos los usuarios al llegar al 80 % del límite diario (`QUOTA_WARN_PERCENT`) y al agotarlo. No hay avisos por correo.
-- **Planes:** pestaña «Planes» dentro de Organizaciones. Una sola clave de OpenRouter (la del dueño); el plan fija modelos, preguntas por día y topes de usuarios y documentos. Los admins ven su uso en Consumo.
+- **Planes:** pestaña «Planes» dentro de Organizaciones. Una sola clave de OpenRouter (la del dueño); el plan fija modelos, preguntas por día (y, opcional, por usuario) y topes de usuarios y documentos. Los admins ven su uso en Consumo.
 - **Superadministrador:** al iniciar sesión aterriza en Organizaciones (selector); desde ahí «Entrar como soporte». El banner de soporte tiene «Volver a mi organización».
 
 ## Acceso

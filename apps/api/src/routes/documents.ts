@@ -291,15 +291,103 @@ documentRoutes.patch("/:id", requireRole("admin", "editor"), async (c) => {
   return c.json({ ok: true });
 });
 
+interface MoveRow {
+  id: string;
+  collection_id: string;
+  sha256: string;
+  status: string;
+  title: string;
+}
+
+const MoveBody = z.object({
+  ids: z.array(z.string().regex(UUID_RE)).min(1).max(200),
+  collectionId: z.string().regex(UUID_RE),
+});
+
+/**
+ * Mueve uno o varios documentos (y sus fragmentos) a otra colección sin reprocesarlos. Se ejecuta con la
+ * identidad del usuario: las políticas de la base exigen que sea admin o editor y que tenga acceso a las
+ * colecciones de origen y de destino. Los que no se pueden mover (en proceso, ya en el destino, duplicados
+ * allí) se devuelven en `skipped` con el motivo. Vacía la caché de respuestas de las colecciones afectadas.
+ */
+documentRoutes.post("/move", requireRole("admin", "editor"), userRateLimit(20, 60_000, "movimientos"), async (c) => {
+  const body = parse(MoveBody, await c.req.json().catch(() => ({})));
+  const ids = [...new Set(body.ids)];
+  const ctx = tenantCtx(c);
+
+  const result = await withTenant(ctx, async (tx) => {
+    const [to] = await tx<{ id: string; name: string }[]>`SELECT id, name FROM collections WHERE id = ${body.collectionId}`;
+    if (!to) throw notFound("Colección de destino no encontrada o sin acceso");
+    const docs = await tx<MoveRow[]>`
+      SELECT id, collection_id, sha256, status, title FROM documents WHERE id = ANY(${ids}::uuid[])`;
+    const known = new Set(docs.map((d) => d.id));
+    const skipped: { id: string; title: string; reason: string }[] = ids
+      .filter((id) => !known.has(id))
+      .map((id) => ({ id, title: "", reason: "no existe o no tienes acceso" }));
+    // Archivos que ya hay en el destino (la misma colección no admite el mismo archivo dos veces).
+    const inTarget = new Set((await tx<{ sha256: string }[]>`SELECT sha256 FROM documents WHERE collection_id = ${to.id}`).map((r) => r.sha256));
+    const movable: MoveRow[] = [];
+    const fromCollections = new Set<string>();
+    for (const d of docs) {
+      const reason =
+        d.collection_id === to.id ? "ya está en esa colección"
+        : d.status === "pending" || d.status === "processing" ? "se está procesando"
+        : inTarget.has(d.sha256) ? "ya existe ese archivo en el destino"
+        : null;
+      if (reason) {
+        skipped.push({ id: d.id, title: d.title, reason });
+        continue;
+      }
+      movable.push(d);
+      inTarget.add(d.sha256);
+      fromCollections.add(d.collection_id);
+    }
+    if (movable.length > 0) {
+      const movableIds = movable.map((d) => d.id);
+      await tx`UPDATE documents SET collection_id = ${to.id}, updated_at = now() WHERE id = ANY(${movableIds}::uuid[])`;
+      await tx`UPDATE chunks SET collection_id = ${to.id} WHERE document_id = ANY(${movableIds}::uuid[])`;
+      await invalidateCollections(tx, [...fromCollections, to.id]);
+    }
+    return { moved: movable.length, skipped, to: to.name, titles: movable.slice(0, 20).map((d) => d.title) };
+  });
+
+  if (result.moved > 0) {
+    await audit(c, "document.moved", {
+      targetType: "document",
+      details: { count: result.moved, a: result.to, filenames: result.titles.join(", ") },
+    });
+  }
+  return c.json({ moved: result.moved, skipped: result.skipped });
+});
+
+/**
+ * Marca documentos para volver a procesarse y los encola. Con `skipBusy` se ignoran los que ya
+ * están en cola o procesándose (para no duplicar trabajo). Devuelve cuántos se encolaron.
+ */
+async function reprocessDocuments(ctx: ReturnType<typeof tenantCtx>, ids: string[], skipBusy: boolean): Promise<number> {
+  const rows = await withTenant(ctx, (tx) => tx<{ id: string }[]>`
+    UPDATE documents SET status = 'pending', error = NULL, updated_at = now()
+     WHERE id = ANY(${ids}::uuid[]) AND (${!skipBusy} OR status NOT IN ('pending', 'processing'))
+    RETURNING id`);
+  for (const r of rows) await enqueueIngest({ tenantId: ctx.tenantId, documentId: r.id });
+  return rows.length;
+}
+
+const ReprocessBody = z.object({ ids: z.array(z.string().regex(UUID_RE)).min(1).max(200) });
+
+/** Vuelve a procesar varios documentos (p. ej. los que fallaron, o tras cambiar el modelo de embeddings). */
+documentRoutes.post("/reprocess", requireRole("admin", "editor"), userRateLimit(10, 60_000, "reprocesos"), async (c) => {
+  const { ids } = parse(ReprocessBody, await c.req.json().catch(() => ({})));
+  const unique = [...new Set(ids)];
+  const reprocessed = await reprocessDocuments(tenantCtx(c), unique, true);
+  if (reprocessed > 0) await audit(c, "document.reprocessed", { targetType: "document", details: { count: reprocessed } });
+  return c.json({ reprocessed, skipped: unique.length - reprocessed });
+});
+
 /** Vuelve a procesar un documento (p. ej. tras cambiar el modelo de embeddings). */
 documentRoutes.post("/:id/reprocess", requireRole("admin", "editor"), async (c) => {
   const id = idParam(c.req.param("id"));
-  const ctx = tenantCtx(c);
-  const [doc] = await withTenant(ctx, (tx) => tx`
-    UPDATE documents SET status = 'pending', error = NULL, updated_at = now()
-     WHERE id = ${id} RETURNING id`);
-  if (!doc) throw notFound("Documento no encontrado");
-  await enqueueIngest({ tenantId: ctx.tenantId, documentId: id });
+  if ((await reprocessDocuments(tenantCtx(c), [id], false)) === 0) throw notFound("Documento no encontrado");
   await audit(c, "document.reprocessed", { targetType: "document", targetId: id });
   return c.json({ ok: true });
 });

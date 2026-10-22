@@ -49,9 +49,9 @@ Guía completa paso a paso: **[docs/instalacion.md](docs/instalacion.md)**.
 ## Cómo se usa
 
 1. **Organizaciones (superadministrador):** crea una organización por cliente, con su primer administrador. Con **Entrar como soporte** accedes a cualquiera de ellas con tu propio usuario (queda en su auditoría).
-2. **Documentos (administrador/editor):** crea colecciones (carpetas) y arrastra archivos. Se procesan en segundo plano: *En cola → Procesando → Listo*.
+2. **Documentos (administrador/editor):** crea colecciones (carpetas) y arrastra archivos. Se procesan en segundo plano: *En cola → Procesando → Listo*. Desde el menú ⋮ de cada documento puedes renombrarlo o moverlo a otra colección, y con las casillas de la tabla puedes mover, reprocesar o borrar varios a la vez. Las columnas ordenan y hay filtros por estado y tipo.
 3. **Usuarios (administrador):** crea editores y lectores con usuario y contraseña (el email es opcional: con él puedes invitarlos y pueden recuperar su contraseña) y dales acceso a las colecciones que correspondan. En **Auditoría** ves quién hizo qué.
-4. **Chat (todos):** pregunta. La respuesta cita las fuentes `[1]`; despliégalas y pulsa **Ver en el documento** para abrir el PDF en la página citada con el texto resaltado.
+4. **Chat (todos):** pregunta. En la barra lateral puedes buscar conversaciones (por título o contenido) y renombrarlas. La respuesta cita las fuentes `[1]`; despliégalas y pulsa **Ver en el documento** para abrir el PDF en la página citada con el texto resaltado.
 5. **Resumen:** en Documentos, abre un archivo → pestaña **Resumen** → *Generar resumen*. Sus preguntas sugeridas aparecen en el chat, y *Preguntar sobre este documento* limita la conversación a ese archivo.
 
 ---

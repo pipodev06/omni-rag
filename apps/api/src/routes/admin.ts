@@ -43,7 +43,14 @@ usageRoutes.get("/", async (c) => {
   const usedToday = await questionsToday(tenantCtx(c).tenantId);
   return c.json({
     ...data,
-    plan: { name: plan.name, dailyQuestionLimit: plan.dailyQuestionLimit, maxUsers: plan.maxUsers, maxDocuments: plan.maxDocuments, usedToday },
+    plan: {
+      name: plan.name,
+      dailyQuestionLimit: plan.dailyQuestionLimit,
+      userDailyQuestionLimit: plan.userDailyQuestionLimit,
+      maxUsers: plan.maxUsers,
+      maxDocuments: plan.maxDocuments,
+      usedToday,
+    },
   });
 });
 
@@ -82,6 +89,7 @@ const PlanBody = z.object({
   dailyQuestionLimit: z.number().int().min(0).max(1_000_000),
   maxUsers: z.number().int().min(1).max(1_000_000).nullable(),
   maxDocuments: z.number().int().min(1).max(10_000_000).nullable(),
+  userDailyQuestionLimit: z.number().int().min(1).max(1_000_000).nullable(),
 });
 
 /** Deja constancia, en la auditoría del cliente afectado, de un cambio hecho desde la plataforma. */
@@ -103,7 +111,7 @@ const planConflict = (err: { code?: string }): never => {
 platformRoutes.get("/plans", async (c) => {
   const plans = await sqlOwner`
     SELECT p.id, p.name, p.description, p.llm_models AS "llmModels", p.daily_question_limit AS "dailyQuestionLimit",
-           p.max_users AS "maxUsers", p.max_documents AS "maxDocuments", p.is_default AS "isDefault",
+           p.max_users AS "maxUsers", p.max_documents AS "maxDocuments", p.user_daily_question_limit AS "userDailyQuestionLimit", p.is_default AS "isDefault",
            (SELECT count(*)::int FROM tenants t WHERE coalesce(t.plan_id, (SELECT id FROM plans WHERE is_default)) = p.id) AS tenants
       FROM plans p ORDER BY p.is_default DESC, p.created_at`;
   return c.json({ plans });
@@ -113,8 +121,8 @@ platformRoutes.post("/plans", async (c) => {
   const body = parse(PlanBody, await c.req.json().catch(() => ({})));
   const models = [...new Set(body.llmModels)];
   const [row] = await sqlOwner<{ id: string }[]>`
-    INSERT INTO plans (name, description, llm_models, daily_question_limit, max_users, max_documents)
-    VALUES (${body.name}, ${body.description}, ${models}, ${body.dailyQuestionLimit}, ${body.maxUsers}, ${body.maxDocuments})
+    INSERT INTO plans (name, description, llm_models, daily_question_limit, max_users, max_documents, user_daily_question_limit)
+    VALUES (${body.name}, ${body.description}, ${models}, ${body.dailyQuestionLimit}, ${body.maxUsers}, ${body.maxDocuments}, ${body.userDailyQuestionLimit})
     RETURNING id`.catch(planConflict);
   await audit(c, "plan.created", { targetType: "plan", targetId: row!.id, details: { name: body.name } });
   return c.json({ id: row!.id }, 201);
@@ -127,7 +135,8 @@ platformRoutes.put("/plans/:id", async (c) => {
   const models = [...new Set(body.llmModels)];
   const [row] = await sqlOwner<{ id: string }[]>`
     UPDATE plans SET name = ${body.name}, description = ${body.description}, llm_models = ${models},
-           daily_question_limit = ${body.dailyQuestionLimit}, max_users = ${body.maxUsers}, max_documents = ${body.maxDocuments}
+           daily_question_limit = ${body.dailyQuestionLimit}, max_users = ${body.maxUsers}, max_documents = ${body.maxDocuments},
+           user_daily_question_limit = ${body.userDailyQuestionLimit}
      WHERE id = ${id} RETURNING id`.catch(planConflict);
   if (!row) throw notFound("Plan no encontrado");
   await audit(c, "plan.updated", { targetType: "plan", targetId: id, details: { name: body.name } });

@@ -13,12 +13,15 @@ export interface TenantPlan {
   dailyQuestionLimit: number;
   maxUsers: number | null;
   maxDocuments: number | null;
+  /** Preguntas por día de cada usuario; null = sin tope por usuario. */
+  userDailyQuestionLimit: number | null;
 }
 
 export async function getTenantPlan(tenantId: string): Promise<TenantPlan> {
   const [row] = await sqlOwner<(Omit<TenantPlan, "dailyQuestionLimit"> & { planLimit: number; override: number | null })[]>`
     SELECT p.id, p.name, p.llm_models AS "llmModels", p.daily_question_limit AS "planLimit",
-           p.max_users AS "maxUsers", p.max_documents AS "maxDocuments", t.daily_question_limit AS override
+           p.max_users AS "maxUsers", p.max_documents AS "maxDocuments",
+           p.user_daily_question_limit AS "userDailyQuestionLimit", t.daily_question_limit AS override
       FROM tenants t
       JOIN plans p ON p.id = coalesce(t.plan_id, (SELECT id FROM plans WHERE is_default))
      WHERE t.id = ${tenantId}`;
@@ -44,11 +47,12 @@ export async function documentSlots(tenantId: string): Promise<{ left: number | 
   return { left: Math.max(0, maxDocuments - n), max: maxDocuments };
 }
 
-/** Llamadas al LLM (preguntas y resúmenes) que ha hecho la organización hoy (día en UTC). */
-export async function questionsToday(tenantId: string): Promise<number> {
+/** Llamadas al LLM (preguntas y resúmenes) hechas hoy (día en UTC) por la organización o, con `userId`, por un usuario. */
+export async function questionsToday(tenantId: string, userId?: string): Promise<number> {
   const [row] = await sqlOwner<{ n: number }[]>`
     SELECT count(*)::int AS n FROM usage_events
      WHERE tenant_id = ${tenantId} AND kind IN ('question', 'summary')
+       AND (${userId ?? null}::uuid IS NULL OR user_id = ${userId ?? null}::uuid)
        AND created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`;
   return row?.n ?? 0;
 }

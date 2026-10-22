@@ -1,9 +1,12 @@
 import { useNavigate } from "react-router";
-import { Download, EllipsisVertical, Eye, Layers, MessageSquareText, Pencil, RotateCw, Sparkles, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Download, EllipsisVertical, Eye, FolderInput, Layers, MessageSquareText, Pencil, RotateCw, Sparkles, Trash2 } from "lucide-react";
 import { formatBytes, timeAgo, type DocumentInfo } from "@/api";
 import { FileTypeIcon, StatusBadge } from "@/components/common";
 import { useOpenDocument } from "@/components/documents/DocumentViewer";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import type { DocumentView, SortKey } from "@/lib/documentView";
+import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,11 +21,12 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 interface RowActions {
   canEdit: boolean;
   onRename: (d: DocumentInfo) => void;
+  onMove: (d: DocumentInfo) => void;
   onReprocess: (d: DocumentInfo) => void;
   onDelete: (d: DocumentInfo) => void;
 }
 
-function DocumentActions({ doc: d, canEdit, onRename, onReprocess, onDelete }: RowActions & { doc: DocumentInfo }) {
+function DocumentActions({ doc: d, canEdit, onRename, onMove, onReprocess, onDelete }: RowActions & { doc: DocumentInfo }) {
   const openDocument = useOpenDocument();
   const navigate = useNavigate();
   const ready = d.status === "ready";
@@ -56,6 +60,9 @@ function DocumentActions({ doc: d, canEdit, onRename, onReprocess, onDelete }: R
             <DropdownMenuItem onSelect={() => onRename(d)}>
               <Pencil /> Renombrar
             </DropdownMenuItem>
+            <DropdownMenuItem disabled={!ready} onSelect={() => onMove(d)}>
+              <FolderInput /> Mover a otra colección
+            </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => onReprocess(d)}>
               <RotateCw /> Reprocesar
             </DropdownMenuItem>
@@ -82,11 +89,16 @@ function DocumentStatus({ doc: d }: { doc: DocumentInfo }) {
   );
 }
 
-function DocumentRow({ doc: d, ...actions }: RowActions & { doc: DocumentInfo }) {
+function DocumentRow({ doc: d, checked, onCheck, ...actions }: RowActions & { doc: DocumentInfo; checked?: boolean; onCheck?: (v: boolean) => void }) {
   const openDocument = useOpenDocument();
   return (
-    <TableRow>
-      <TableCell className="pl-4">
+    <TableRow data-state={checked ? "selected" : undefined}>
+      {onCheck && (
+        <TableCell className="w-10 pl-4">
+          <Checkbox aria-label={`Seleccionar «${d.title}»`} checked={checked === true} onCheckedChange={(v) => onCheck(v === true)} />
+        </TableCell>
+      )}
+      <TableCell className={onCheck ? "" : "pl-4"}>
         <div className="flex items-center gap-3">
           <FileTypeIcon filename={d.filename} />
           <div className="min-w-0">
@@ -118,25 +130,77 @@ function DocumentRow({ doc: d, ...actions }: RowActions & { doc: DocumentInfo })
   );
 }
 
-/** Tabla de documentos de una colección con su menú de acciones. */
-export function DocumentsTable({ documents, ...actions }: RowActions & { documents: DocumentInfo[] }) {
+/** Encabezado de columna que ordena la tabla al pulsarlo. */
+function SortHead({ label, sortKey, sort, onSort, className }: {
+  label: string;
+  sortKey: SortKey;
+  sort?: DocumentView["sort"];
+  onSort?: (k: SortKey) => void;
+  className?: string;
+}) {
+  const active = sort?.key === sortKey;
+  const Icon = !active ? ArrowUpDown : sort.dir === "asc" ? ArrowUp : ArrowDown;
+  return (
+    <TableHead className={className} aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}>
+      <button
+        type="button"
+        className={cn("-ml-1 inline-flex items-center gap-1 rounded px-1 py-0.5 hover:text-foreground", !active && "text-muted-foreground")}
+        onClick={() => onSort?.(sortKey)}
+      >
+        {label}
+        <Icon className={cn("size-3.5", !active && "opacity-50")} />
+      </button>
+    </TableHead>
+  );
+}
+
+/** Selección de documentos para acciones en lote (solo quien puede editar). */
+export interface DocumentSelection {
+  selected: Set<string>;
+  onToggle: (id: string, checked: boolean) => void;
+  onToggleAll: (checked: boolean) => void;
+}
+
+/** Tabla de documentos de una colección con su menú de acciones y, si hay `selection`, casillas para elegir varios. */
+export function DocumentsTable({ documents, selection, sort, onSort, ...actions }: RowActions & {
+  documents: DocumentInfo[];
+  selection?: DocumentSelection;
+  sort?: DocumentView["sort"];
+  onSort?: (k: SortKey) => void;
+}) {
+  const picked = selection ? documents.filter((d) => selection.selected.has(d.id)).length : 0;
   return (
     <TableCard>
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
-            <TableHead className="pl-4">Documento</TableHead>
-            <TableHead>Estado</TableHead>
-            <TableHead className="hidden md:table-cell">Tamaño</TableHead>
-            <TableHead className="hidden md:table-cell">Páginas</TableHead>
-            <TableHead className="hidden lg:table-cell">Fragmentos</TableHead>
-            <TableHead className="hidden sm:table-cell">Subido</TableHead>
+            {selection && (
+              <TableHead className="w-10 pl-4">
+                <Checkbox
+                  aria-label="Seleccionar todos los documentos"
+                  checked={picked === 0 ? false : picked === documents.length ? true : "indeterminate"}
+                  onCheckedChange={(v) => selection.onToggleAll(v === true)}
+                />
+              </TableHead>
+            )}
+            <SortHead label="Documento" sortKey="title" sort={sort} onSort={onSort} className={selection ? "" : "pl-4"} />
+            <SortHead label="Estado" sortKey="status" sort={sort} onSort={onSort} />
+            <SortHead label="Tamaño" sortKey="size" sort={sort} onSort={onSort} className="hidden md:table-cell" />
+            <SortHead label="Páginas" sortKey="pages" sort={sort} onSort={onSort} className="hidden md:table-cell" />
+            <SortHead label="Fragmentos" sortKey="chunks" sort={sort} onSort={onSort} className="hidden lg:table-cell" />
+            <SortHead label="Subido" sortKey="created" sort={sort} onSort={onSort} className="hidden sm:table-cell" />
             <TableHead className="w-12" />
           </TableRow>
         </TableHeader>
         <TableBody>
           {documents.map((d) => (
-            <DocumentRow key={d.id} doc={d} {...actions} />
+            <DocumentRow
+              key={d.id}
+              doc={d}
+              checked={selection ? selection.selected.has(d.id) : undefined}
+              onCheck={selection ? (v) => selection.onToggle(d.id, v) : undefined}
+              {...actions}
+            />
           ))}
         </TableBody>
       </Table>

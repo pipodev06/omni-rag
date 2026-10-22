@@ -260,6 +260,8 @@ export interface Plan {
   dailyQuestionLimit: number;
   maxUsers: number | null;
   maxDocuments: number | null;
+  /** Preguntas por día de cada usuario; null = sin tope por usuario. */
+  userDailyQuestionLimit: number | null;
   isDefault: boolean;
   tenants: number;
 }

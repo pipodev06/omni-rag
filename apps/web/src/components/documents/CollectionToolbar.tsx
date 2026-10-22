@@ -1,5 +1,6 @@
 import { useNavigate } from "react-router";
 import { EllipsisVertical, FolderOpen, Pencil, Search, Trash2, UserRoundCog } from "lucide-react";
+import type { ReactNode } from "react";
 import type { Collection } from "@/api";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,12 +14,14 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 /** Selector de colección, acciones de administrador y buscador. */
-export function CollectionToolbar({ collections, current, isAdmin, search, onSearch, onMembers, onRename, onDelete }: {
+export function CollectionToolbar({ collections, current, isAdmin, search, onSearch, filters, onMembers, onRename, onDelete }: {
   collections: Collection[];
   current: Collection;
   isAdmin: boolean;
   search: string;
   onSearch: (v: string) => void;
+  /** Filtros que se muestran junto al buscador. */
+  filters?: ReactNode;
   onMembers: () => void;
   onRename: () => void;
   onDelete: () => void;
@@ -63,7 +66,8 @@ export function CollectionToolbar({ collections, current, isAdmin, search, onSea
           </DropdownMenu>
         </div>
       )}
-      <div className="relative sm:ml-auto sm:w-64">
+      {filters && <div className="sm:ml-auto">{filters}</div>}
+      <div className={filters ? "relative sm:w-64" : "relative sm:ml-auto sm:w-64"}>
         <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input value={search} onChange={(e) => onSearch(e.target.value)} placeholder="Buscar por nombre…" className="pl-9" aria-label="Buscar documentos" />
       </div>

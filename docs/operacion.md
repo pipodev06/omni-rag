@@ -54,6 +54,30 @@ docker compose up -d
 
 > En un servidor nuevo, `pg_restore` mostrará avisos `role "rag_app" does not exist`. Son normales: al arrancar, la API crea el usuario `rag_app` con `APP_DB_PASSWORD` y vuelve a aplicar sus permisos.
 
+## Reprocesar varios documentos a la vez
+
+Con las casillas de **Documentos**, elige los documentos y pulsa **Reprocesar** en la barra de selección (hasta 200). Útil con los que fallaron o tras cambiar el modelo de embeddings. Los que ya están en cola o procesándose se omiten para no duplicar trabajo.
+
+## Borrar varios documentos a la vez
+
+En **Documentos**, marca las casillas de la primera columna (la casilla de la cabecera selecciona todos los que ves, también tras buscar). Aparece una barra con **Borrar** y **Quitar selección**; al pulsar Borrar se pide confirmación con los nombres. Se borran hasta 200 de una vez (los archivos también), la caché de respuestas de las colecciones afectadas se vacía y queda **una sola entrada** en la auditoría («Borró varios documentos», con la cantidad y los primeros nombres). La selección se vacía al cambiar de colección. No se puede deshacer; las copias de seguridad conservan los archivos hasta que caducan.
+
+## Ordenar y filtrar la lista de documentos
+
+En **Documentos**, pulsa el título de una columna (Documento, Estado, Tamaño, Páginas, Fragmentos, Subido) para ordenar; vuelve a pulsarlo para invertir el orden. Con *Estado* los que tienen error quedan arriba. Junto al buscador hay dos filtros: por **estado** (Listos, En proceso, Con error) y por **tipo** de archivo (solo los que existen en la colección); el icono del embudo los quita. Todo se hace en el navegador sobre los documentos de la colección y se reinicia al cambiar de colección.
+
+## Mover documentos a otra colección
+
+En **Documentos**, menú ⋮ del documento → **Mover a otra colección**; o marca varios con las casillas y pulsa **Mover** en la barra de selección. Conserva el título, el resumen y los fragmentos ya calculados (no se vuelve a procesar), y deja de verlo quien solo tenía acceso a la colección de origen. Reglas:
+
+- Hay que ser administrador o editor **con acceso a las dos colecciones**; un editor no puede mover a una colección que no ve.
+- El documento debe estar en estado *Listo*: mientras se procesa, el menú aparece desactivado.
+- Si el mismo archivo ya está en la colección de destino, no se mueve (evita duplicados).
+- Los que no se pueden mover (en proceso, ya en el destino, archivo duplicado allí) se omiten y el aviso dice cuáles y por qué; los demás se mueven.
+- Queda en la auditoría («Movió documentos a otra colección», con cantidad y destino) y vacía la caché de respuestas de ambas colecciones.
+
+No existe «copiar»: un documento pertenece a una sola colección. Para tenerlo en dos, hay que subirlo en la segunda.
+
 ## Reprocesar documentos
 
 Hace falta después de cambiar `CHUNK_SIZE_CHARS`, `CHUNK_OVERLAP_CHARS` o el modelo de embeddings, o para reintentar documentos fallidos:
@@ -203,7 +227,8 @@ Cada usuario puede activarla en **Mi cuenta → Verificación en dos pasos**. Pa
 - Cada organización tiene un **plan** (**Organizaciones → Planes**) que fija el límite diario, los modelos y los topes de usuarios y documentos. `TENANT_DAILY_QUESTION_LIMIT` solo da el valor inicial del plan «Estándar» la primera vez que se crea.
 - Excepción puntual: **Organizaciones → Límite diario** (vacío = el del plan; 0 = sin límite).
 - Los administradores de cada organización ven su uso frente a los topes del plan en **Consumo**.
-- **Aviso en el chat:** cuando la organización llega al `QUOTA_WARN_PERCENT` % (80 por defecto) de su límite diario, todos sus usuarios ven sobre el cuadro de escritura «ha usado X de N preguntas de hoy»; al llegar al tope, el aviso pasa a rojo. Se actualiza tras cada pregunta y no aparece en planes sin límite (0).
+- **Tope por usuario (opcional):** un plan puede limitar las preguntas por día de **cada usuario** (*Organizaciones → Planes → Preguntas por día por usuario*), para que una sola persona no agote el cupo de todos. Al alcanzarlo, esa persona no puede preguntar más hoy aunque a la organización le queden. Cuenta preguntas y resúmenes (no las respuestas servidas desde la caché) y se reinicia a las 00:00 UTC.
+- **Aviso en el chat:** cuando la organización llega al `QUOTA_WARN_PERCENT` % (80 por defecto) de su límite diario, todos sus usuarios ven sobre el cuadro de escritura «ha usado X de N preguntas de hoy»; al llegar al tope, el aviso pasa a rojo. Si el plan tiene tope por usuario, cada persona ve además su propio aviso. Se actualiza tras cada pregunta y no aparece en planes sin límite (0).
 - Solo cuentan las preguntas que llegan al LLM. Las respuestas "no encontré información" no cuentan. El día se cuenta en UTC.
 
 Reparte el cupo de OpenRouter (1.000 al día con créditos) entre tus clientes con este límite.

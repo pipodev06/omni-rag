@@ -10,7 +10,7 @@ Base: `http://localhost:8000/api` (a través de nginx) o `http://localhost:3001/
 
 | Método | Ruta | Acceso | Descripción |
 |---|---|---|---|
-| GET | `/quota` | cualquier usuario | `{ used, limit, level, warnPercent }`: preguntas de hoy de la organización frente al límite de su plan. `level`: `ok`, `warn` (desde `QUOTA_WARN_PERCENT` %), `full` o `unlimited` |
+| GET | `/quota` | cualquier usuario | `{ used, limit, level, warnPercent, user }`: preguntas de hoy de la organización frente al límite de su plan; `user` = `{ used, limit, level }` con la cuota personal si el plan la define, o `null`. `level`: `ok`, `warn` (desde `QUOTA_WARN_PERCENT` %), `full` o `unlimited` |
 | GET | `/health` | público | Estado de `database`, `embeddings`, `reranker` (o `desactivado`) y si `openrouter` está configurado. `docling` aparece como «aislado»: vive en una red interna que solo alcanza el worker, y su estado se ve con `docker compose ps`. `503` si la base de datos no responde. |
 
 ## Sesión — `/auth`
@@ -21,7 +21,7 @@ Base: `http://localhost:8000/api` (a través de nginx) o `http://localhost:3001/
 | POST | `/auth/logout` | — | Borra la cookie |
 | GET | `/auth/me` | — | `{ user, tenant, support, mfaSetupRequired }`. `support` = `{ name, username }` del superadministrador si la sesión es de soporte, o `null` |
 | POST | `/auth/exit-support` | — | Sale del modo soporte y vuelve a la sesión del superadministrador: `{ token, user }` + cookie |
-| POST | `/auth/change-password` | `{ currentPassword, newPassword }` | `{ ok }` (mín. 10 caracteres) |
+| POST | `/auth/change-password` | `{ newPassword, code? }` | `{ ok }` (mín. 10 caracteres). No pide la contraseña anterior; con 2FA activo exige `code` (TOTP o de recuperación). Cierra las demás sesiones |
 | GET | `/auth/config` | — | `{ emailEnabled }` (si hay SMTP configurado) |
 | POST | `/auth/login/totp` | `{ mfaToken, code }`: segundo paso si `/auth/login` devolvió `{ mfaRequired: true, mfaToken }` (el token dura 5 min y no abre sesión). `code` = 6 dígitos de la app o un código de recuperación | Igual que el login. Máx. 5 intentos / 15 min por usuario. Un código TOTP no se puede reutilizar |
 | POST | `/auth/logout-all` | — | Cierra todas las sesiones del usuario (incluida la actual). Un `401` posterior = la sesión se cerró |
@@ -38,7 +38,8 @@ Base: `http://localhost:8000/api` (a través de nginx) o `http://localhost:3001/
 |---|---|---|---|
 | POST | `/chat` | todos | Pregunta con respuesta en streaming (ver abajo) |
 | POST | `/search` | todos | `{ query, collectionIds?, topK? }` → `{ results: SearchHit[] }`. **No usa el LLM.** |
-| GET | `/conversations` | todos | Las 200 conversaciones más recientes del usuario |
+| GET | `/conversations?q=` | todos | Las 200 conversaciones más recientes del usuario. Con `q` filtra por el título o el texto de los mensajes (sin distinguir mayúsculas; `%` y `_` se buscan literalmente) |
+| PATCH | `/conversations/:id` | dueño | `{ title }`: renombra la conversación (1-120 caracteres) |
 | GET | `/conversations/:id` | dueño | `{ conversation, messages }` (con `sources` de cada respuesta) |
 | DELETE | `/conversations/:id` | dueño | Borra la conversación |
 
@@ -104,7 +105,10 @@ Los mensajes de `GET /conversations/:id` incluyen `fromCache` y `feedback` (`1`,
 | GET | `/documents/:id/file` | todos | Descarga el original |
 | POST | `/documents` | admin, editor | `multipart/form-data`: `collectionId` + uno o varios `file` |
 | PATCH | `/documents/:id` | admin, editor | `{ title }`: cambia el título mostrado (no el archivo). Vacía la caché de respuestas de la colección. Los fragmentos conservan el título antiguo en su texto de búsqueda hasta que se reprocese |
-| POST | `/documents/:id/reprocess` | admin, editor | Vuelve a indexar |
+| POST | `/documents/bulk-delete` | admin, editor | `{ ids: [...] }` (1-200): borra varios documentos y sus archivos → `{ deleted, notFound }`. Solo borra los que el usuario puede editar; el resto cuenta en `notFound`. Una sola entrada de auditoría (`document.bulk_deleted`). Máx. 10 llamadas por minuto |
+| POST | `/documents/move` | admin, editor | `{ ids: [...] (1-200), collectionId }`: mueve documentos y sus fragmentos a otra colección sin reprocesarlos → `{ moved, skipped: [{ id, title, reason }] }`. Exige acceso a ambas colecciones (`404` si no tiene acceso al destino). Se omiten (con motivo) los que se están procesando, ya están en el destino o duplicarían un archivo allí. Vacía la caché de las colecciones afectadas. Máx. 20 por minuto |
+| POST | `/documents/reprocess` | admin, editor | `{ ids: [...] (1-200) }`: vuelve a procesar varios → `{ reprocessed, skipped }` (se omiten los que ya están en cola o procesándose). Máx. 10 por minuto |
+| POST | `/documents/:id/reprocess` | admin, editor | Vuelve a indexar uno |
 | DELETE | `/documents/:id` | admin, editor | Borra el documento, sus fragmentos y el archivo |
 
 Respuesta de la subida (`201`):
@@ -146,15 +150,15 @@ curl localhost:8000/api/documents -H "authorization: Bearer $TOKEN" \
 
 `GET /usage` → `{ daily: [{ day, questions, cacheHits, promptTokens, completionTokens }], byModel: [{ model, questions }], totals: { documents, chunks, users } }` (últimos 30 días).
 
-`GET /usage` incluye `plan: { name, dailyQuestionLimit, maxUsers, maxDocuments, usedToday }` con los topes de la organización.
+`GET /usage` incluye `plan: { name, dailyQuestionLimit, userDailyQuestionLimit, maxUsers, maxDocuments, usedToday }` con los topes de la organización.
 
 ## Plataforma — `/platform` (superadministrador)
 
 | Método | Ruta | Cuerpo |
 |---|---|---|
 | GET | `/platform/tenants` | → `{ tenants: [{ id, name, slug, isActive, dailyQuestionLimit, planId, planName, planDailyQuestionLimit, users, documents, questions30d, createdAt }] }`. `dailyQuestionLimit` es la excepción puntual (`null` = rige el plan) |
-| GET | `/platform/plans` | → `{ plans: [{ id, name, description, llmModels, dailyQuestionLimit, maxUsers, maxDocuments, isDefault, tenants }] }` |
-| POST | `/platform/plans` | `{ name, description?, llmModels[], dailyQuestionLimit, maxUsers\|null, maxDocuments\|null }` → `{ id }` |
+| GET | `/platform/plans` | → `{ plans: [{ id, name, description, llmModels, dailyQuestionLimit, userDailyQuestionLimit, maxUsers, maxDocuments, isDefault, tenants }] }` |
+| POST | `/platform/plans` | `{ name, description?, llmModels[], dailyQuestionLimit, userDailyQuestionLimit\|null, maxUsers\|null, maxDocuments\|null }` → `{ id }` |
 | PUT | `/platform/plans/:id` | Mismo cuerpo: reemplaza el plan |
 | POST | `/platform/plans/:id/default` | Marca el plan que reciben las organizaciones nuevas y las que no tienen plan |
 | DELETE | `/platform/plans/:id` | `409` si lo usa alguna organización; no se puede borrar el plan por defecto |

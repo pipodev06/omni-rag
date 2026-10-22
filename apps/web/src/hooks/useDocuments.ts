@@ -69,6 +69,43 @@ export function useDocumentActions() {
     if (ok) await run(() => api.del(`/documents/${d.id}`), "Documento borrado");
   };
 
+  const removeDocuments = async (ds: DocumentInfo[]) => {
+    if (ds.length === 0) return false;
+    const names = ds.slice(0, 5).map((d) => `«${d.title}»`).join(", ");
+    const ok = await confirm({
+      title: `¿Borrar ${ds.length} documento${ds.length === 1 ? "" : "s"}?`,
+      description: `${names}${ds.length > 5 ? ` y ${ds.length - 5} más` : ""}. Se eliminarán los archivos y dejarán de aparecer en las respuestas. No se puede deshacer.`,
+      confirmText: `Borrar ${ds.length}`,
+      destructive: true,
+    });
+    if (!ok) return false;
+    try {
+      const r = await api.post<{ deleted: number; notFound: number }>("/documents/bulk-delete", { ids: ds.map((d) => d.id) });
+      toast.success(`${r.deleted} documento${r.deleted === 1 ? "" : "s"} borrado${r.deleted === 1 ? "" : "s"}`, {
+        description: r.notFound > 0 ? `${r.notFound} no se pudieron borrar (ya no existían o no tienes permiso).` : undefined,
+      });
+      refresh();
+      return true;
+    } catch (err) {
+      toast.error(errorMessage(err));
+      return false;
+    }
+  };
+
+  const reprocessDocuments = async (ds: DocumentInfo[]) => {
+    try {
+      const r = await api.post<{ reprocessed: number; skipped: number }>("/documents/reprocess", { ids: ds.map((d) => d.id) });
+      toast.success(`${r.reprocessed} documento${r.reprocessed === 1 ? "" : "s"} en cola para reprocesar`, {
+        description: r.skipped > 0 ? `${r.skipped} se omitieron porque ya se estaban procesando.` : undefined,
+      });
+      refresh();
+      return true;
+    } catch (err) {
+      toast.error(errorMessage(err));
+      return false;
+    }
+  };
+
   const reprocess = (d: DocumentInfo) => run(() => api.post(`/documents/${d.id}/reprocess`), "Reprocesando documento");
 
   const removeCollection = async (c: Collection) => {
@@ -83,5 +120,5 @@ export function useDocumentActions() {
     navigate("/documentos");
   };
 
-  return { refresh, removeDocument, reprocess, removeCollection };
+  return { refresh, removeDocument, removeDocuments, reprocess, reprocessDocuments, removeCollection };
 }
