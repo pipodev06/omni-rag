@@ -1,0 +1,19 @@
+# Ejemplo: conectar la web a la red Docker de un proxy que ya corre en el servidor
+# (Nginx Proxy Manager, Traefik, Caddy propio…) para que lo alcance por nombre: rag-web-1:80.
+# Sin esto, un proxy que está solo en su red da 502 («rag-web-1 could not be resolved»).
+#
+#   cp docker-compose.override.example.yml docker-compose.override.yml
+#   docker compose up -d --no-deps web
+#
+# Cambia «proxy» por el nombre real de esa red (docker network ls). El override es local del servidor
+# (está en .gitignore). Usa siempre «docker compose up -d» a secas: con «-f docker-compose.yml» explícito
+# compose ignora este archivo y la web pierde la red del proxy.
+services:
+  web:
+    networks:
+      - default
+      - proxy
+
+networks:
+  proxy:
+    external: true
