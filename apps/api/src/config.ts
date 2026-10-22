@@ -62,8 +62,18 @@ const schema = z.object({
   CHUNK_SIZE_CHARS: z.coerce.number().int().positive().default(1200),
   CHUNK_OVERLAP_CHARS: z.coerce.number().int().nonnegative().default(200),
 
+  // Proveedores de LLM (ver lib/llmProviders.ts). Basta con configurar uno; los modelos de cada plan indican cuál usar.
   OPENROUTER_API_KEY: z.string().default(""),
   OPENROUTER_BASE_URL: z.string().url().default("https://openrouter.ai/api/v1"),
+  GROQ_API_KEY: z.string().default(""),
+  GOOGLE_API_KEY: z.string().default(""),
+  OPENAI_API_KEY: z.string().default(""),
+  DEEPSEEK_API_KEY: z.string().default(""),
+  // Servidor propio compatible con OpenAI (Ollama, vLLM…): dirección con «/v1» al final; la clave es opcional.
+  LLM_CUSTOM_BASE_URL: z.string().trim().default(""),
+  LLM_CUSTOM_API_KEY: z.string().default(""),
+  // Proveedor de los modelos que se escriben sin prefijo (los planes anteriores usan OpenRouter).
+  LLM_DEFAULT_PROVIDER: z.enum(["openrouter", "groq", "google", "openai", "deepseek", "custom"]).default("openrouter"),
   // Lista separada por comas. El primero es el principal; el resto son respaldos.
   LLM_MODELS: z
     .string()

@@ -6,7 +6,7 @@ import { hashPassword, passwordProblem } from "../auth/password.js";
 import { issueSession } from "../auth/session.js";
 import { audit, auditLog } from "../lib/audit.js";
 import { clientIp } from "../lib/request.js";
-import { unknownModels } from "../lib/openrouterModels.js";
+import { checkModels } from "../lib/modelCatalog.js";
 import { getTenantPlan, questionsToday } from "../lib/plans.js";
 import { removeStored } from "../storage/local.js";
 import { createUserLink, emailLink } from "../lib/tokens.js";
@@ -104,12 +104,18 @@ async function auditPlanTenants(planId: string, planName: string): Promise<void>
   await Promise.all(tenants.map((t) => auditTenant(t.id, "plan.edited", { plan: planName })));
 }
 
-/** Rechaza los modelos que no existen en OpenRouter (si el catálogo no responde, no bloquea). */
+/**
+ * Rechaza los modelos de un plan cuyo proveedor no tiene clave configurada o que no existen en el catálogo de su
+ * proveedor (si el catálogo no responde, no bloquea). Cada modelo puede llevar prefijo: `groq:llama-3.3-70b-versatile`.
+ */
 async function assertModelsExist(models: string[]): Promise<void> {
-  const unknown = await unknownModels(models);
-  if (unknown && unknown.length > 0) {
+  const { unconfigured, unknown } = await checkModels(models);
+  if (unconfigured.length > 0) {
+    throw badRequest(`Falta configurar en el servidor: ${unconfigured.join(", ")}. Añade la clave al .env y ejecuta «docker compose up -d».`);
+  }
+  if (unknown.length > 0) {
     throw badRequest(
-      `${unknown.length === 1 ? "Este modelo no existe" : "Estos modelos no existen"} en OpenRouter: ${unknown.join(", ")}. Copia el nombre exacto de https://openrouter.ai/models`,
+      `${unknown.length === 1 ? "Este modelo no existe" : "Estos modelos no existen"} en su proveedor: ${unknown.join(", ")}. Copia el nombre exacto del catálogo (sin prefijo = OpenRouter; con prefijo, p. ej. groq:llama-3.3-70b-versatile).`,
     );
   }
 }

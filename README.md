@@ -20,7 +20,7 @@ Sistema **RAG (Retrieval-Augmented Generation)** multi-cliente para hacer pregun
 
 ```
 Pregunta ─▶ embedding local ─▶ búsqueda híbrida (solo en lo que el usuario puede ver)
-         ─▶ fragmentos relevantes + pregunta ─▶ LLM gratuito (OpenRouter) ─▶ respuesta con citas [1][2]
+         ─▶ fragmentos relevantes + pregunta ─▶ LLM (OpenRouter, Groq, Google…) ─▶ respuesta con citas [1][2]
 ```
 
 ---
@@ -32,7 +32,7 @@ Requisitos: **Docker** con Docker Compose v2, **8 GB de RAM** para Docker (pico 
 ```bash
 git clone <este-repositorio> rag-project && cd rag-project
 cp .env.example .env
-#   Edita .env: contraseñas, JWT_SECRET, SEED_ADMIN_USERNAME/PASSWORD y OPENROUTER_API_KEY
+#   Edita .env: contraseñas, JWT_SECRET, SEED_ADMIN_USERNAME/PASSWORD y la clave de un proveedor de LLM (p. ej. OPENROUTER_API_KEY)
 docker compose up -d --build
 ```
 
@@ -127,7 +127,7 @@ Las contraseñas pueden llevar cualquier carácter, incluidos `/`, `+` y `=` (lo
 | Embeddings | [Text Embeddings Inference](https://github.com/huggingface/text-embeddings-inference) + `intfloat/multilingual-e5-base` |
 | Re-ranking | TEI + `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1` (multilingüe, ~0,6 s por pregunta en CPU) |
 | Caché | Tabla `answer_cache` en PostgreSQL (sin Redis) |
-| LLM | Modelos `:free` de [OpenRouter](https://openrouter.ai) con respaldo automático |
+| LLM | [OpenRouter](https://openrouter.ai) (modelos `:free` incluidos), Groq, Google, OpenAI, DeepSeek o un servidor propio, con respaldo automático entre modelos y proveedores |
 | HTTPS | [Caddy](https://caddyserver.com) con certificados automáticos de Let's Encrypt (perfil `https`) |
 | Correo | SMTP con nodemailer (opcional; Mailpit para pruebas locales) |
 | Interfaz | React 19 + Vite, [shadcn/ui](https://ui.shadcn.com) (Radix + Tailwind CSS 4), iconos [Lucide](https://lucide.dev), TanStack Query, React Router; servida por nginx |

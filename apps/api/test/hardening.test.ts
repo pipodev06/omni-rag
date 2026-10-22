@@ -3,7 +3,7 @@ import "./env.js";
 import { config } from "../src/config.js";
 import { contentMatchesFormat } from "../src/ingest/formats.js";
 import { normalizeDbUrl } from "../src/lib/dburl.js";
-import { findUnknown } from "../src/lib/openrouterModels.js";
+import { findUnknown } from "../src/lib/modelCatalog.js";
 import { clientIp, secureCookie } from "../src/lib/request.js";
 import { weakSeedPassword, weakSecrets } from "../src/lib/secrets.js";
 import { buildMessages } from "../src/rag/prompt.js";
