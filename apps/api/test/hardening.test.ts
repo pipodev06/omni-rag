@@ -3,6 +3,7 @@ import "./env.js";
 import { config } from "../src/config.js";
 import { contentMatchesFormat } from "../src/ingest/formats.js";
 import { normalizeDbUrl } from "../src/lib/dburl.js";
+import { findUnknown } from "../src/lib/openrouterModels.js";
 import { clientIp, secureCookie } from "../src/lib/request.js";
 import { weakSeedPassword, weakSecrets } from "../src/lib/secrets.js";
 import { buildMessages } from "../src/rag/prompt.js";
@@ -145,5 +146,21 @@ describe("URL de la base de datos con contraseñas de openssl", () => {
       expect((err as Error).message).toMatch(/DATABASE_URL no es una URL/);
       expect((err as Error).message).not.toContain("Secreto");
     }
+  });
+});
+
+describe("modelos de OpenRouter", () => {
+  const catalog = new Set(["openai/gpt-4o-mini", "google/gemma-4-31b-it:free", "meta-llama/llama-3.3-70b-instruct"]);
+  it("acepta los que existen, incluidas las variantes :free listadas", () => {
+    expect(findUnknown(["openai/gpt-4o-mini", "google/gemma-4-31b-it:free"], catalog)).toEqual([]);
+  });
+  it("devuelve solo los que no existen", () => {
+    expect(findUnknown(["openai/gpt-4o-mini", "openai/gpt-9-ultra", "typo/modelo"], catalog)).toEqual(["openai/gpt-9-ultra", "typo/modelo"]);
+  });
+  it("acepta variantes de enrutado de un modelo existente (:nitro, :floor…)", () => {
+    expect(findUnknown(["openai/gpt-4o-mini:nitro", "meta-llama/llama-3.3-70b-instruct:floor"], catalog)).toEqual([]);
+  });
+  it("pero no una variante inventada ni una variante de un modelo que no existe", () => {
+    expect(findUnknown(["openai/gpt-4o-mini:inventada", "openai/otro:nitro"], catalog)).toEqual(["openai/gpt-4o-mini:inventada", "openai/otro:nitro"]);
   });
 });
