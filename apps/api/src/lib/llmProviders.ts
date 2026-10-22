@@ -3,7 +3,7 @@ import { config } from "../config.js";
 /**
  * Proveedores de LLM. Todos hablan el formato «compatible con OpenAI» (`/chat/completions` con streaming);
  * OpenRouter añade unos parámetros propios. Cada modelo de un plan puede llevar un prefijo de proveedor
- * (`groq:llama-3.3-70b-versatile`); sin prefijo se usa LLM_DEFAULT_PROVIDER (OpenRouter por defecto, así que los
+ * (`groq:openai/gpt-oss-120b`); sin prefijo se usa LLM_DEFAULT_PROVIDER (OpenRouter por defecto, así que los
  * planes anteriores siguen funcionando igual). Para añadir un proveedor nuevo con ese formato basta una línea aquí.
  */
 export type ProviderKind = "openrouter" | "openai";
@@ -59,7 +59,7 @@ export interface ModelRef {
 }
 
 /**
- * «groq:llama-3.3-70b-versatile» → proveedor groq. Sin prefijo, o si lo que va antes de «:» no es un proveedor
+ * «groq:openai/gpt-oss-120b» → proveedor groq. Sin prefijo, o si lo que va antes de «:» no es un proveedor
  * (p. ej. «google/gemma-4-31b-it:free», cuyos «:free» son parte del nombre en OpenRouter) → proveedor por defecto.
  */
 export function parseModelRef(ref: string): ModelRef {

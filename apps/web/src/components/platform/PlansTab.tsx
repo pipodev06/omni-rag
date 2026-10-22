@@ -1,9 +1,9 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { EllipsisVertical, Layers, Loader2, Pencil, Star, Trash2, TriangleAlert } from "lucide-react";
+import { EllipsisVertical, Layers, Loader2, Pencil, Star, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage, type Plan } from "@/api";
-import { EmptyState, TableCard } from "@/components/common";
+import { EmptyState, InfoHint, TableCard } from "@/components/common";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -52,7 +52,6 @@ export function PlanDialog({ plan, open, onOpenChange, onSaved }: {
   const [form, setForm] = useState<PlanForm>(toForm());
   const [busy, setBusy] = useState(false);
   const models = form.models.split(/[\n,]/).map((m) => m.trim()).filter(Boolean);
-  const hasFree = models.some(isFree);
 
   // El diálogo se abre desde fuera (por `open`): cargar el plan cada vez que se abre.
   useEffect(() => {
@@ -102,15 +101,21 @@ export function PlanDialog({ plan, open, onOpenChange, onSaved }: {
               <Input id="p-desc" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} maxLength={300} />
             </div>
             <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="p-models">Modelos, en orden de preferencia</Label>
-              <Textarea id="p-models" value={form.models} onChange={(e) => setForm({ ...form, models: e.target.value })} rows={3} placeholder={"google/gemma-4-31b-it:free\ngroq:llama-3.3-70b-versatile\ngoogle:gemini-2.0-flash"} className="font-mono text-xs" required />
-              <p className="text-xs text-muted-foreground">Uno por línea. Sin prefijo, el modelo es de OpenRouter; para otro proveedor, pon su prefijo: groq:, google:, openai:, deepseek: o custom:. Si el primero falla o está saturado, se prueba el siguiente (puede ser de otro proveedor). Al guardar se comprueba que existan.</p>
-              {hasFree && (
-                <p className="flex gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
-                  <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
-                  Los modelos «:free» de OpenRouter tienen un cupo por cuenta que comparten todas las organizaciones. Con varios clientes se saturan; para producción usa un modelo de pago.
-                </p>
-              )}
+              <div className="flex items-center gap-1">
+                <Label htmlFor="p-models">Modelos, en orden de preferencia</Label>
+                <InfoHint title="Cómo escribir los modelos">
+                  <p>
+                    Uno por línea. Sin prefijo, el modelo es de OpenRouter; para otro proveedor, pon su prefijo: groq:, google:, openai:, deepseek: o custom:. Si el primero falla o está saturado, se prueba el siguiente (puede ser de otro proveedor). Al guardar se comprueba que existan.
+                  </p>
+                  <p>
+                    Los modelos «:free» de OpenRouter tienen un cupo por cuenta que comparten todas las organizaciones. Con varios clientes se saturan; para producción usa un modelo de pago.
+                  </p>
+                  <p>
+                    Ejemplos: <code className="font-mono text-xs">groq:openai/gpt-oss-120b</code>, <code className="font-mono text-xs">google:gemini-3.5-flash</code>.
+                  </p>
+                </InfoHint>
+              </div>
+              <Textarea id="p-models" value={form.models} onChange={(e) => setForm({ ...form, models: e.target.value })} rows={3} placeholder={"google/gemma-4-31b-it:free\ngroq:openai/gpt-oss-120b\ngoogle:gemini-3.5-flash"} className="font-mono text-xs" required />
             </div>
             <div className="space-y-2">
               <Label htmlFor="p-limit">Preguntas por día</Label>
@@ -124,7 +129,6 @@ export function PlanDialog({ plan, open, onOpenChange, onSaved }: {
             <div className="space-y-2">
               <Label htmlFor="p-user-limit">Preguntas por día por usuario</Label>
               <Input id="p-user-limit" type="number" min={1} value={form.userDailyQuestionLimit} onChange={(e) => setForm({ ...form, userDailyQuestionLimit: e.target.value })} placeholder="Sin tope" />
-              <p className="text-xs text-muted-foreground">Evita que una sola persona agote el cupo de la organización.</p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="p-docs">Documentos máximos</Label>
@@ -190,6 +194,7 @@ export function PlansTab({ onEdit }: { onEdit: (p: Plan) => void }) {
             <TableHead className="pl-4">Plan</TableHead>
             <TableHead>Modelos</TableHead>
             <TableHead className="text-center">Preguntas / día</TableHead>
+            <TableHead className="text-center">Por usuario</TableHead>
             <TableHead className="hidden text-center md:table-cell">Usuarios</TableHead>
             <TableHead className="hidden text-center md:table-cell">Documentos</TableHead>
             <TableHead className="text-center">Organizaciones</TableHead>
@@ -215,10 +220,8 @@ export function PlansTab({ onEdit }: { onEdit: (p: Plan) => void }) {
                   {p.llmModels.some(isFree) && <Badge variant="outline" className="border-warning/30 font-normal text-warning">Incluye gratis</Badge>}
                 </p>
               </TableCell>
-              <TableCell className="text-center text-sm tabular-nums">
-                {limitText(p.dailyQuestionLimit)}
-                {p.userDailyQuestionLimit !== null && <p className="text-xs text-muted-foreground">máx. {p.userDailyQuestionLimit} por usuario</p>}
-              </TableCell>
+              <TableCell className="text-center text-sm tabular-nums">{limitText(p.dailyQuestionLimit)}</TableCell>
+              <TableCell className="text-center text-sm tabular-nums">{limitText(p.userDailyQuestionLimit)}</TableCell>
               <TableCell className="hidden text-center text-sm tabular-nums md:table-cell">{limitText(p.maxUsers)}</TableCell>
               <TableCell className="hidden text-center text-sm tabular-nums md:table-cell">{limitText(p.maxDocuments)}</TableCell>
               <TableCell className="text-center text-sm tabular-nums">{p.tenants}</TableCell>

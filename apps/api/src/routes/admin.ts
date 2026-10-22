@@ -106,7 +106,7 @@ async function auditPlanTenants(planId: string, planName: string): Promise<void>
 
 /**
  * Rechaza los modelos de un plan cuyo proveedor no tiene clave configurada o que no existen en el catálogo de su
- * proveedor (si el catálogo no responde, no bloquea). Cada modelo puede llevar prefijo: `groq:llama-3.3-70b-versatile`.
+ * proveedor (si el catálogo no responde, no bloquea). Cada modelo puede llevar prefijo: `groq:openai/gpt-oss-120b`.
  */
 async function assertModelsExist(models: string[]): Promise<void> {
   const { unconfigured, unknown } = await checkModels(models);
@@ -115,7 +115,7 @@ async function assertModelsExist(models: string[]): Promise<void> {
   }
   if (unknown.length > 0) {
     throw badRequest(
-      `${unknown.length === 1 ? "Este modelo no existe" : "Estos modelos no existen"} en su proveedor: ${unknown.join(", ")}. Copia el nombre exacto del catálogo (sin prefijo = OpenRouter; con prefijo, p. ej. groq:llama-3.3-70b-versatile).`,
+      `${unknown.length === 1 ? "Este modelo no existe" : "Estos modelos no existen"} en su proveedor: ${unknown.join(", ")}. Copia el nombre exacto del catálogo (sin prefijo = OpenRouter; con prefijo, p. ej. groq:openai/gpt-oss-120b). Para ver los que tienen tus claves: docker compose exec api node dist/scripts/models.js.`,
     );
   }
 }
