@@ -27,7 +27,7 @@ export function Logo({ className, withText = true }: { className?: string; withT
       <div className="grid size-8 place-items-center rounded-lg bg-primary text-primary-foreground shadow-sm">
         <BookSearch className="size-4.5" />
       </div>
-      {withText && <span className="text-[15px] font-semibold tracking-tight">RAG Project</span>}
+      {withText && <span className="text-[15px] font-semibold tracking-tight">Omni RAG</span>}
     </div>
   );
 }
