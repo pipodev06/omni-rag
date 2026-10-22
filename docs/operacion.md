@@ -213,8 +213,8 @@ El sistema habla con cualquier proveedor que ofrezca el formato «compatible con
 | Se escribe | Proveedor |
 |---|---|
 | `google/gemma-4-31b-it:free` (sin prefijo) | OpenRouter (o `LLM_DEFAULT_PROVIDER`) |
-| `groq:llama-3.3-70b-versatile` | Groq |
-| `google:gemini-2.0-flash` | Google (Gemini) |
+| `groq:openai/gpt-oss-120b` | Groq |
+| `google:gemini-3.5-flash` | Google (Gemini) |
 | `openai:gpt-4o-mini` | OpenAI |
 | `deepseek:deepseek-chat` | DeepSeek |
 | `custom:llama3.1:8b` | Servidor propio |
@@ -229,6 +229,7 @@ Los planes que ya tenías siguen funcionando sin cambios: sin prefijo es OpenRou
 - **Claude directo (Anthropic) todavía no**: usa otro formato. Mientras tanto está disponible a través de OpenRouter (`anthropic/claude-…`).
 - Con un servidor propio en Docker, `localhost` es el propio contenedor: usa `http://host.docker.internal:11434/v1` (Ollama en tu equipo) o el nombre de un servicio del compose.
 - `GET /api/health` muestra `llm: [...]` con los proveedores configurados; vacío = el chat no puede responder.
+- **Ver qué modelos puedes usar:** `docker compose exec -T api node dist/scripts/models.js groq google` lista el catálogo de cada proveedor con tus claves (sin argumentos, todos menos OpenRouter). Con `--probar` envía un mensaje mínimo a cada modelo y dice cuáles responden de verdad: aparecer en el catálogo no garantiza que sirva (Google lista modelos que dan 404 y los planes gratuitos tienen topes de tokens por minuto; en Groq gratuito puede hacer falta bajar `LLM_MAX_TOKENS`; DeepSeek exige saldo). Evita los modelos Gemma de Google para el chat: devuelven su razonamiento (`<thought>`) en la respuesta.
 
 ## Modelos gratuitos de OpenRouter
 

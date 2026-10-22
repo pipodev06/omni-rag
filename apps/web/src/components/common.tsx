@@ -33,18 +33,20 @@ export function Logo({ className, withText = true }: { className?: string; withT
 }
 
 /** Icono (i) que abre un modal con la explicación de la página. */
-function InfoHint({ title, children }: { title: string; children: ReactNode }) {
+export function InfoHint({ title, children }: { title: string; children: ReactNode }) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button variant="ghost" size="icon" className="size-7 text-muted-foreground" aria-label={`Información sobre ${title}`} onClick={() => setOpen(true)}>
+      <Button type="button" variant="ghost" size="icon" className="size-7 text-muted-foreground" aria-label={`Información sobre ${title}`} onClick={() => setOpen(true)}>
         <Info />
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{title}</DialogTitle>
-            <DialogDescription>{children}</DialogDescription>
+            <DialogDescription asChild>
+              <div className="space-y-3">{children}</div>
+            </DialogDescription>
           </DialogHeader>
         </DialogContent>
       </Dialog>
