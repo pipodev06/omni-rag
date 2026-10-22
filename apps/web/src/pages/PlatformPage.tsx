@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Building2, EllipsisVertical, Gauge, Layers, LifeBuoy, Loader2, Plus, Power, Trash2 } from "lucide-react";
+import { Building2, EllipsisVertical, Gauge, Layers, LifeBuoy, Loader2, Pencil, Plus, Power, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, dailyLimitLabel, errorMessage, timeAgo, type LinkResult, type Plan } from "@/api";
 import { LinkResultDialog } from "@/components/LinkResultDialog";
@@ -216,6 +216,64 @@ function LimitDialog({ tenant, onOpenChange, onSaved }: { tenant: TenantRow | nu
   );
 }
 
+/** Cambiar el nombre y el identificador de una organización (p. ej. la tuya, creada con los valores del .env). */
+function EditTenantDialog({ tenant, onOpenChange, onSaved }: { tenant: TenantRow | null; onOpenChange: (o: boolean) => void; onSaved: () => void }) {
+  const [form, setForm] = useState({ name: "", slug: "" });
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (tenant) setForm({ name: tenant.name, slug: tenant.slug });
+  }, [tenant]);
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!tenant) return;
+    setBusy(true);
+    try {
+      await api.patch(`/platform/tenants/${tenant.id}`, { name: form.name, slug: form.slug });
+      toast.success("Organización actualizada");
+      onSaved();
+      onOpenChange(false);
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Dialog open={tenant !== null} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <form onSubmit={submit} className="space-y-5">
+          <DialogHeader>
+            <DialogTitle>Editar «{tenant?.name}»</DialogTitle>
+            <DialogDescription>El identificador es el nombre técnico (único); solo se muestra y se pide para confirmar borrados. Los usuarios y documentos no se ven afectados.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="e-name">Nombre</Label>
+              <Input id="e-name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} maxLength={120} required autoFocus />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="e-slug">Identificador</Label>
+              <Input id="e-slug" value={form.slug} onChange={(e) => setForm({ ...form, slug: e.target.value })} pattern="[a-z0-9][a-z0-9-]{1,62}" title="Minúsculas, números y guiones" autoCapitalize="none" spellCheck={false} required />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Cancelar
+            </Button>
+            <Button type="submit" disabled={busy || (form.name.trim() === tenant?.name && form.slug === tenant?.slug)}>
+              {busy && <Loader2 className="animate-spin" />}
+              Guardar
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 /** Borrado definitivo: hay que escribir el identificador de la organización. */
 function DeleteTenantDialog({ tenant, onOpenChange, onDeleted }: { tenant: TenantRow | null; onOpenChange: (o: boolean) => void; onDeleted: () => void }) {
   const [slug, setSlug] = useState("");
@@ -337,6 +395,7 @@ export function PlatformPage() {
   const [limitTenant, setLimitTenant] = useState<TenantRow | null>(null);
   const [planTenant, setPlanTenant] = useState<TenantRow | null>(null);
   const [deleteTenant, setDeleteTenant] = useState<TenantRow | null>(null);
+  const [editTenant, setEditTenant] = useState<TenantRow | null>(null);
   const [tab, setTab] = useState<"orgs" | "plans">("orgs");
   const [planDialog, setPlanDialog] = useState<{ plan: Plan | null } | null>(null);
   const [linkResult, setLinkResult] = useState<{ result: LinkResult; email: string } | null>(null);
@@ -470,6 +529,9 @@ export function PlatformPage() {
                             <LifeBuoy /> Entrar como soporte
                           </DropdownMenuItem>
                         )}
+                        <DropdownMenuItem onSelect={() => setEditTenant(t)}>
+                          <Pencil /> Editar nombre e identificador
+                        </DropdownMenuItem>
                         <DropdownMenuItem onSelect={() => setPlanTenant(t)}>
                           <Layers /> Cambiar plan
                         </DropdownMenuItem>
@@ -508,6 +570,7 @@ export function PlatformPage() {
       />
       <LinkResultDialog result={linkResult?.result ?? null} email={linkResult?.email} onClose={() => setLinkResult(null)} />
       <LimitDialog tenant={limitTenant} onOpenChange={(o) => !o && setLimitTenant(null)} onSaved={refresh} />
+      <EditTenantDialog tenant={editTenant} onOpenChange={(o) => !o && setEditTenant(null)} onSaved={refresh} />
       <DeleteTenantDialog tenant={deleteTenant} onOpenChange={(o) => !o && setDeleteTenant(null)} onDeleted={refresh} />
       <ChangePlanDialog tenant={planTenant} onOpenChange={(o) => !o && setPlanTenant(null)} onSaved={refresh} />
       <PlanDialog
