@@ -29,6 +29,7 @@ interface PlanForm {
   dailyQuestionLimit: string;
   maxUsers: string;
   maxDocuments: string;
+  userDailyQuestionLimit: string;
 }
 
 const toForm = (p?: Plan): PlanForm => ({
@@ -38,6 +39,7 @@ const toForm = (p?: Plan): PlanForm => ({
   dailyQuestionLimit: String(p?.dailyQuestionLimit ?? 200),
   maxUsers: p?.maxUsers?.toString() ?? "",
   maxDocuments: p?.maxDocuments?.toString() ?? "",
+  userDailyQuestionLimit: p?.userDailyQuestionLimit?.toString() ?? "",
 });
 
 /** Crear o editar un plan. `plan` = null crea uno nuevo; `undefined` mantiene el diálogo cerrado. */
@@ -67,6 +69,7 @@ export function PlanDialog({ plan, open, onOpenChange, onSaved }: {
       dailyQuestionLimit: Number(form.dailyQuestionLimit),
       maxUsers: form.maxUsers.trim() === "" ? null : Number(form.maxUsers),
       maxDocuments: form.maxDocuments.trim() === "" ? null : Number(form.maxDocuments),
+      userDailyQuestionLimit: form.userDailyQuestionLimit.trim() === "" ? null : Number(form.userDailyQuestionLimit),
     };
     try {
       if (plan) await api.put(`/platform/plans/${plan.id}`, payload);
@@ -117,6 +120,11 @@ export function PlanDialog({ plan, open, onOpenChange, onSaved }: {
             <div className="space-y-2">
               <Label htmlFor="p-users">Usuarios máximos</Label>
               <Input id="p-users" type="number" min={1} value={form.maxUsers} onChange={(e) => setForm({ ...form, maxUsers: e.target.value })} placeholder="Sin tope" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="p-user-limit">Preguntas por día por usuario</Label>
+              <Input id="p-user-limit" type="number" min={1} value={form.userDailyQuestionLimit} onChange={(e) => setForm({ ...form, userDailyQuestionLimit: e.target.value })} placeholder="Sin tope" />
+              <p className="text-xs text-muted-foreground">Evita que una sola persona agote el cupo de la organización.</p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="p-docs">Documentos máximos</Label>
@@ -207,7 +215,10 @@ export function PlansTab({ onEdit }: { onEdit: (p: Plan) => void }) {
                   {p.llmModels.some(isFree) && <Badge variant="outline" className="border-warning/30 font-normal text-warning">Incluye gratis</Badge>}
                 </p>
               </TableCell>
-              <TableCell className="text-center text-sm tabular-nums">{limitText(p.dailyQuestionLimit)}</TableCell>
+              <TableCell className="text-center text-sm tabular-nums">
+                {limitText(p.dailyQuestionLimit)}
+                {p.userDailyQuestionLimit !== null && <p className="text-xs text-muted-foreground">máx. {p.userDailyQuestionLimit} por usuario</p>}
+              </TableCell>
               <TableCell className="hidden text-center text-sm tabular-nums md:table-cell">{limitText(p.maxUsers)}</TableCell>
               <TableCell className="hidden text-center text-sm tabular-nums md:table-cell">{limitText(p.maxDocuments)}</TableCell>
               <TableCell className="text-center text-sm tabular-nums">{p.tenants}</TableCell>

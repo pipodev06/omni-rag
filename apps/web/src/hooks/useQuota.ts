@@ -7,6 +7,8 @@ export interface Quota {
   limit: number;
   level: "ok" | "warn" | "full" | "unlimited";
   warnPercent: number;
+  /** Cuota personal del usuario; null si el plan no la define. */
+  user: { used: number; limit: number; level: "ok" | "warn" | "full" | "unlimited" } | null;
 }
 
 /** Cuota diaria de preguntas de la organización (para avisar antes de llegar al tope). */

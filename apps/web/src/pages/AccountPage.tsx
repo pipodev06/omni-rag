@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from "react";
-import { Loader2, LogOut, Monitor, Moon, ShieldAlert, Sun, type LucideIcon } from "lucide-react";
+import { useState } from "react";
+import { KeyRound, Loader2, LogOut, Monitor, Moon, ShieldAlert, Sun, type LucideIcon } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
@@ -8,12 +8,11 @@ import { clearSession, useCurrentUser } from "@/hooks/useSession";
 import { useTheme, type Theme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import { Page, PageHeader } from "@/components/common";
+import { ChangePasswordDialog } from "@/components/account/ChangePasswordDialog";
 import { TwoFactorCard } from "@/components/account/TwoFactorCard";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 
 const THEMES: { value: Theme; label: string; icon: LucideIcon }[] = [
   { value: "light", label: "Claro", icon: Sun },
@@ -27,27 +26,7 @@ export function AccountPage() {
   const navigate = useNavigate();
   const [closing, setClosing] = useState(false);
   const { theme, setTheme } = useTheme();
-  const [currentPassword, setCurrent] = useState("");
-  const [newPassword, setNew] = useState("");
-  const [confirmPassword, setConfirm] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    if (newPassword !== confirmPassword) return toast.error("Las contraseñas nuevas no coinciden");
-    setBusy(true);
-    try {
-      await api.post("/auth/change-password", { currentPassword, newPassword });
-      toast.success("Contraseña actualizada");
-      setCurrent("");
-      setNew("");
-      setConfirm("");
-    } catch (err) {
-      toast.error(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  };
+  const [passwordOpen, setPasswordOpen] = useState(false);
 
   const logoutEverywhere = async () => {
     setClosing(true);
@@ -115,47 +94,33 @@ export function AccountPage() {
 
         {!support && (
           <Card>
-            <CardHeader>
-              <CardTitle>Sesiones</CardTitle>
-              <CardDescription>Cierra la sesión en todos tus dispositivos, también en este. Úsalo si perdiste un equipo o sospechas de un acceso ajeno.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button variant="outline" onClick={() => void logoutEverywhere()} disabled={closing}>
-                {closing ? <Loader2 className="animate-spin" /> : <LogOut />} Cerrar todas las sesiones
+            <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0 space-y-1">
+                <CardTitle>Contraseña</CardTitle>
+                <CardDescription>Cámbiala cuando quieras. Se cerrará tu sesión en los demás dispositivos.</CardDescription>
+              </div>
+              <Button onClick={() => setPasswordOpen(true)}>
+                <KeyRound /> Cambiar contraseña
               </Button>
             </CardContent>
           </Card>
         )}
 
         {!support && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Cambiar contraseña</CardTitle>
-            <CardDescription>Usa al menos 10 caracteres.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={submit} className="max-w-sm space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="cur">Contraseña actual</Label>
-                <Input id="cur" type="password" autoComplete="current-password" value={currentPassword} onChange={(e) => setCurrent(e.target.value)} required />
+          <Card>
+            <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0 space-y-1">
+                <CardTitle>Sesiones</CardTitle>
+                <CardDescription>Cierra la sesión en todos tus dispositivos, también en este. Úsalo si perdiste un equipo o sospechas de un acceso ajeno.</CardDescription>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="new">Nueva contraseña</Label>
-                <Input id="new" type="password" autoComplete="new-password" value={newPassword} onChange={(e) => setNew(e.target.value)} minLength={10} required />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="conf">Repite la nueva contraseña</Label>
-                <Input id="conf" type="password" autoComplete="new-password" value={confirmPassword} onChange={(e) => setConfirm(e.target.value)} minLength={10} required />
-              </div>
-              <Button type="submit" disabled={busy}>
-                {busy && <Loader2 className="animate-spin" />}
-                Guardar contraseña
+              <Button variant="outline" onClick={() => void logoutEverywhere()} disabled={closing}>
+                {closing ? <Loader2 className="animate-spin" /> : <LogOut />} Cerrar todas las sesiones
               </Button>
-            </form>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
         )}
       </div>
+      <ChangePasswordDialog open={passwordOpen} onOpenChange={setPasswordOpen} needsCode={user.totpEnabled === true} />
     </Page>
   );
 }

@@ -1,16 +1,19 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { useDropzone } from "react-dropzone";
-import { CloudUpload, FolderOpen, FolderPlus, Loader2, Search } from "lucide-react";
+import { CloudUpload, FolderInput, FolderOpen, FolderPlus, Loader2, RotateCw, Search, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { errorMessage, uploadDocuments, type DocumentInfo } from "@/api";
 import { useCollectionDocuments, useDocumentActions } from "@/hooks/useDocuments";
 import { useCurrentUser } from "@/hooks/useSession";
+import { applyView, availableTypes, DEFAULT_VIEW, FIRST_DIR, isFiltered, type DocumentView, type SortKey } from "@/lib/documentView";
 import { cn } from "@/lib/utils";
 import { EmptyState, Page, PageHeader } from "@/components/common";
 import { CollectionFormDialog, MembersDialog } from "@/components/documents/CollectionDialogs";
 import { CollectionToolbar } from "@/components/documents/CollectionToolbar";
-import { DocumentsTable } from "@/components/documents/DocumentsTable";
+import { DocumentFilters } from "@/components/documents/DocumentFilters";
+import { DocumentsTable, type DocumentSelection } from "@/components/documents/DocumentsTable";
+import { MoveDocumentDialog } from "@/components/documents/MoveDocumentDialog";
 import { RenameDocumentDialog } from "@/components/documents/RenameDocumentDialog";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -75,12 +78,17 @@ function UploadZone({ collectionId, extensions, onUploaded }: { collectionId: st
 }
 
 /** Tabla de documentos, o su estado de carga / vacío. */
-function DocumentsSection({ loading, documents, search, canEdit, onRename, onReprocess, onDelete }: {
+function DocumentsSection({ loading, documents, search, filtered, canEdit, selection, sort, onSort, onRename, onMove, onReprocess, onDelete }: {
   loading: boolean;
   documents: DocumentInfo[];
   search: string;
   canEdit: boolean;
+  filtered: boolean;
+  selection?: DocumentSelection;
+  sort: DocumentView["sort"];
+  onSort: (k: SortKey) => void;
   onRename: (d: DocumentInfo) => void;
+  onMove: (d: DocumentInfo) => void;
   onReprocess: (d: DocumentInfo) => void;
   onDelete: (d: DocumentInfo) => void;
 }) {
@@ -88,13 +96,18 @@ function DocumentsSection({ loading, documents, search, canEdit, onRename, onRep
   if (documents.length === 0) {
     return (
       <EmptyState
-        icon={search ? Search : FolderOpen}
-        title={search ? "Sin resultados" : "Esta colección está vacía"}
-        description={search ? `Ningún documento coincide con «${search}».` : canEdit ? "Sube el primer documento con el recuadro de arriba." : undefined}
+        icon={search || filtered ? Search : FolderOpen}
+        title={search || filtered ? "Sin resultados" : "Esta colección está vacía"}
+        description={
+          search ? `Ningún documento coincide con «${search}»${filtered ? " y los filtros activos" : ""}.`
+          : filtered ? "Ningún documento cumple los filtros activos."
+          : canEdit ? "Sube el primer documento con el recuadro de arriba."
+          : undefined
+        }
       />
     );
   }
-  return <DocumentsTable documents={documents} canEdit={canEdit} onRename={onRename} onReprocess={onReprocess} onDelete={onDelete} />;
+  return <DocumentsTable documents={documents} canEdit={canEdit} selection={selection} sort={sort} onSort={onSort} onRename={onRename} onMove={onMove} onReprocess={onReprocess} onDelete={onDelete} />;
 }
 
 export function DocumentsPage() {
@@ -108,10 +121,54 @@ export function DocumentsPage() {
   const [collectionDialog, setCollectionDialog] = useState<"new" | "edit" | null>(null);
   const [membersOpen, setMembersOpen] = useState(false);
   const [renameDoc, setRenameDoc] = useState<DocumentInfo | null>(null);
+  const [moveDocs, setMoveDocs] = useState<DocumentInfo[] | null>(null);
+  const [view, setView] = useState<DocumentView>(DEFAULT_VIEW);
 
-  const { collections, current, loadingCollections, documents, loadingDocuments, refreshing, extensions } =
+  const { collections, current, loadingCollections, documents: found, loadingDocuments, refreshing, extensions } =
     useCollectionDocuments(routeCollection, search);
-  const { refresh, removeDocument, reprocess, removeCollection } = useDocumentActions();
+  const { refresh, removeDocument, removeDocuments, reprocess, reprocessDocuments, removeCollection } = useDocumentActions();
+
+  // Filtros y orden de la tabla (en el navegador). Los filtros se reinician al cambiar de colección.
+  const documents = applyView(found, view);
+  const types = availableTypes(found);
+  const onSort = (key: SortKey) =>
+    setView((v) => ({ ...v, sort: v.sort.key === key ? { key, dir: v.sort.dir === "asc" ? "desc" : "asc" } : { key, dir: FIRST_DIR[key] } }));
+
+  // Selección para acciones en lote: se vacía al cambiar de colección y solo conserva lo que sigue visible.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const currentId = current?.id;
+  useEffect(() => {
+    setSelected(new Set());
+    setView((v) => ({ ...DEFAULT_VIEW, sort: v.sort }));
+  }, [currentId]);
+  const visibleKey = documents.map((d) => d.id).join(",");
+  useEffect(() => {
+    setSelected((prev) => {
+      const visible = new Set(visibleKey.split(","));
+      const next = new Set([...prev].filter((id) => visible.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [visibleKey]);
+  const selectedDocs = documents.filter((d) => selected.has(d.id));
+  const selection: DocumentSelection | undefined = canEdit
+    ? {
+        selected,
+        onToggle: (id, checked) =>
+          setSelected((prev) => {
+            const next = new Set(prev);
+            if (checked) next.add(id);
+            else next.delete(id);
+            return next;
+          }),
+        onToggleAll: (checked) => setSelected(checked ? new Set(documents.map((d) => d.id)) : new Set()),
+      }
+    : undefined;
+  const deleteSelected = async () => {
+    if (await removeDocuments(selectedDocs)) setSelected(new Set());
+  };
+  const reprocessSelected = async () => {
+    if (await reprocessDocuments(selectedDocs)) setSelected(new Set());
+  };
 
   if (loadingCollections) {
     return (
@@ -151,6 +208,7 @@ export function DocumentsPage() {
             isAdmin={isAdmin}
             search={search}
             onSearch={setSearch}
+            filters={<DocumentFilters view={view} types={types} onChange={setView} />}
             onMembers={() => setMembersOpen(true)}
             onRename={() => setCollectionDialog("edit")}
             onDelete={() => void removeCollection(current)}
@@ -159,12 +217,39 @@ export function DocumentsPage() {
 
           {canEdit && <UploadZone collectionId={current.id} extensions={extensions} onUploaded={refresh} />}
 
+          {selectedDocs.length > 0 && (
+            <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2 text-sm">
+              <span className="font-medium">
+                {selectedDocs.length} seleccionado{selectedDocs.length === 1 ? "" : "s"}
+              </span>
+              <div className="ml-auto flex flex-wrap items-center gap-2">
+                <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+                  <X /> Quitar selección
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setMoveDocs(selectedDocs)}>
+                  <FolderInput /> Mover
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => void reprocessSelected()}>
+                  <RotateCw /> Reprocesar
+                </Button>
+                <Button size="sm" variant="destructive" onClick={() => void deleteSelected()}>
+                  <Trash2 /> Borrar
+                </Button>
+              </div>
+            </div>
+          )}
+
           <DocumentsSection
             loading={loadingDocuments}
             documents={documents}
             search={search}
+            filtered={isFiltered(view)}
             canEdit={canEdit}
+            selection={selection}
+            sort={view.sort}
+            onSort={onSort}
             onRename={setRenameDoc}
+            onMove={(d) => setMoveDocs([d])}
             onReprocess={(d) => void reprocess(d)}
             onDelete={(d) => void removeDocument(d)}
           />
@@ -183,6 +268,15 @@ export function DocumentsPage() {
         onSaved={(id) => {
           refresh();
           navigate(`/documentos/${id}`);
+        }}
+      />
+      <MoveDocumentDialog
+        docs={moveDocs}
+        collections={collections}
+        onOpenChange={(o) => !o && setMoveDocs(null)}
+        onMoved={() => {
+          refresh();
+          setSelected(new Set());
         }}
       />
       <RenameDocumentDialog doc={renameDoc} onOpenChange={(o) => !o && setRenameDoc(null)} onSaved={refresh} />
