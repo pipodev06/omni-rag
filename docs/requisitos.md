@@ -10,6 +10,7 @@ Las cifras de este documento están **medidas** con el sistema completo en march
 | `reranker` (mMiniLMv2) | 1,7 GB | 1,7 GB | Opcional |
 | `docling` (lectura de documentos y OCR) | 1,0 GB | 2,6–2,9 GB | Pico con PDF de 30 páginas; **1 conversión a la vez** por defecto |
 | `db` (PostgreSQL) | 0,1 GB | 0,3 GB | Crece con el volumen de datos |
+| `clamav` (antivirus, **opcional**) | ~1,0 GB | 2,0 GB | Perfil `antivirus`; descarga ~300 MB de firmas al arrancar. Con 8 GB para Docker, al activarlo desactiva el `reranker` o sube la memoria de Docker |
 | `api`, `worker`, `web`, `caddy`, `backup`, `mailpit` | < 0,1 GB cada uno | 0,1 GB | |
 | **Total** | **≈ 5,2 GB** | **≈ 6,9 GB** | Pico: PDF de 30 páginas procesándose + una pregunta |
 

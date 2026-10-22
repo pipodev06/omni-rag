@@ -309,7 +309,7 @@ Cierra todas las sesiones abiertas de ese usuario y deja constancia en su audito
 
 ## Cambiar el nombre o el identificador de una organización
 
-**Organizaciones → ⋮ → Editar nombre e identificador.** `SEED_TENANT_NAME` y `SEED_TENANT_SLUG` del `.env` solo dan los valores iniciales (primer arranque); después se cambian aquí. El identificador (`slug`) es el nombre técnico: minúsculas, números y guiones, único. Solo se muestra y se pide para confirmar un borrado; no aparece en URLs ni en rutas de archivos, así que cambiarlo no afecta a usuarios ni documentos.
+**Organizaciones → ⋮ → Renombrar** (cambia el nombre y el identificador). `SEED_TENANT_NAME` y `SEED_TENANT_SLUG` del `.env` solo dan los valores iniciales (primer arranque); después se cambian aquí. El identificador (`slug`) es el nombre técnico: minúsculas, números y guiones, único. Solo se muestra y se pide para confirmar un borrado; no aparece en URLs ni en rutas de archivos, así que cambiarlo no afecta a usuarios ni documentos.
 
 ## Entrar en una organización como soporte
 
@@ -327,6 +327,7 @@ El worker ejecuta cada día a las 03:15 (UTC) una limpieza: auditoría más anti
 
 - **Secretos:** si `DOMAIN` es un dominio real, la API no arranca con `JWT_SECRET`, `APP_DB_PASSWORD` o `POSTGRES_PASSWORD` iguales a los del `.env.example` o demasiado cortos (mínimo 32, 16 y 16), ni crea el primer administrador con la contraseña de ejemplo. En local (sin dominio) no se exige. Genera claves con `openssl rand -base64 48`.
 - **Archivos subidos:** además de la extensión y el tamaño, se comprueba que el contenido corresponda al formato (firma de PDF, Office e imágenes; sin bytes nulos en los de texto). Un ejecutable renombrado a `.pdf` se rechaza con el motivo en el resultado de la subida.
+- **Antivirus (opcional, ClamAV):** analiza cada archivo en el momento de subirlo y rechaza los infectados («Contiene un virus (firma)»), dejando constancia en la auditoría (`document.infected`). Para activarlo, en el `.env` añade `antivirus` a `COMPOSE_PROFILES` (p. ej. `COMPOSE_PROFILES=https,antivirus`) y pon `CLAMAV_HOST=clamav`; luego `docker compose up -d`. La primera vez descarga la imagen y las firmas (~300 MB; las actualiza solo cada día). **Falla cerrado:** si el antivirus está activado y no responde, las subidas se rechazan en vez de aceptarse sin analizar; `/api/health` muestra su estado. Consume ~1-2 GB de RAM (ver [requisitos](requisitos.md)). Los archivos que ya estaban subidos no se vuelven a analizar. Para probarlo sin riesgo, usa el archivo de prueba estándar EICAR (inofensivo; tu antivirus del equipo puede avisar al guardarlo en disco).
 - **Docling aislado:** el conversor procesa archivos de usuarios, así que vive en una red interna (`ingest`) sin salida a internet ni acceso a la base de datos; solo el worker llega a él. No publica ningún puerto en tu máquina. Para depurarlo: `docker compose exec worker wget -qO- http://docling:5001/health`.
 - **Contenedores de la API y el worker:** sin privilegios nuevos y sin capacidades de Linux (`no-new-privileges`, `cap_drop: ALL`).
 - **Prompt injection:** los fragmentos de los documentos van entre `<documentos>` como datos; si un documento intenta cerrar esa etiqueta, se neutraliza. No es infalible (ningún modelo lo es), pero evita el truco más común.

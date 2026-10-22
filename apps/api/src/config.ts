@@ -102,6 +102,11 @@ const schema = z.object({
   // preguntas distintas pueden estar a 0.03 (ver docs/operacion.md).
   CACHE_MAX_DISTANCE: z.coerce.number().min(0).max(1).default(0.015),
 
+  // Antivirus (ClamAV, opcional): vacío = desactivado. Con el perfil «antivirus» de docker compose, el host es «clamav».
+  CLAMAV_HOST: z.string().trim().default(""),
+  CLAMAV_PORT: z.coerce.number().int().positive().default(3310),
+  CLAMAV_TIMEOUT_SECONDS: z.coerce.number().positive().default(60),
+
   // A partir de qué porcentaje del límite diario se avisa en el chat (1-100).
   QUOTA_WARN_PERCENT: z.coerce.number().int().min(1).max(100).default(80),
 

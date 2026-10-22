@@ -11,7 +11,7 @@ Base: `http://localhost:8000/api` (a través de nginx) o `http://localhost:3001/
 | Método | Ruta | Acceso | Descripción |
 |---|---|---|---|
 | GET | `/quota` | cualquier usuario | `{ used, limit, level, warnPercent, user }`: preguntas de hoy de la organización frente al límite de su plan; `user` = `{ used, limit, level }` con la cuota personal si el plan la define, o `null`. `level`: `ok`, `warn` (desde `QUOTA_WARN_PERCENT` %), `full` o `unlimited` |
-| GET | `/health` | público | Estado de `database`, `embeddings`, `reranker` (o `desactivado`) y si `openrouter` está configurado. `docling` aparece como «aislado»: vive en una red interna que solo alcanza el worker, y su estado se ve con `docker compose ps`. `503` si la base de datos no responde. |
+| GET | `/health` | público | Estado de `database`, `embeddings`, `reranker` (o `desactivado`) y si `openrouter` está configurado. `antivirus` es `ok`, `desactivado` o el motivo del fallo. `docling` aparece como «aislado»: vive en una red interna que solo alcanza el worker, y su estado se ve con `docker compose ps`. `503` si la base de datos no responde. |
 
 ## Sesión — `/auth`
 

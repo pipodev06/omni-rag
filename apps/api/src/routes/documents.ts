@@ -11,6 +11,7 @@ import { completeChat } from "../rag/llm.js";
 import { buildSummaryMessages, parseSummary } from "../rag/summary.js";
 import { checkDailyLimit } from "./chat.js";
 import { requireAuth, requireRole, tenantCtx, type AppEnv } from "../auth/middleware.js";
+import { antivirusEnabled, scanBuffer } from "../lib/antivirus.js";
 import { contentMatchesFormat, formatFor, SUPPORTED_EXTENSIONS } from "../ingest/formats.js";
 import { enqueueIngest } from "../queue.js";
 import { invalidateCollections } from "../rag/cache.js";
@@ -195,6 +196,20 @@ documentRoutes.post(
       if (!contentMatchesFormat(format.ext, data)) {
         results.push({ filename, status: "rejected", reason: `El contenido no corresponde a un archivo ${format.ext}` });
         continue;
+      }
+      // Antivirus (opcional). Si está activado y no responde, se rechaza: es mejor no subir que subir sin analizar.
+      if (antivirusEnabled()) {
+        const scan = await scanBuffer(data);
+        if (scan.status === "infected") {
+          results.push({ filename, status: "rejected", reason: `Contiene un virus (${scan.signature})` });
+          await audit(c, "document.infected", { targetType: "document", details: { filename, signature: scan.signature } });
+          continue;
+        }
+        if (scan.status === "error") {
+          console.error(`[antivirus] no se pudo analizar «${filename}»: ${scan.message}`);
+          results.push({ filename, status: "rejected", reason: "No se pudo analizar con el antivirus. Inténtalo de nuevo en unos minutos." });
+          continue;
+        }
       }
       const sha256 = createHash("sha256").update(data).digest("hex");
       const id = randomUUID();

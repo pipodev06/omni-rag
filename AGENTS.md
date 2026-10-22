@@ -19,6 +19,7 @@ Cambiarlos solo si el usuario lo pide de forma explícita.
 - **Cargas de datos:** el componente `Skeleton` es gris neutro (`bg-muted`, nunca `accent`, que en esta paleta es índigo) y no se ve hasta pasados 250 ms, para que las cargas rápidas no parpadeen. Al cambiar un filtro de una lista, `keepPreviousData` mantiene la tabla anterior atenuada en vez de sustituirla por esqueletos.
 - **Números centrados** en la tabla de Organizaciones: Usuarios, Documentos y Límite diario.
 - **Límite diario:** se muestra siempre el valor efectivo (`200 / día` o `Sin límite`), nunca «Global». Sale de la excepción de la organización o, si no hay, de su plan (`planDailyQuestionLimit`).
+- **Antivirus:** ClamAV opcional (perfil `antivirus`, `CLAMAV_HOST`); escanea en la subida y falla cerrado. Los tests usan un clamd falso; el archivo EICAR de pruebas nunca se escribe en disco ni en el repositorio.
 - **Borrar organización:** solo desactivada y escribiendo su identificador; borra todo (incluidos archivos). Las copias de seguridad la conservan hasta caducar.
 - **Aviso de cuota:** `QuotaBanner` en el chat avisa a todos los usuarios al llegar al 80 % del límite diario (`QUOTA_WARN_PERCENT`) y al agotarlo. Con SMTP, además, un correo a los administradores de la organización una vez al día en cada nivel (80 % y agotado).
 - **Planes:** pestaña «Planes» dentro de Organizaciones. Una sola clave de OpenRouter (la del dueño); el plan fija modelos, preguntas por día (y, opcional, por usuario) y topes de usuarios y documentos. Los admins ven su uso en Consumo.

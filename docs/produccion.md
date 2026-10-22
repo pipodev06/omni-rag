@@ -190,6 +190,7 @@ Con `DOMAIN=localhost` y `COMPOSE_PROFILES=https`, Caddy usa un certificado prop
 - [ ] `DOMAIN`, `COMPOSE_PROFILES=https` y `WEB_BIND=127.0.0.1` en `.env`.
 - [ ] Contraseñas y `JWT_SECRET` nuevos y aleatorios (con dominio, la API no arranca si siguen siendo los del ejemplo).
 - [ ] Solo los puertos 22, 80 y 443 abiertos.
+- [ ] Antivirus ClamAV valorado (`COMPOSE_PROFILES=…,antivirus` y `CLAMAV_HOST=clamav`): recomendable si los usuarios suben archivos de terceros.
 - [ ] Correo SMTP configurado (SPF/DKIM) y probado con una invitación.
 - [ ] Contraseña del superadministrador cambiada y **verificación en dos pasos activada** (con un dominio real la exige el sistema; en local nunca. Se puede desactivar con `REQUIRE_SUPERADMIN_2FA=false`, aunque no se recomienda).
 - [ ] Copia **fuera del servidor** activada (`BACKUP_OFFSITE=true` con carpeta externa y frase de cifrado). Las copias locales ya se hacen y se verifican solas: busca `VERIFICADA` en `docker compose logs backup`.
