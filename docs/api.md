@@ -159,7 +159,7 @@ curl localhost:8000/api/documents -H "authorization: Bearer $TOKEN" \
 | GET | `/platform/tenants` | → `{ tenants: [{ id, name, slug, isActive, dailyQuestionLimit, planId, planName, planDailyQuestionLimit, users, documents, questions30d, createdAt }] }`. `dailyQuestionLimit` es la excepción puntual (`null` = rige el plan) |
 | GET | `/platform/plans` | → `{ plans: [{ id, name, description, llmModels, dailyQuestionLimit, userDailyQuestionLimit, maxUsers, maxDocuments, isDefault, tenants }] }` |
 | POST | `/platform/plans` | `{ name, description?, llmModels[], dailyQuestionLimit, userDailyQuestionLimit\|null, maxUsers\|null, maxDocuments\|null }` → `{ id }` |
-| PUT | `/platform/plans/:id` | Mismo cuerpo: reemplaza el plan |
+| PUT | `/platform/plans/:id` | Mismo cuerpo: reemplaza el plan. En este y en el POST, cada modelo de `llmModels` debe existir en el catálogo público de OpenRouter (`400` con los nombres que no existen); si el catálogo no responde, no se bloquea |
 | POST | `/platform/plans/:id/default` | Marca el plan que reciben las organizaciones nuevas y las que no tienen plan |
 | DELETE | `/platform/plans/:id` | `409` si lo usa alguna organización; no se puede borrar el plan por defecto |
 | POST | `/platform/tenants` | `{ name, slug, dailyQuestionLimit?, planId?, admin: { username, email?, name, password? } }` → crea la organización, su admin y la colección "General". Sin `password`, el admin recibe una invitación (`inviteUrl`, `emailSent`) |

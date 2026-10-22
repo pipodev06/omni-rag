@@ -6,6 +6,7 @@ import { hashPassword, passwordProblem } from "../auth/password.js";
 import { issueSession } from "../auth/session.js";
 import { audit, auditLog } from "../lib/audit.js";
 import { clientIp } from "../lib/request.js";
+import { unknownModels } from "../lib/openrouterModels.js";
 import { getTenantPlan, questionsToday } from "../lib/plans.js";
 import { removeStored } from "../storage/local.js";
 import { createUserLink, emailLink } from "../lib/tokens.js";
@@ -103,6 +104,16 @@ async function auditPlanTenants(planId: string, planName: string): Promise<void>
   await Promise.all(tenants.map((t) => auditTenant(t.id, "plan.edited", { plan: planName })));
 }
 
+/** Rechaza los modelos que no existen en OpenRouter (si el catálogo no responde, no bloquea). */
+async function assertModelsExist(models: string[]): Promise<void> {
+  const unknown = await unknownModels(models);
+  if (unknown && unknown.length > 0) {
+    throw badRequest(
+      `${unknown.length === 1 ? "Este modelo no existe" : "Estos modelos no existen"} en OpenRouter: ${unknown.join(", ")}. Copia el nombre exacto de https://openrouter.ai/models`,
+    );
+  }
+}
+
 const planConflict = (err: { code?: string }): never => {
   if (err.code === "23505") throw new HttpError(409, "Ya existe un plan con ese nombre");
   throw err;
@@ -120,6 +131,7 @@ platformRoutes.get("/plans", async (c) => {
 platformRoutes.post("/plans", async (c) => {
   const body = parse(PlanBody, await c.req.json().catch(() => ({})));
   const models = [...new Set(body.llmModels)];
+  await assertModelsExist(models);
   const [row] = await sqlOwner<{ id: string }[]>`
     INSERT INTO plans (name, description, llm_models, daily_question_limit, max_users, max_documents, user_daily_question_limit)
     VALUES (${body.name}, ${body.description}, ${models}, ${body.dailyQuestionLimit}, ${body.maxUsers}, ${body.maxDocuments}, ${body.userDailyQuestionLimit})
@@ -133,6 +145,7 @@ platformRoutes.put("/plans/:id", async (c) => {
   if (!UUID_RE.test(id)) throw notFound();
   const body = parse(PlanBody, await c.req.json().catch(() => ({})));
   const models = [...new Set(body.llmModels)];
+  await assertModelsExist(models);
   const [row] = await sqlOwner<{ id: string }[]>`
     UPDATE plans SET name = ${body.name}, description = ${body.description}, llm_models = ${models},
            daily_question_limit = ${body.dailyQuestionLimit}, max_users = ${body.maxUsers}, max_documents = ${body.maxDocuments},

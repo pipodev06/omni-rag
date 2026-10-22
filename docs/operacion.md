@@ -206,6 +206,8 @@ La interfaz recibe los cambios de estado de los documentos por `GET /api/documen
 
 ## Modelos gratuitos de OpenRouter
 
+Al guardar un plan (*Organizaciones → Planes*) se comprueba que cada modelo exista en el catálogo público de OpenRouter, y se rechazan los nombres mal escritos con su lista (p. ej. falta el `:free`). El catálogo se guarda una hora en memoria; si OpenRouter no responde, no se bloquea el guardado.
+
 - Si las respuestas fallan con *"Los modelos gratuitos están saturados…"*, espera unos minutos, añade más modelos de respaldo al plan o pasa la organización a un plan con modelo de pago.
 - Si un modelo deja de existir, se salta automáticamente (aparece `[llm] … falló (404)` en los registros). Actualiza la lista con los disponibles en <https://openrouter.ai/models?max_price=0>.
 - El modelo usado en cada respuesta aparece bajo la respuesta y en **Consumo → Modelos usados**.

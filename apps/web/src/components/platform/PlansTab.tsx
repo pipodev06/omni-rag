@@ -104,7 +104,7 @@ export function PlanDialog({ plan, open, onOpenChange, onSaved }: {
             <div className="space-y-2 sm:col-span-2">
               <Label htmlFor="p-models">Modelos, en orden de preferencia</Label>
               <Textarea id="p-models" value={form.models} onChange={(e) => setForm({ ...form, models: e.target.value })} rows={3} placeholder={"openai/gpt-4o-mini\ngoogle/gemini-2.0-flash-001"} className="font-mono text-xs" required />
-              <p className="text-xs text-muted-foreground">Uno por línea. Si el primero falla o está saturado, se prueba el siguiente.</p>
+              <p className="text-xs text-muted-foreground">Uno por línea. Si el primero falla o está saturado, se prueba el siguiente. Al guardar se comprueba que existan en OpenRouter.</p>
               {hasFree && (
                 <p className="flex gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
                   <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
