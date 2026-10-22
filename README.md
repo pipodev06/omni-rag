@@ -11,6 +11,7 @@ Sistema **RAG (Retrieval-Augmented Generation)** multi-cliente para hacer pregun
 - 🔔 **Tiempo real:** el estado de los documentos se actualiza al instante y avisa cuando un documento está listo.
 - ✨ **Resumen y preguntas sugeridas** por documento, y opción de preguntar solo sobre un documento concreto.
 - 🆓 **Coste cero en modelos:** embeddings **locales** (gratis, privados, sin límites) y LLMs **gratuitos de OpenRouter** con cambio automático de modelo si uno falla.
+- 🛡️ **Antivirus opcional (ClamAV)** que analiza cada archivo al subirlo.
 - 🔐 **Verificación en dos pasos (TOTP)** opcional, con códigos de recuperación.
 - ✉️ **Invitaciones y recuperación de contraseña** por email (o con enlace para copiar si no hay correo configurado).
 - 📜 **Auditoría:** registro de accesos, cambios de usuarios, permisos y documentos, visible para los administradores.
@@ -74,7 +75,7 @@ Un `#` al inicio de una línea la anula: esa variable usa su valor por defecto (
 
 | Variable | Qué ocurre si la cambias más tarde |
 |---|---|
-| `SEED_ADMIN_*`, `SEED_TENANT_*` | **Nada.** Solo se usan con la base de datos vacía (primer arranque). La organización se edita en *Organizaciones → ⋮ → Editar*; la contraseña, en *Mi cuenta*, o con `docker compose exec api node dist/scripts/reset-password.js admin` si no puedes entrar. |
+| `SEED_ADMIN_*`, `SEED_TENANT_*` | **Nada.** Solo se usan con la base de datos vacía (primer arranque). La organización se edita en *Organizaciones → ⋮ → Renombrar*; la contraseña, en *Mi cuenta*, o con `docker compose exec api node dist/scripts/reset-password.js admin` si no puedes entrar. |
 | `LLM_MODELS`, `TENANT_DAILY_QUESTION_LIMIT` | **Nada.** Solo siembran el plan «Estándar». Después se editan en *Organizaciones → Planes*. |
 | `EMBEDDING_MODEL`, `EMBEDDING_DIM` | Hay que recrear los fragmentos y reprocesar todos los documentos (ver [operacion.md](docs/operacion.md#cambiar-el-modelo-de-embeddings)). |
 | `JWT_SECRET` | Se aplica, pero **todos cierran sesión y el 2FA de todos deja de funcionar**. Cámbialo solo si hace falta. |

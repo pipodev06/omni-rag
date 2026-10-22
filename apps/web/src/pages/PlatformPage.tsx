@@ -530,7 +530,7 @@ export function PlatformPage() {
                           </DropdownMenuItem>
                         )}
                         <DropdownMenuItem onSelect={() => setEditTenant(t)}>
-                          <Pencil /> Editar nombre e identificador
+                          <Pencil /> Renombrar
                         </DropdownMenuItem>
                         <DropdownMenuItem onSelect={() => setPlanTenant(t)}>
                           <Layers /> Cambiar plan

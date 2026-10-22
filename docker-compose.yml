@@ -69,6 +69,26 @@ services:
       retries: 5
       start_period: 60s
 
+  # Antivirus ClamAV (opcional): la API analiza cada archivo subido y rechaza los infectados.
+  # Se activa con COMPOSE_PROFILES=antivirus y CLAMAV_HOST=clamav en .env. Usa ~2 GB de RAM y descarga
+  # las firmas (~300 MB) al arrancar; por eso necesita salida a internet (no va en la red «ingest»).
+  clamav:
+    image: clamav/clamav:1.4
+    profiles: ["antivirus"]
+    restart: unless-stopped
+    environment:
+      # clamd rechaza por defecto los archivos de más de 25 MB: se sube al máximo de subida + margen.
+      CLAMD_CONF_StreamMaxLength: ${CLAMAV_MAX_SIZE:-100M}
+      CLAMD_CONF_MaxFileSize: ${CLAMAV_MAX_SIZE:-100M}
+    volumes:
+      - clamav-db:/var/lib/clamav
+    healthcheck:
+      test: ["CMD", "clamdcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
+
   # API HTTP (Hono + TypeScript). Aplica migraciones al arrancar.
   api:
     build:
@@ -83,6 +103,7 @@ services:
       DOCLING_URL: http://docling:5001
       RERANKER_URL: ${RERANKER_URL-http://reranker:80}
       STORAGE_DIR: /data/uploads
+      CLAMAV_HOST: ${CLAMAV_HOST:-}
       REQUIRE_SUPERADMIN_2FA: ${REQUIRE_SUPERADMIN_2FA:-auto}
     volumes:
       - uploads:/data/uploads
@@ -183,5 +204,6 @@ volumes:
   caddy-data:
   caddy-config:
   pgdata:
+  clamav-db:
   hf-cache:
   uploads:

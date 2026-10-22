@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { config } from "../config.js";
 import { sqlOwner } from "../db/client.js";
+import { antivirusEnabled, pingAntivirus } from "../lib/antivirus.js";
 
 /** Estado de los servicios de los que depende el RAG. */
 export const healthRoutes = new Hono();
@@ -32,6 +33,7 @@ healthRoutes.get("/", async (c) => {
     // Su estado se ve con `docker compose ps` (tiene su propio healthcheck).
     docling: "aislado (ver docker compose ps)",
     reranker,
+    antivirus: antivirusEnabled() ? await pingAntivirus() : "desactivado",
     openrouter: config.OPENROUTER_API_KEY ? "configurado" : "falta OPENROUTER_API_KEY",
   };
   const ok = database === "ok";
