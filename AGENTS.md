@@ -14,6 +14,8 @@ Cambiarlos solo si el usuario lo pide de forma explícita.
 - **Banner de soporte:** franja delgada (texto pequeño) arriba; no se quita porque indica en qué organización estás y permite volver.
 - **Cabecera de página:** `PageHeader` muestra solo el título y las acciones. La explicación de la página va en `description`, que se ve en un modal al pulsar el icono (i) junto al título. Texto formal, sin párrafos bajo el título.
 - **Desplegables (`Select`):** se abren **debajo** del selector (`position="popper"`, el valor por defecto de `ui/select.tsx`); nunca encima, porque tapan el título de la página.
+- **Tema claro/oscuro:** se aplica antes del primer pintado con `apps/web/public/theme-init.js` (archivo aparte: la CSP no permite scripts en línea). Su lógica debe ser la misma que la de `src/lib/theme.tsx`; si una cambia, cambia la otra.
+- **Cargas de datos:** el componente `Skeleton` es gris neutro (`bg-muted`, nunca `accent`, que en esta paleta es índigo) y no se ve hasta pasados 250 ms, para que las cargas rápidas no parpadeen. Al cambiar un filtro de una lista, `keepPreviousData` mantiene la tabla anterior atenuada en vez de sustituirla por esqueletos.
 - **Números centrados** en la tabla de Organizaciones: Usuarios, Documentos y Límite diario.
 - **Límite diario:** se muestra siempre el valor efectivo (`200 / día` o `Sin límite`), nunca «Global». Sale de la excepción de la organización o, si no hay, de su plan (`planDailyQuestionLimit`).
 - **Borrar organización:** solo desactivada y escribiendo su identificador; borra todo (incluidos archivos). Las copias de seguridad la conservan hasta caducar.

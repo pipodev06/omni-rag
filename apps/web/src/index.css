@@ -154,3 +154,29 @@
   border-radius: 2px;
   box-shadow: 0 0 0 2px rgb(253 224 71 / 0.55);
 }
+
+/* ---------------------------------------------------------------------------
+ * Esqueletos de carga (components/ui/skeleton.tsx): grises neutros y con retardo.
+ * Hasta los 250 ms no se ven: si los datos llegan antes (lo normal), no hay destello.
+ * ------------------------------------------------------------------------- */
+.skeleton {
+  visibility: hidden;
+  animation:
+    skeleton-show 0s linear 250ms forwards,
+    skeleton-pulse 2s ease-in-out 250ms infinite;
+}
+@keyframes skeleton-show {
+  to {
+    visibility: visible;
+  }
+}
+@keyframes skeleton-pulse {
+  50% {
+    opacity: 0.5;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: skeleton-show 0s linear 250ms forwards;
+  }
+}

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, CircleCheck, Inbox, MessageSquareQuote, RotateCcw, ThumbsDown, ThumbsUp, Trash2, Zap, type LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage, timeAgo, type Source } from "@/api";
@@ -194,9 +194,11 @@ export function QualityPage() {
   const [filter, setFilter] = useState<Filter>("pending");
   const qc = useQueryClient();
   const confirm = useConfirm();
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isPlaceholderData } = useQuery({
     queryKey: ["quality", filter],
     queryFn: () => api.get<Quality>(`/quality?${FILTERS[filter]}`),
+    // Al cambiar de pestaña la lista anterior se queda (atenuada) hasta que llegan los datos nuevos.
+    placeholderData: keepPreviousData,
   });
 
   const resolve = async (item: FeedbackItem, resolved: boolean) => {
@@ -248,7 +250,7 @@ export function QualityPage() {
         </TabsList>
       </Tabs>
 
-      <div className="mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+      <div className={cn("mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1 transition-opacity", isPlaceholderData && "opacity-60")}>
         <FeedbackList loading={isLoading} items={data?.items ?? []} filter={filter} onResolve={(item, r) => void resolve(item, r)} />
       </div>
     </Page>
