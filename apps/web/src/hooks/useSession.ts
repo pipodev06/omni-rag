@@ -15,7 +15,10 @@ export function useSession() {
         throw err;
       }
     },
-    staleTime: 5 * 60_000,
+    // Un cambio de rol o una desactivación se nota en menos de un minuto: al volver a la pestaña y, con ella abierta, cada minuto.
+    staleTime: 30_000,
+    refetchOnWindowFocus: true,
+    refetchInterval: 60_000,
     retry: false,
   });
 
