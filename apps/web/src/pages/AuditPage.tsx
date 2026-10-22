@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { keepPreviousData, useInfiniteQuery } from "@tanstack/react-query";
 import { Building2, FileText, FolderOpen, KeyRound, Layers, LifeBuoy, Loader2, ScrollText, ThumbsUp, Users, type LucideIcon } from "lucide-react";
 import { api, formatDate, ROLE_LABELS } from "@/api";
 import { EmptyState, Page, PageHeader, TableCard } from "@/components/common";
@@ -136,6 +136,8 @@ export function AuditPage() {
       return api.get<{ items: AuditItem[]; nextBefore: number | null }>(`/audit?${params}`);
     },
     getNextPageParam: (last) => last.nextBefore,
+    // Al cambiar de filtro la tabla anterior se queda (atenuada) hasta que llegan los datos nuevos.
+    placeholderData: keepPreviousData,
   });
   const items = query.data?.pages.flatMap((p) => p.items) ?? [];
 
@@ -166,7 +168,7 @@ export function AuditPage() {
       ) : items.length === 0 ? (
         <EmptyState icon={ScrollText} title="Sin actividad registrada" description="Las acciones aparecerán aquí a medida que se usen las funciones del sistema." />
       ) : (
-        <TableCard>
+        <TableCard className={query.isPlaceholderData ? "opacity-60 transition-opacity" : "transition-opacity"}>
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
