@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { config } from "../config.js";
 import { sqlOwner } from "../db/client.js";
-import { sendLinkEmail } from "./mailer.js";
+import { sendEmail } from "./mailer.js";
 
 /**
  * Enlaces de un solo uso para invitar usuarios y restablecer contraseñas.
@@ -34,7 +34,7 @@ export async function createUserLink(opts: { tenantId: string; userId: string; k
 /** Envía el enlace por correo (si está configurado). Devuelve true si se envió. */
 export function emailLink(kind: TokenKind, to: { email: string; name: string }, url: string, tenantName: string): Promise<boolean> {
   return kind === "invite"
-    ? sendLinkEmail({
+    ? sendEmail({
         to: to.email,
         subject: `Invitación a ${config.APP_NAME} (${tenantName})`,
         intro: `Hola ${to.name}: te han invitado a ${config.APP_NAME} en la organización «${tenantName}». Allí podrás hacer preguntas sobre los documentos de tu equipo.`,
@@ -42,7 +42,7 @@ export function emailLink(kind: TokenKind, to: { email: string; name: string }, 
         url,
         outro: `El enlace caduca en ${config.INVITE_EXPIRES_HOURS} horas.`,
       })
-    : sendLinkEmail({
+    : sendEmail({
         to: to.email,
         subject: `Restablecer tu contraseña de ${config.APP_NAME}`,
         intro: `Hola ${to.name}: hemos recibido una solicitud para restablecer tu contraseña.`,

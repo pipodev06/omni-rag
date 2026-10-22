@@ -229,6 +229,7 @@ Cada usuario puede activarla en **Mi cuenta → Verificación en dos pasos**. Pa
 - Los administradores de cada organización ven su uso frente a los topes del plan en **Consumo**.
 - **Tope por usuario (opcional):** un plan puede limitar las preguntas por día de **cada usuario** (*Organizaciones → Planes → Preguntas por día por usuario*), para que una sola persona no agote el cupo de todos. Al alcanzarlo, esa persona no puede preguntar más hoy aunque a la organización le queden. Cuenta preguntas y resúmenes (no las respuestas servidas desde la caché) y se reinicia a las 00:00 UTC.
 - **Aviso en el chat:** cuando la organización llega al `QUOTA_WARN_PERCENT` % (80 por defecto) de su límite diario, todos sus usuarios ven sobre el cuadro de escritura «ha usado X de N preguntas de hoy»; al llegar al tope, el aviso pasa a rojo. Si el plan tiene tope por usuario, cada persona ve además su propio aviso. Se actualiza tras cada pregunta y no aparece en planes sin límite (0).
+- **Aviso por correo:** además, con SMTP configurado, los administradores de la organización que tengan email reciben un correo **una sola vez al día** al llegar al `QUOTA_WARN_PERCENT` % y otro al agotar el límite (tabla `quota_notices`). Sin SMTP solo funciona el aviso del chat. Es el límite de la organización; la cuota personal solo avisa en el chat.
 - Solo cuentan las preguntas que llegan al LLM. Las respuestas "no encontré información" no cuentan. El día se cuenta en UTC.
 
 Reparte el cupo de OpenRouter (1.000 al día con créditos) entre tus clientes con este límite.

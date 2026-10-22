@@ -17,6 +17,7 @@ import { invalidateCollections } from "../rag/cache.js";
 import { readStoredFile, removeStored, safeFilename, saveFile, titleFromFilename } from "../storage/local.js";
 import { badRequest, HttpError, notFound } from "../lib/errors.js";
 import { userRateLimit } from "../lib/limits.js";
+import { notifyQuota } from "../lib/quotaNotice.js";
 import { documentSlots } from "../lib/plans.js";
 import { parse, UUID_RE } from "../lib/validate.js";
 
@@ -263,6 +264,7 @@ documentRoutes.post("/:id/summary", userRateLimit(10, 60_000, "resúmenes"), asy
   await withTenant(ctx, (tx) => tx`
     INSERT INTO usage_events (tenant_id, user_id, kind, model, prompt_tokens, completion_tokens)
     VALUES (${ctx.tenantId}, ${ctx.userId}, 'summary', ${result.model}, ${result.promptTokens}, ${result.completionTokens})`);
+  void notifyQuota(ctx.tenantId);
 
   await audit(c, "document.summary", { targetType: "document", targetId: id, details: { title: doc.title } });
   return c.json({ summary, suggestedQuestions: questions, summaryModel: result.model });
