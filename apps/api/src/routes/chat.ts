@@ -11,6 +11,7 @@ import { buildMessages, citedSources, NO_CONTEXT_ANSWER, retrievalQuery, type Ch
 import { resolveScope, retrieve, type RankedHit } from "../rag/retrieve.js";
 import { HttpError, notFound } from "../lib/errors.js";
 import { userRateLimit } from "../lib/limits.js";
+import { notifyQuota } from "../lib/quotaNotice.js";
 import { getTenantPlan, questionsToday, quotaLevel, type TenantPlan } from "../lib/plans.js";
 import { parse, UUID_RE } from "../lib/validate.js";
 
@@ -226,6 +227,7 @@ chatRoutes.post("/chat", userRateLimit(20, 60_000, "preguntas"), async (c) => {
             tokens: [ev.promptTokens, ev.completionTokens],
             usage: "question",
           });
+          void notifyQuota(ctx.tenantId); // aviso por correo al 80 % / al agotar el límite (una vez al día)
           if (cacheable) {
             await withTenant(ctx, (tx) =>
               storeCachedAnswer(tx, {
