@@ -1,4 +1,4 @@
-# RAG Project
+# Omni RAG
 
 Plataforma RAG multiusuario (API Hono + worker + frontend React/Vite). Detalle técnico en `docs/`.
 
@@ -6,6 +6,7 @@ Plataforma RAG multiusuario (API Hono + worker + frontend React/Vite). Detalle t
 
 Cambiarlos solo si el usuario lo pide de forma explícita.
 
+- **Nombre:** «Omni RAG» (marca visible: logotipo, título de la pestaña, correos vía `APP_NAME`, documentación). Los identificadores internos conservan «rag» a propósito (proyecto de Docker `rag` y sus volúmenes, base y roles `rag*`, paquetes `@rag/*`, emisor de las sesiones): cambiarlos rompería datos o sesiones. La sal del cifrado del 2FA es `rag`; cambiarla dejaría inservibles los secretos ya guardados. El repositorio de GitHub se llama `Omni-RAG`.
 - **Stack de UI:** shadcn/ui + Tailwind CSS + iconos Lucide. Componentes base en `apps/web/src/components/ui/`.
 - **Ancho de página:** `Page` (`components/common.tsx`) ocupa todo el ancho disponible; no hay `max-w` global. Solo `Cuenta` se limita a `max-w-3xl`.
 - **Lista de documentos:** las columnas ordenan al pulsarlas, hay filtros por estado y tipo (`lib/documentView.ts`, todo en el navegador) y las acciones en lote (mover, reprocesar, borrar) salen de la barra de selección, con los botones a la derecha. El botón destructivo es rojo sólido (`red-600`) en ambos temas.

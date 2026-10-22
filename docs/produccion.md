@@ -51,7 +51,7 @@ En tu proveedor de dominio, crea un registro **A** `rag.tuempresa.com → IP del
 ### 3. Código y configuración
 
 ```bash
-git clone <tu-repositorio> rag-project && cd rag-project
+git clone <tu-repositorio> omni-rag && cd omni-rag
 cp .env.example .env
 nano .env
 ```
@@ -174,7 +174,7 @@ No añadas `Content-Security-Policy` ni `X-Frame-Options` en tu nginx: ya las en
 ## Actualizar a una nueva versión
 
 ```bash
-cd rag-project
+cd omni-rag
 git pull
 docker compose up -d --build
 ```

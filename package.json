@@ -1,5 +1,5 @@
 {
-  "name": "rag-project",
+  "name": "omni-rag",
   "private": true,
   "version": "0.1.0",
   "description": "RAG multi-cliente con TypeScript, PostgreSQL + pgvector, Docling, embeddings locales y LLMs gratuitos de OpenRouter",

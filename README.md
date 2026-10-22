@@ -1,6 +1,6 @@
-# RAG Project
+# Omni RAG
 
-Sistema **RAG (Retrieval-Augmented Generation)** multi-cliente para hacer preguntas en lenguaje natural sobre tus documentos y obtener respuestas **con las fuentes citadas**.
+**Omni RAG** es un sistema **RAG (Retrieval-Augmented Generation)** multi-cliente para hacer preguntas en lenguaje natural sobre tus documentos y obtener respuestas **con las fuentes citadas**.
 
 - 📄 **Todo tipo de documentos:** PDF (también escaneados, con OCR), Word, PowerPoint, Excel, CSV, HTML, Markdown, texto e imágenes.
 - 🏢 **Multi-cliente con permisos:** cada organización está aislada a nivel de base de datos (Row Level Security de PostgreSQL), con roles *administrador / editor / lector* y colecciones con acceso por usuario.
@@ -30,7 +30,7 @@ Pregunta ─▶ embedding local ─▶ búsqueda híbrida (solo en lo que el usu
 Requisitos: **Docker** con Docker Compose v2, **8 GB de RAM** para Docker (pico medido ≈ 6,9 GB; ver [requisitos](docs/requisitos.md)), CPU x86-64 de 4 núcleos y una clave gratuita de [OpenRouter](https://openrouter.ai/keys).
 
 ```bash
-git clone <este-repositorio> rag-project && cd rag-project
+git clone <este-repositorio> omni-rag && cd omni-rag
 cp .env.example .env
 #   Edita .env: contraseñas, JWT_SECRET, SEED_ADMIN_USERNAME/PASSWORD y la clave de un proveedor de LLM (p. ej. OPENROUTER_API_KEY)
 docker compose up -d --build
@@ -135,7 +135,7 @@ Las contraseñas pueden llevar cualquier carácter, incluidos `/`, `+` y `=` (lo
 ## Estructura
 
 ```
-rag-project/
+omni-rag/
 ├── docker-compose.yml        # todo el sistema
 ├── .env.example              # configuración (cópialo a .env)
 ├── apps/

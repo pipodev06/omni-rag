@@ -84,7 +84,7 @@ export function otpauthUrl(secret: string, account: string): string {
 
 // --- Secreto cifrado en la base de datos (AES-256-GCM) ------------------------
 // La clave se deriva de JWT_SECRET: si lo cambias, hay que volver a configurar el 2FA.
-const encKey = () => Buffer.from(hkdfSync("sha256", config.JWT_SECRET, "rag-project", "totp-secret", 32));
+const encKey = () => Buffer.from(hkdfSync("sha256", config.JWT_SECRET, "rag", "totp-secret", 32));
 
 export function encryptSecret(secret: string): string {
   const iv = randomBytes(12);

@@ -39,7 +39,7 @@ const schema = z.object({
     .transform((v) => v === "true"),
   SMTP_USER: z.string().default(""),
   SMTP_PASSWORD: z.string().default(""),
-  SMTP_FROM: z.string().default("RAG Project <no-reply@localhost>"),
+  SMTP_FROM: z.string().default("Omni RAG <no-reply@localhost>"),
   INVITE_EXPIRES_HOURS: z.coerce.number().positive().default(72),
   RESET_EXPIRES_MINUTES: z.coerce.number().positive().default(60),
   AUDIT_RETENTION_DAYS: z.coerce.number().int().positive().default(365),
@@ -85,7 +85,7 @@ const schema = z.object({
   // URL pública para los enlaces de los correos. Vacío = https://DOMAIN, o
   // http://localhost:8000 si no hay dominio.
   APP_PUBLIC_URL: z.string().trim().default(""),
-  APP_NAME: z.string().default("RAG Project"),
+  APP_NAME: z.string().default("Omni RAG"),
 
   RETRIEVAL_TOP_K: z.coerce.number().int().positive().default(6),
   RETRIEVAL_CANDIDATES: z.coerce.number().int().positive().default(40),
