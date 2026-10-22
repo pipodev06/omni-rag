@@ -74,6 +74,8 @@ docker compose ps          # todos los servicios deben estar "running"
 docker compose logs -f api # ver el arranque de la API
 ```
 
+Si el build falla con `EAI_AGAIN registry.npmjs.org` (el DNS del servidor es solo IPv6 y la red de build de Docker no lo alcanza), usa en su lugar `sh deploy/build.sh`: construye las imágenes con la red del servidor y luego levanta todo. No sirve poner `network: host` en el compose, porque `docker compose` lo ejecuta con buildx bake, que exige un permiso que no puede pasar.
+
 Al arrancar, la API:
 1. aplica las migraciones de la base de datos (crea tablas, políticas y el usuario `rag_app`);
 2. si no hay usuarios, crea la organización inicial y tu superadministrador.

@@ -159,6 +159,8 @@ server {
 server { listen 80; server_name rag.tuempresa.com; return 301 https://$host$request_uri; }
 ```
 
+Si tu proxy corre **en Docker** (Nginx Proxy Manager, Traefik…) y solo está en su propia red, no alcanzará a `rag-web-1` y dará 502 (`could not be resolved`). Conecta la web a esa red con `docker-compose.override.example.yml` (cópialo como `docker-compose.override.yml` y apunta el proxy a `rag-web-1:80`). Usa siempre `docker compose up -d` sin `-f`, o el override se ignora.
+
 Por qué cada línea importa:
 
 | Línea | Si falta |

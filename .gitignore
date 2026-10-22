@@ -7,3 +7,6 @@ data/
 .DS_Store
 backups/
 backups-offsite/
+
+# Ajustes locales de cada servidor (ver docker-compose.override.example.yml)
+docker-compose.override.yml
