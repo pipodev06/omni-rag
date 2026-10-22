@@ -248,6 +248,24 @@ Reparte el cupo de OpenRouter (1.000 al día con créditos) entre tus clientes c
 | Tras actualizar, una página muestra "Hay una versión nueva de la aplicación" | La pestaña tenía abierta la versión anterior | Pulsa **Recargar** (la app intenta recargarse sola una vez) |
 | `password authentication failed for user "rag_owner"` | Se cambió `POSTGRES_PASSWORD` después del primer arranque | Ver "Cambiar contraseñas de la base de datos" |
 
+## Restablecer la contraseña del superadministrador
+
+Si no puedes entrar (olvidaste la contraseña, o cambiaste `SEED_ADMIN_PASSWORD` en el `.env` después del primer arranque: ese valor solo se usa con la base vacía), restablécela **desde el servidor**:
+
+```bash
+docker compose exec api node dist/scripts/reset-password.js admin
+```
+
+Te pide la nueva contraseña dos veces, sin mostrarla. Variantes:
+
+| Comando | Qué hace |
+|---|---|
+| `... reset-password.js admin --generar` | Crea una contraseña aleatoria y la muestra una sola vez (no hace falta terminal). |
+| `... reset-password.js admin --quitar-2fa` | Además quita su verificación en dos pasos (perdió el teléfono y los códigos). |
+| `sh deploy/reset-password.sh admin` | Atajo equivalente desde la carpeta del proyecto. |
+
+Cierra todas las sesiones abiertas de ese usuario y deja constancia en su auditoría («Consola del servidor»). Vale para cualquier usuario, no solo el superadmin. En Windows, si Git Bash dice *«the input device is not a TTY»*, ejecútalo desde PowerShell o con `winpty` delante. No existe forma de hacerlo desde la web: hace falta acceso al servidor.
+
 ## Usuarios: invitaciones y contraseñas
 
 - **Invitar** (Usuarios → Nuevo usuario → *Enviar invitación*): se crea el usuario sin contraseña y se genera un enlace de un solo uso (caduca en `INVITE_EXPIRES_HOURS`, 72 h). Si hay SMTP se envía por correo; siempre se muestra al administrador para que pueda copiarlo.
@@ -260,6 +278,10 @@ Reparte el cupo de OpenRouter (1.000 al día con créditos) entre tus clientes c
 **Organizaciones → ⋮ → Borrar definitivamente.** Solo aparece en organizaciones ya **desactivadas** (primero se desactiva) y pide escribir su identificador. Borra usuarios, documentos, fragmentos, conversaciones, caché, auditoría y los archivos subidos. No se puede deshacer, y queda constancia (`tenant.deleted`, con nombre, usuarios y documentos) en la auditoría de tu organización.
 
 > Las **copias de seguridad** conservan sus datos hasta que caducan (`BACKUP_KEEP_DAYS`, 7 por defecto). Si un cliente exige el borrado total, elimina también las copias anteriores de `./backups`.
+
+## Cambiar el nombre o el identificador de una organización
+
+**Organizaciones → ⋮ → Editar nombre e identificador.** `SEED_TENANT_NAME` y `SEED_TENANT_SLUG` del `.env` solo dan los valores iniciales (primer arranque); después se cambian aquí. El identificador (`slug`) es el nombre técnico: minúsculas, números y guiones, único. Solo se muestra y se pide para confirmar un borrado; no aparece en URLs ni en rutas de archivos, así que cambiarlo no afecta a usuarios ni documentos.
 
 ## Entrar en una organización como soporte
 

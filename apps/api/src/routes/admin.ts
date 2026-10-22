@@ -227,6 +227,7 @@ platformRoutes.post("/tenants", async (c) => {
 
 const UpdateTenant = z.object({
   name: z.string().trim().min(1).max(120).optional(),
+  slug: z.string().regex(/^[a-z0-9][a-z0-9-]{1,62}$/, "solo minúsculas, números y guiones").optional(),
   isActive: z.boolean().optional(),
   dailyQuestionLimit: z.number().int().min(0).nullable().optional(),
   planId: z.string().regex(UUID_RE).optional(),
@@ -246,12 +247,14 @@ platformRoutes.patch("/tenants/:id", async (c) => {
   const [row] = await sqlOwner`
     UPDATE tenants SET
       name = coalesce(${body.name ?? null}, name),
+      slug = coalesce(${body.slug ?? null}, slug),
       is_active = coalesce(${body.isActive ?? null}::boolean, is_active),
       plan_id = coalesce(${body.planId ?? null}::uuid, plan_id),
       daily_question_limit = CASE WHEN ${body.dailyQuestionLimit !== undefined}
                                   THEN ${body.dailyQuestionLimit ?? null}::int ELSE daily_question_limit END
     WHERE id = ${id} RETURNING id`.catch((err: { code?: string }) => {
     if (err.code === "23503") throw badRequest("El plan indicado no existe");
+    if (err.code === "23505") throw new HttpError(409, "Ya existe una organización con ese identificador");
     throw err;
   });
   if (!row) throw notFound("Organización no encontrada");
