@@ -189,6 +189,14 @@ La interfaz se revisa con [React Doctor](https://www.npmjs.com/package/react-doc
 
 Al cerrar sesión se borraba toda la caché de TanStack Query, incluida la consulta de sesión que observaban las rutas. Unas rutas seguían viendo la sesión anterior y otras ninguna, y la app saltaba sin fin entre `/login` y `/chat`. Ahora primero se marca la sesión como vacía y después se descartan solo los demás datos (`clearSession`). Además, cada página tiene un *error boundary*: si falta un archivo de la app tras una actualización, se recarga una vez (como mucho cada 30 s) y si no, muestra un botón **Recargar** en lugar de quedarse en blanco.
 
+## 26. Proveedores de LLM configurables (OpenRouter por defecto)
+
+**Contexto.** El cliente estaba escrito para OpenRouter (cabeceras, el parámetro `reasoning`, la validación de nombres contra su catálogo). Cambiar de proveedor o depender de uno solo era un riesgo.
+
+**Decisión.** Un registro de proveedores (`lib/llmProviders.ts`) con dos «formas» de petición: `openrouter` y `openai` (compatible con OpenAI: Groq, Google, OpenAI, DeepSeek y servidores propios). Cada modelo de un plan lleva opcionalmente un prefijo `proveedor:modelo`; sin prefijo es OpenRouter, así que los planes anteriores no cambian. El respaldo entre modelos ya existente cruza proveedores. Se descartó (por ahora) un adaptador para Anthropic directo: usa otro formato y está disponible vía OpenRouter.
+
+**Qué no se hizo:** el costo por modelo (punto 17 de la lista) no se mezcla con esto; si se hace, los precios por proveedor se escriben a mano en el plan, porque solo OpenRouter publica un catálogo de precios.
+
 ## 24. Planes por organización con una sola clave de OpenRouter
 
 **Alternativas:** una clave de OpenRouter por organización; el modelo fijo en el `.env` para todos.

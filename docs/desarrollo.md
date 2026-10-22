@@ -81,7 +81,9 @@ La integración continua (`.github/workflows/ci.yml`) ejecuta todo lo anterior, 
 | `queue.ts` | Cola pg-boss |
 | `rag/search.ts` | Búsqueda híbrida + RRF en SQL |
 | `rag/prompt.ts` | Prompt del sistema, contexto y citas (puro, probado) |
-| `rag/llm.ts` | Cliente de OpenRouter con streaming y respaldo entre modelos |
+| `rag/llm.ts` | Cliente de LLM con streaming y respaldo entre modelos y proveedores (formato compatible con OpenAI) |
+| `lib/llmProviders.ts` | Registro de proveedores (OpenRouter, Groq, Google, OpenAI, DeepSeek, servidor propio) y prefijo `proveedor:modelo` |
+| `lib/modelCatalog.ts` | Comprobación de que un modelo existe en el catálogo de su proveedor |
 | `rag/rerank.ts` | Cliente del re-ranker (cross-encoder) y aplicación de puntuaciones |
 | `rag/retrieve.ts` | Colecciones consultables + búsqueda híbrida + re-ranking |
 | `rag/cache.ts` | Caché de respuestas: búsqueda, guardado e invalidación |

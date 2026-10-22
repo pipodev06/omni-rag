@@ -22,6 +22,7 @@ Cambiarlos solo si el usuario lo pide de forma explícita.
 - **Antivirus:** ClamAV opcional (perfil `antivirus`, `CLAMAV_HOST`); escanea en la subida y falla cerrado. Los tests usan un clamd falso; el archivo EICAR de pruebas nunca se escribe en disco ni en el repositorio.
 - **Borrar organización:** solo desactivada y escribiendo su identificador; borra todo (incluidos archivos). Las copias de seguridad la conservan hasta caducar.
 - **Aviso de cuota:** `QuotaBanner` en el chat avisa a todos los usuarios al llegar al 80 % del límite diario (`QUOTA_WARN_PERCENT`) y al agotarlo. Con SMTP, además, un correo a los administradores de la organización una vez al día en cada nivel (80 % y agotado).
+- **Proveedores de LLM:** configurables (OpenRouter por defecto, Groq, Google, OpenAI, DeepSeek, servidor propio). Cada modelo de un plan puede llevar el prefijo `proveedor:`; sin prefijo es OpenRouter. El respaldo cruza proveedores. Añadir uno compatible con OpenAI = una línea en `lib/llmProviders.ts`.
 - **Planes:** pestaña «Planes» dentro de Organizaciones. Una sola clave de OpenRouter (la del dueño); el plan fija modelos, preguntas por día (y, opcional, por usuario) y topes de usuarios y documentos. Los admins ven su uso en Consumo.
 - **Superadministrador:** al iniciar sesión aterriza en Organizaciones (selector); desde ahí «Entrar como soporte». El banner de soporte tiene «Volver a mi organización».
 

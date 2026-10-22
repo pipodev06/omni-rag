@@ -204,6 +204,32 @@ Se generan **bajo demanda** (Documentos → abrir → Resumen → *Generar resum
 
 La interfaz recibe los cambios de estado de los documentos por `GET /api/documents/events` (Server-Sent Events). Si pones otro proxy delante (Caddy, Traefik, Cloudflare…), desactiva el *buffering* para `/api/` y permite conexiones largas; si no, los avisos llegarán tarde (la lista se refresca igualmente cada 20 s mientras haya documentos procesándose).
 
+## Proveedores de LLM (OpenRouter, Groq, Google, OpenAI, DeepSeek, servidor propio)
+
+El sistema habla con cualquier proveedor que ofrezca el formato «compatible con OpenAI». Configura **al menos uno** en el `.env` (`OPENROUTER_API_KEY`, `GROQ_API_KEY`, `GOOGLE_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, o `LLM_CUSTOM_BASE_URL` para Ollama/vLLM) y aplica con `docker compose up -d`. Puedes tener **varios a la vez**.
+
+**Qué proveedor usa cada modelo:** cada modelo de un plan se escribe con un prefijo de proveedor o sin él:
+
+| Se escribe | Proveedor |
+|---|---|
+| `google/gemma-4-31b-it:free` (sin prefijo) | OpenRouter (o `LLM_DEFAULT_PROVIDER`) |
+| `groq:llama-3.3-70b-versatile` | Groq |
+| `google:gemini-2.0-flash` | Google (Gemini) |
+| `openai:gpt-4o-mini` | OpenAI |
+| `deepseek:deepseek-chat` | DeepSeek |
+| `custom:llama3.1:8b` | Servidor propio |
+
+Los planes que ya tenías siguen funcionando sin cambios: sin prefijo es OpenRouter. En *Organizaciones → Planes* puedes mezclar, por ejemplo: primero un modelo de Groq y, **si falla o está saturado, uno de Google o de OpenRouter**. El respaldo cruza proveedores, así que ya no dependes de uno solo.
+
+**Detalles que conviene saber**
+- Al guardar un plan se comprueba que el proveedor tenga clave en el `.env` y que el modelo exista en su catálogo (si el catálogo no responde, no se bloquea).
+- En *Consumo → Modelos usados* los modelos de OpenRouter salen como siempre y los demás con su prefijo (`groq:…`).
+- Los tokens se leen de la respuesta del proveedor, así que valen para cualquiera. Si un servidor no los informa, quedan en blanco (no afecta a las respuestas).
+- Una clave rechazada en un proveedor (401/403) hace pasar al siguiente modelo de otro proveedor; si era la única, el chat responde que la clave no es válida.
+- **Claude directo (Anthropic) todavía no**: usa otro formato. Mientras tanto está disponible a través de OpenRouter (`anthropic/claude-…`).
+- Con un servidor propio en Docker, `localhost` es el propio contenedor: usa `http://host.docker.internal:11434/v1` (Ollama en tu equipo) o el nombre de un servicio del compose.
+- `GET /api/health` muestra `llm: [...]` con los proveedores configurados; vacío = el chat no puede responder.
+
 ## Modelos gratuitos de OpenRouter
 
 Al guardar un plan (*Organizaciones → Planes*) se comprueba que cada modelo exista en el catálogo público de OpenRouter, y se rechazan los nombres mal escritos con su lista (p. ej. falta el `:free`). El catálogo se guarda una hora en memoria; si OpenRouter no responde, no se bloquea el guardado.

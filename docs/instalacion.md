@@ -53,6 +53,8 @@ El resto de variables están explicadas en `.env.example` y tienen valores por d
 
 ## 3. Clave y privacidad en OpenRouter
 
+> OpenRouter es el proveedor de LLM por defecto. Si prefieres Groq, Google, OpenAI, DeepSeek o un servidor propio (o varios a la vez, con respaldo entre ellos), mira [operacion.md → Proveedores de LLM](operacion.md#proveedores-de-llm-openrouter-groq-google-openai-deepseek-servidor-propio).
+
 1. Crea una cuenta en <https://openrouter.ai> y una clave en <https://openrouter.ai/keys>. Pégala en `OPENROUTER_API_KEY`.
 2. **Límite diario:** sin compras, los modelos gratuitos admiten **50 peticiones al día** para toda la cuenta. Con una compra única de **10 USD** en créditos sube a **1.000 al día** de forma permanente, y los modelos `:free` no gastan esos créditos. Para uso con clientes es prácticamente imprescindible.
 3. **Privacidad:** en <https://openrouter.ai/settings/privacy> se configura qué proveedores se pueden usar. Muchos modelos gratuitos solo están disponibles si se permiten proveedores que pueden **registrar o usar los textos enviados**. Si los bloqueas, verás errores del tipo *"No endpoints found matching your data policy"*.

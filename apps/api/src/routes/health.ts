@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { config } from "../config.js";
 import { sqlOwner } from "../db/client.js";
 import { antivirusEnabled, pingAntivirus } from "../lib/antivirus.js";
+import { configuredProviders } from "../lib/llmProviders.js";
 
 /** Estado de los servicios de los que depende el RAG. */
 export const healthRoutes = new Hono();
@@ -34,7 +35,8 @@ healthRoutes.get("/", async (c) => {
     docling: "aislado (ver docker compose ps)",
     reranker,
     antivirus: antivirusEnabled() ? await pingAntivirus() : "desactivado",
-    openrouter: config.OPENROUTER_API_KEY ? "configurado" : "falta OPENROUTER_API_KEY",
+    // Proveedores de LLM con clave (o dirección) configurada. Vacío = el chat no puede responder.
+    llm: configuredProviders().map((p) => p.id),
   };
   const ok = database === "ok";
   return c.json({ ok, services }, ok ? 200 : 503);

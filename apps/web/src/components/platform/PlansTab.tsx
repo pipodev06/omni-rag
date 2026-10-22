@@ -103,12 +103,12 @@ export function PlanDialog({ plan, open, onOpenChange, onSaved }: {
             </div>
             <div className="space-y-2 sm:col-span-2">
               <Label htmlFor="p-models">Modelos, en orden de preferencia</Label>
-              <Textarea id="p-models" value={form.models} onChange={(e) => setForm({ ...form, models: e.target.value })} rows={3} placeholder={"openai/gpt-4o-mini\ngoogle/gemini-2.0-flash-001"} className="font-mono text-xs" required />
-              <p className="text-xs text-muted-foreground">Uno por línea. Si el primero falla o está saturado, se prueba el siguiente. Al guardar se comprueba que existan en OpenRouter.</p>
+              <Textarea id="p-models" value={form.models} onChange={(e) => setForm({ ...form, models: e.target.value })} rows={3} placeholder={"google/gemma-4-31b-it:free\ngroq:llama-3.3-70b-versatile\ngoogle:gemini-2.0-flash"} className="font-mono text-xs" required />
+              <p className="text-xs text-muted-foreground">Uno por línea. Sin prefijo, el modelo es de OpenRouter; para otro proveedor, pon su prefijo: groq:, google:, openai:, deepseek: o custom:. Si el primero falla o está saturado, se prueba el siguiente (puede ser de otro proveedor). Al guardar se comprueba que existan.</p>
               {hasFree && (
                 <p className="flex gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
                   <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
-                  Los modelos «:free» tienen un cupo por cuenta de OpenRouter que comparten todas las organizaciones. Con varios clientes se saturan; para producción usa un modelo de pago.
+                  Los modelos «:free» de OpenRouter tienen un cupo por cuenta que comparten todas las organizaciones. Con varios clientes se saturan; para producción usa un modelo de pago.
                 </p>
               )}
             </div>
