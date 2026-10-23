@@ -21,3 +21,11 @@ export function userRateLimit(max: number, windowMs: number, what: string): Midd
 /** ¿Se exige verificación en dos pasos al superadministrador? `auto` = solo con dominio público. */
 export const superadmin2faRequired = (): boolean =>
   config.REQUIRE_SUPERADMIN_2FA === "true" || (config.REQUIRE_SUPERADMIN_2FA === "auto" && isRealDomain(config.DOMAIN));
+
+/** ¿Se exige verificación en dos pasos a todos los administradores de organización? Por defecto no (opcional). */
+export const admin2faRequired = (): boolean => config.REQUIRE_ADMIN_2FA === "true";
+
+/** ¿Esta cuenta debe tener la verificación en dos pasos activada para usar la plataforma? */
+export function twoFactorRequired(u: { isSuperadmin: boolean; role: string }): boolean {
+  return u.isSuperadmin ? superadmin2faRequired() : u.role === "admin" && admin2faRequired();
+}

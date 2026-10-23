@@ -5,6 +5,9 @@ import { closeDb } from "./db/client.js";
 import { migrate } from "./db/migrate.js";
 import { getBoss, stopBoss } from "./queue.js";
 import { ensureInitialAdmin } from "./scripts/bootstrap.js";
+import { installLogger } from "./lib/logger.js";
+
+installLogger();
 
 async function main() {
   await migrate();

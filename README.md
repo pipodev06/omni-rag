@@ -135,6 +135,7 @@ Las copias **no incluyen el `.env`**: guarda aparte `JWT_SECRET` (sin él el 2FA
 | [docs/desarrollo.md](docs/desarrollo.md) | Desarrollo local, pruebas y estructura del código |
 | [docs/decisiones.md](docs/decisiones.md) | Decisiones técnicas y por qué (TypeScript vs Python, pgvector, etc.) |
 | [docs/pendientes.md](docs/pendientes.md) | Mejoras pendientes y lo ya hecho, numeradas |
+| [docs/pendientes_post_produccion.md](docs/pendientes_post_produccion.md) | Tareas para después de salir a producción (ensayo de restauración completa) |
 
 ---
 

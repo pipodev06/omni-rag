@@ -2,13 +2,18 @@ import { closeDb } from "./db/client.js";
 import { MAINTENANCE_QUEUE, runMaintenance } from "./maintenance.js";
 import { migrate } from "./db/migrate.js";
 import { ingestDocument, markIngestError } from "./ingest/pipeline.js";
+import { runMonitor } from "./lib/monitor.js";
 import { getBoss, INGEST_QUEUE, INGEST_RETRY_LIMIT, stopBoss, type IngestJob } from "./queue.js";
+import { installLogger } from "./lib/logger.js";
+
+installLogger();
 
 /**
  * Proceso worker: toma documentos de la cola y los indexa.
  * Se ejecuta como contenedor separado para que el procesamiento pesado
  * (OCR, embeddings) no haga lenta la API.
  */
+const MONITOR_QUEUE = "monitor";
 const concurrency = Number(process.env.WORKER_CONCURRENCY ?? 2);
 
 async function main() {
@@ -38,6 +43,15 @@ async function main() {
   await boss.work(MAINTENANCE_QUEUE, async () => {
     const result = await runMaintenance();
     console.log("[mantenimiento]", JSON.stringify(result));
+    return result;
+  });
+
+  // Monitorización cada 5 minutos: disco, cola, copias de seguridad y errores del modelo (avisa por correo si hay ALERT_EMAIL).
+  await boss.createQueue(MONITOR_QUEUE);
+  await boss.schedule(MONITOR_QUEUE, "*/5 * * * *");
+  await boss.work(MONITOR_QUEUE, async () => {
+    const result = await runMonitor();
+    if (result.opened.length || result.reminded.length || result.resolved.length) console.log("[monitor]", JSON.stringify(result));
     return result;
   });
 

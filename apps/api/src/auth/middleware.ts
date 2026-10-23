@@ -2,7 +2,7 @@ import type { Context, MiddlewareHandler } from "hono";
 import { getCookie } from "hono/cookie";
 import { sqlOwner, type Role, type TenantContext } from "../db/client.js";
 import { HttpError, forbidden, unauthorized } from "../lib/errors.js";
-import { superadmin2faRequired } from "../lib/limits.js";
+import { twoFactorRequired } from "../lib/limits.js";
 import { verifySession } from "./jwt.js";
 
 export const SESSION_COOKIE = "rag_session";
@@ -70,8 +70,9 @@ export const requireAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
     support = { id: actor.id, username: actor.username, name: actor.name };
   }
 
-  // El superadministrador sin verificación en dos pasos solo puede configurarla (rutas /api/auth).
-  if (row.is_superadmin && !row.totp && !support && superadmin2faRequired() && !c.req.path.startsWith("/api/auth/")) {
+  // Quien debe tener verificación en dos pasos (el superadministrador, y los administradores si REQUIRE_ADMIN_2FA) y aún
+  // no la tiene solo puede configurarla (rutas /api/auth).
+  if (!row.totp && !support && twoFactorRequired({ isSuperadmin: row.is_superadmin, role: row.role }) && !c.req.path.startsWith("/api/auth/")) {
     throw new HttpError(403, "Activa la verificación en dos pasos en Mi cuenta para continuar.", "mfa_setup_required");
   }
 

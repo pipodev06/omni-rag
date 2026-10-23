@@ -253,6 +253,7 @@ chatRoutes.post("/chat", userRateLimit(20, 60_000, "preguntas"), async (c) => {
       if (signal.aborted) return;
       const message = err instanceof HttpError ? err.message : "Error generando la respuesta";
       console.error("[chat] error:", err);
+      void sqlOwner`INSERT INTO usage_events (tenant_id, user_id, kind) VALUES (${ctx.tenantId}, ${ctx.userId}, 'llm_error')`.catch(() => {});
       if (answer) await saveAnswer(`${answer}\n\n_(respuesta interrumpida)_`, { model: null, sources }).catch(() => {});
       await stream.writeSSE({ event: "error", data: JSON.stringify({ message }) });
     }
