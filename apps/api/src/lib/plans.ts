@@ -43,7 +43,7 @@ export async function assertUserSlot(tenantId: string): Promise<void> {
 export async function documentSlots(tenantId: string): Promise<{ left: number | null; max: number | null }> {
   const { maxDocuments } = await getTenantPlan(tenantId);
   if (maxDocuments === null) return { left: null, max: null };
-  const [{ n } = { n: 0 }] = await sqlOwner<{ n: number }[]>`SELECT count(*)::int AS n FROM documents WHERE tenant_id = ${tenantId}`;
+  const [{ n } = { n: 0 }] = await sqlOwner<{ n: number }[]>`SELECT count(*)::int AS n FROM documents WHERE tenant_id = ${tenantId} AND deleted_at IS NULL`;
   return { left: Math.max(0, maxDocuments - n), max: maxDocuments };
 }
 

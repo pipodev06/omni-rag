@@ -99,6 +99,27 @@ Las contraseñas pueden llevar cualquier carácter, incluidos `/`, `+` y `=` (lo
 
 ---
 
+## Papelera de documentos
+
+Borrar un documento lo manda a la **Papelera** (botón en *Documentos*): deja de verse y de contar para el plan, pero se conserva `TRASH_RETENTION_DAYS` días (30 por defecto, `0` = sin papelera) y se **restaura con un clic**, sin reprocesarlo. Eliminar definitivamente o vaciar la papelera es solo del administrador. Detalle en [docs/operacion.md](docs/operacion.md#papelera-de-documentos).
+
+---
+
+## Copias de seguridad
+
+Funcionan solas, sin configurar nada: cada 24 h (o a la hora que elijas) se guarda en `./backups` un volcado de la base de datos y, por defecto, un `.tgz` con los archivos subidos; se conservan 7 días y cada copia se **verifica restaurándola** en una base temporal. Para que sobrevivan a la pérdida del servidor hay dos pasos opcionales:
+
+| Qué quieres | Variables del `.env` |
+|---|---|
+| **Hora fija** (hora de Perú por defecto) en vez de «cada N horas» | `BACKUP_AT=03:00` y, para la subida a Backblaze, `B2_AT=04:00` (después de la copia). Zona distinta: `BACKUP_TZ`. |
+| **Segunda copia cifrada fuera del servidor** | `BACKUP_OFFSITE=true`, `BACKUP_OFFSITE_DIR=…` y `BACKUP_ENCRYPTION_PASSPHRASE=<frase>` (guárdala aparte: sin ella no se restaura nada) |
+| **Subirla a Backblaze B2** | `COMPOSE_PROFILES=backblaze` y `B2_KEY_ID`, `B2_APPLICATION_KEY`, `B2_BUCKET` (clave limitada al bucket, con permiso de lectura y escritura) |
+| **Archivos subidos incrementales** (recomendado con muchos GB): solo sube lo nuevo, cifrado, y guarda 30 días lo que se borra | `BACKUP_UPLOADS_TGZ=false` y `B2_SYNC_UPLOADS=true` |
+
+Las copias **no incluyen el `.env`**: guarda aparte `JWT_SECRET` (sin él el 2FA deja de funcionar), la frase de cifrado, las claves de los proveedores de LLM y las `B2_*`. Pasos completos y restauración en un servidor limpio: [docs/produccion.md](docs/produccion.md#6-copias-de-seguridad-fuera-del-servidor) y [docs/operacion.md](docs/operacion.md#restaurar-en-un-servidor-limpio-desde-backblaze).
+
+---
+
 ## Documentación
 
 | Documento | Contenido |
