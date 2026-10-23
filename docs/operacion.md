@@ -415,6 +415,42 @@ El superadministrador puede ver y gestionar cualquier organización con su propi
 
 Página **Auditoría** (administradores): inicios de sesión (también los fallidos), invitaciones, cambios de rol y de acceso, documentos subidos/borrados, resúmenes, vaciados de caché, organizaciones… con fecha, usuario, detalles e IP. Se conserva `AUDIT_RETENTION_DAYS` días (365).
 
+## Registros estructurados
+
+Los registros de la API y del worker son **una línea JSON por evento** (`LOG_FORMAT=json`, por defecto): hora, nivel (`info`/`warn`/`error`), mensaje, `component` (`api`, `llm`, `ingest`, `monitor`…) y, si procede, el error con su traza. Cada petición HTTP deja una línea `http` con método, ruta, estado, duración en milisegundos, IP y, con sesión, `userId` y `tenantId`; no se guarda la query ni el cuerpo. Todas las líneas generadas durante una petición llevan su `requestId`, que el cliente también recibe en la cabecera `X-Request-Id` (y en el cuerpo de los errores 500): si alguien reporta un fallo, con ese código se encuentra todo lo que pasó.
+
+Para leerlos sin el prefijo de Docker y filtrarlos con `jq`:
+
+```bash
+docker compose logs --no-log-prefix api | jq -c 'select(.level=="error")'              # solo errores
+docker compose logs --no-log-prefix api | jq -c 'select(.requestId=="a1b2c3d4")'       # una petición concreta
+docker compose logs --no-log-prefix api | jq -c 'select(.msg=="http" and .status>=500)' # respuestas 5xx
+docker compose logs --no-log-prefix api | jq -c 'select(.msg=="http" and .ms>2000)'     # peticiones lentas
+docker compose logs --no-log-prefix api | jq -c 'select(.component=="llm")'             # fallos de los modelos
+```
+
+Con `LOG_FORMAT=text` vuelve el formato anterior, legible a simple vista.
+
+## Límite por IP y 2FA de administradores
+
+- **Límite por IP:** a las peticiones que **no traen una sesión válida** se les aplica un tope por IP (`IP_RATE_LIMIT_PER_MIN`, 120 por minuto; `0` lo desactiva). Frena escaneos, intentos de adivinar enlaces de invitación o restablecimiento e inundación de la API. Quien ya inició sesión no cuenta (tiene límites por usuario) y `/api/health` queda fuera. Pasado el tope, esa IP recibe `429` con `Retry-After: 60`. Tras un proxy se usa la IP real que pone nginx o el túnel en `X-Forwarded-For`.
+- **2FA de administradores:** es **opcional por usuario**. Con `REQUIRE_ADMIN_2FA=true` pasa a ser obligatorio para todos los administradores de organización (hasta activarlo solo pueden entrar a *Mi cuenta*). El superadministrador se rige por `REQUIRE_SUPERADMIN_2FA` (obligatorio con dominio real). Por defecto, a nadie más se le obliga.
+
+## Monitorización y alertas
+
+El worker revisa **cada 5 minutos**:
+
+| Comprobación | Se considera un problema cuando… |
+|---|---|
+| Disco de archivos | queda menos del `ALERT_DISK_FREE_PERCENT` % libre (15) |
+| Cola de documentos | hay documentos en cola o procesándose desde hace más de `ALERT_QUEUE_MINUTES` minutos (30): worker caído o Docling atascado |
+| Copias de seguridad | la copia más reciente en `./backups` tiene más de `ALERT_BACKUP_HOURS` horas (36), o no hay ninguna |
+| Modelo de lenguaje | en los últimos 15 minutos fallaron 3 o más preguntas y ninguna se contestó (claves vencidas, cuota agotada) |
+
+Cada problema avisa **una vez al empezar**, recuerda **cada 24 horas** mientras siga y avisa de nuevo **al resolverse**. Con `ALERT_EMAIL=tu@correo.com` (varios, separados por comas) y SMTP configurado llega por correo; sin eso solo queda en los registros (`docker compose logs worker | grep monitor`). La comprobación de copias necesita que el worker vea `./backups` (ya está montada en solo lectura).
+
+Esto no sustituye a un monitor externo: si se cae todo el servidor no puede avisarte. Para eso añade un servicio gratuito (UptimeRobot, Better Stack…) que consulte `https://tu-dominio/api/health` cada minuto.
+
 ## Mantenimiento automático
 
 El worker ejecuta cada día a las 03:15 (UTC) una limpieza: auditoría más antigua que la retención, enlaces usados o caducados, respuestas en caché vencidas y documentos que llevan más de `TRASH_RETENTION_DAYS` días en la papelera. No requiere intervención.

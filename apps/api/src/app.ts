@@ -3,6 +3,9 @@ import { secureHeaders } from "hono/secure-headers";
 import { HTTPException } from "hono/http-exception";
 import type { AppEnv } from "./auth/middleware.js";
 import { HttpError } from "./lib/errors.js";
+import { ipRateLimit } from "./lib/ipLimit.js";
+import { currentRequestId } from "./lib/logger.js";
+import { requestLog } from "./lib/requestLog.js";
 import { authRoutes } from "./routes/auth.js";
 import { userRoutes } from "./routes/users.js";
 import { collectionRoutes } from "./routes/collections.js";
@@ -16,8 +19,10 @@ import { feedbackRoutes, qualityRoutes } from "./routes/feedback.js";
 export function createApp() {
   const app = new Hono<AppEnv>();
   app.use("*", secureHeaders());
+  app.use("*", requestLog);
 
   const api = new Hono<AppEnv>();
+  api.use("*", ipRateLimit());
   api.route("/health", healthRoutes);
   api.route("/auth", authRoutes);
   api.route("/users", userRoutes);
@@ -36,7 +41,7 @@ export function createApp() {
     if (err instanceof HttpError) return c.json({ error: err.message, ...(err.code && { code: err.code }) }, err.status);
     if (err instanceof HTTPException) return c.json({ error: err.message }, err.status);
     console.error("[api] error no controlado:", err);
-    return c.json({ error: "Error interno del servidor" }, 500);
+    return c.json({ error: "Error interno del servidor", requestId: currentRequestId() }, 500);
   });
   return app;
 }

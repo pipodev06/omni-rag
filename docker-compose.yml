@@ -124,6 +124,8 @@ services:
     environment: *backend-env
     volumes:
       - uploads:/data/uploads
+      # Solo lectura: el monitor comprueba que las copias de seguridad sean recientes.
+      - ./backups:/backups:ro
     security_opt: ["no-new-privileges:true"]
     cap_drop: [ALL]
     networks: [default, ingest]

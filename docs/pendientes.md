@@ -45,8 +45,6 @@ Lo que se termina se tacha y pasa a «Hecho» al final.
 ### E. Seguridad
 | # | Qué | Esfuerzo | Tipo |
 |---|---|---|---|
-| 29 | 2FA obligatorio para administradores de organización, quizá como ajuste por plan (hoy solo se exige al superadministrador con dominio real) | bajo-medio | Hacer |
-| 30 | Límite global por IP para peticiones sin sesión (hoy hay límites en el login y por usuario) | bajo | Hacer |
 | 31 | Pruebas con documentos maliciosos contra la inyección de instrucciones (hoy solo se neutralizan los delimitadores del prompt) | medio | Investigar |
 | 32 | Rotar la contraseña de la base de datos de forma automatizada. Ya hay un script que la sincroniza (`deploy/sync-db-password.sh`), pero cambiarla sigue siendo un procedimiento manual | bajo | Hacer |
 | 33 | Exportar todos los datos de un cliente (portabilidad). El borrado completo de una organización ya existe | medio | Investigar |
@@ -55,14 +53,11 @@ Lo que se termina se tacha y pasa a «Hecho» al final.
 | # | Qué | Esfuerzo | Tipo |
 |---|---|---|---|
 | 35 | Pruebas de extremo a extremo (Playwright): login, subir, preguntar, borrar. Hoy ninguna recorre la interfaz | alto | Hacer |
-| 36 | Monitorización y alertas (disco lleno, cola atascada, errores del LLM). Hoy solo hay `/api/health` | medio | Hacer |
 | 37 | Prueba de carga (cuántos usuarios y documentos aguanta el servidor) | medio | Investigar |
-| 38 | Registros estructurados para poder buscar y filtrar errores | bajo-medio | Hacer |
 
-### H. Acciones tuyas
+### H. Acciones tuyas (las de después de producción están en [pendientes_post_produccion.md](pendientes_post_produccion.md))
 | # | Qué | Tipo |
 |---|---|---|
-| 44 | Restaurar una copia en un **servidor completo y limpio** al menos una vez. Ya se probó restaurar la base de datos y los archivos desde Backblaze por separado | Tú |
 | 45 | Cargar saldo en OpenRouter si vas a depender de él (SMTP ya está hecho) | Tú |
 | 46 | Revisar los PR de Dependabot cuando vuelva a abrirlos (se borraron sus ramas el 23/10) | Tú |
 
@@ -91,5 +86,9 @@ Lo que se termina se tacha y pasa a «Hecho» al final.
 - ~~42 Banner de cuota~~ (se ve bien al 80 % y al agotarse el límite)
 - ~~43 Copia fuera del servidor~~ (cifrada, a Backblaze B2)
 - ~~47 Subir los commits pendientes~~
+- ~~29 2FA obligatorio para administradores~~ (ajuste opcional `REQUIRE_ADMIN_2FA`, desactivado por defecto: a nadie se le obliga salvo al superadministrador con dominio real)
+- ~~30 Límite global por IP para peticiones sin sesión~~ (`IP_RATE_LIMIT_PER_MIN`, 120 por minuto por IP; quien tiene sesión no cuenta)
+- ~~36 Monitorización y alertas~~ (el worker revisa cada 5 minutos disco, cola, copias de seguridad y errores del modelo; avisa por correo con `ALERT_EMAIL`)
+- ~~38 Registros estructurados~~ (JSON con `requestId` en cada línea y cabecera `X-Request-Id`)
 
 También se hicieron, sin estar en la lista: capa de proveedores de LLM (OpenRouter, Groq, Google, OpenAI, DeepSeek, servidor propio), planes por organización, inicio de sesión con usuario o correo, 2FA opcional (TOTP), papelera de documentos, copias de seguridad a hora fija e incrementales de los archivos, script para probar el SMTP (`test-email.js`), script para listar y probar modelos (`models.js`) y renombrar el proyecto a Omni RAG.

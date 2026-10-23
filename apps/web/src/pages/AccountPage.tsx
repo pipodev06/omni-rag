@@ -48,7 +48,7 @@ export function AccountPage() {
         {mfaSetupRequired && (
           <div role="alert" className="flex gap-3 rounded-xl border border-warning/30 bg-warning/10 p-4 text-sm text-warning">
             <ShieldAlert className="mt-0.5 size-5 shrink-0" />
-            <p>La cuenta de superadministrador debe activar la verificación en dos pasos para seguir usando la plataforma. Actívala aquí abajo.</p>
+            <p>Tu cuenta debe activar la verificación en dos pasos para seguir usando la plataforma. Actívala aquí abajo.</p>
           </div>
         )}
         <Card>

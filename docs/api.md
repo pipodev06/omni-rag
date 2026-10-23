@@ -4,7 +4,7 @@ Base: `http://localhost:8000/api` (a través de nginx) o `http://localhost:3001/
 
 **Autenticación:** el login devuelve una cookie `httpOnly` (navegador) y también un `token`. Desde scripts usa la cabecera `Authorization: Bearer <token>`.
 
-**Errores:** siempre JSON `{ "error": "mensaje legible" }` con el código HTTP correspondiente (`400` datos inválidos, `401` sin sesión, `403` sin permiso, `404`, `409` duplicado, `413` demasiado grande, `429` límite, `502/503` dependencia caída).
+**Errores:** siempre JSON `{ "error": "mensaje legible" }` con el código HTTP correspondiente (`400` datos inválidos, `401` sin sesión, `403` sin permiso, `404`, `409` duplicado, `413` demasiado grande, `429` límite, `502/503` dependencia caída). Cada respuesta lleva la cabecera `X-Request-Id` (y los `500` también el campo `requestId`): sirve para localizar la petición en los registros. Las peticiones sin sesión válida tienen un tope por IP (`IP_RATE_LIMIT_PER_MIN`); al superarlo responden `429` con `Retry-After: 60`.
 
 ## Salud
 
