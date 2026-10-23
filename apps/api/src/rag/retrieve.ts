@@ -1,7 +1,7 @@
 import { config } from "../config.js";
 import { withTenant, type TenantContext } from "../db/client.js";
 import { scopeKey } from "./cache.js";
-import { applyRerank, rerank, rerankerEnabled } from "./rerank.js";
+import { applyRerank, rerank, rerankerEnabled, rerankText } from "./rerank.js";
 import { hybridSearch, type SearchHit } from "./search.js";
 
 export interface RetrievalScope {
@@ -66,7 +66,7 @@ export async function retrieve(
 
   const scores = await rerank(
     opts.queryText,
-    candidates.map((h) => [h.documentTitle, h.heading].filter(Boolean).join(" — ") + "\n" + h.content),
+    candidates.map((h) => rerankText(h)),
     opts.signal,
   );
   if (!scores) return candidates.slice(0, topK).map((h) => ({ ...h, rerankScore: null }));

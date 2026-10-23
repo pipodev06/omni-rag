@@ -101,3 +101,17 @@ describe("monitorización de copias de seguridad", () => {
     expect(await checkBackups("/no/existe/rag")).toBeNull();
   });
 });
+
+describe("texto que se envía al re-ranker", () => {
+  const hit = { documentTitle: "Contrato", heading: "Plazos", content: "x".repeat(2000) };
+  it("une título, sección y contenido", async () => {
+    const { rerankText } = await import("../src/rag/rerank.js");
+    expect(rerankText({ ...hit, content: "texto" }, 0)).toBe("Contrato — Plazos\ntexto");
+    expect(rerankText({ documentTitle: "T", heading: "", content: "c" }, 0)).toBe("T\nc");
+  });
+  it("recorta solo si se pide un máximo", async () => {
+    const { rerankText } = await import("../src/rag/rerank.js");
+    expect(rerankText(hit, 0).length).toBeGreaterThan(2000);
+    expect(rerankText(hit, 600).length).toBe(600);
+  });
+});

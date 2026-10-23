@@ -1,6 +1,5 @@
-import { useMemo, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { lazy, Suspense, useMemo, useState } from "react";
+import type { Components } from "react-markdown";
 import { Check, ChevronDown, Copy, Download, Eye, FileText } from "lucide-react";
 import { toast } from "sonner";
 import type { Source } from "@/api";
@@ -8,6 +7,18 @@ import { pagesLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+
+// Las librerías de Markdown se descargan al mostrar el primer texto con formato, no en la primera pantalla.
+const MarkdownRenderer = lazy(() => import("./MarkdownRenderer"));
+
+/** Texto con formato; mientras llega el renderizador se ve el texto tal cual, sin saltos de diseño bruscos. */
+function Markdown({ text, components }: { text: string; components: Components }) {
+  return (
+    <Suspense fallback={<p className="whitespace-pre-wrap">{text}</p>}>
+      <MarkdownRenderer text={text} components={components} />
+    </Suspense>
+  );
+}
 
 /** Dominio de un enlace (sin «www.»), o `null` si no es una dirección completa. */
 const hostOf = (href?: string): string | null => {
@@ -54,8 +65,8 @@ export function AnswerMarkdown({ content, sources, onCite }: { content: string; 
   );
   return (
     <div className="prose prose-zinc max-w-none text-[15px] leading-7 dark:prose-invert prose-p:my-3 prose-pre:bg-muted prose-pre:text-foreground prose-table:text-sm prose-th:px-3 prose-td:px-3">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+      <Markdown
+        text={prepared}
         components={{
           a: ({ href, children }) => {
             if (href?.startsWith("#cite-")) {
@@ -74,9 +85,7 @@ export function AnswerMarkdown({ content, sources, onCite }: { content: string; 
           },
           img: NoImage,
         }}
-      >
-        {prepared}
-      </ReactMarkdown>
+      />
     </div>
   );
 }
@@ -90,9 +99,7 @@ export function ExcerptMarkdown({ text, className }: { text: string; className?:
         className,
       )}
     >
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: ({ children }) => <span>{children}</span>, img: NoImage }}>
-        {text}
-      </ReactMarkdown>
+      <Markdown text={text} components={{ a: ({ children }) => <span>{children}</span>, img: NoImage }} />
     </div>
   );
 }

@@ -6,6 +6,8 @@ COPY apps/web/package.json apps/web/
 RUN pnpm install --frozen-lockfile --filter @rag/web...
 COPY apps/web apps/web
 RUN pnpm --filter @rag/web build
+# Versiones .gz de los archivos estáticos, creadas una vez al construir: nginx las sirve con gzip_static sin gastar CPU por petición.
+RUN find apps/web/dist -type f -regex '.*\.\(js\|mjs\|css\|svg\|html\)' -exec gzip -9 -k {} +
 
 FROM nginx:1.29-alpine
 COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf
