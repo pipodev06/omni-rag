@@ -28,6 +28,10 @@ Cambiarlos solo si el usuario lo pide de forma explícita.
 - **Planes:** pestaña «Planes» dentro de Organizaciones. Una sola clave de OpenRouter (la del dueño); el plan fija modelos, preguntas por día (y, opcional, por usuario) y topes de usuarios y documentos. Los admins ven su uso en Consumo.
 - **Superadministrador:** al iniciar sesión aterriza en Organizaciones (selector); desde ahí «Entrar como soporte». El banner de soporte tiene «Volver a mi organización».
 
+## Variables de entorno
+
+Toda variable nueva se declara en `apps/api/src/config.ts` (o en `docker-compose.yml` si es de infraestructura), se añade a `.env.example` con su comentario y se describe en `docs/variables.md`. Un test (`apps/api/test/docs.test.ts`) falla si falta en alguno de los dos archivos. Los secretos nunca se escriben en el repositorio.
+
 ## Acceso
 
 - Se inicia sesión con **usuario o correo** y contraseña. El `username` es único en toda la plataforma. El email es opcional.

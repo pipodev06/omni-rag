@@ -55,10 +55,9 @@ Lo que se termina se tacha y pasa a «Hecho» al final.
 | 35 | Pruebas de extremo a extremo (Playwright): login, subir, preguntar, borrar. Hoy ninguna recorre la interfaz | alto | Hacer |
 | 37 | Prueba de carga (cuántos usuarios y documentos aguanta el servidor) | medio | Investigar |
 
-### H. Acciones tuyas (las de después de producción están en [pendientes_post_produccion.md](pendientes_post_produccion.md))
+### H. Acciones tuyas
 | # | Qué | Tipo |
 |---|---|---|
-| 45 | Cargar saldo en OpenRouter si vas a depender de él (SMTP ya está hecho) | Tú |
 | 46 | Revisar los PR de Dependabot cuando vuelva a abrirlos (se borraron sus ramas el 23/10) | Tú |
 
 ### Surgidas después de la lista

@@ -59,7 +59,7 @@ Guía completa paso a paso: **[docs/instalacion.md](docs/instalacion.md)**.
 
 ## Cambiar la configuración (`.env`)
 
-Toda la configuración de infraestructura (claves, dominio, correo, copias de seguridad…) vive en el archivo `.env`. Tres reglas para no tropezar:
+Toda la configuración de infraestructura (claves, dominio, correo, copias de seguridad…) vive en el archivo `.env`. La lista completa, con valores por defecto y cuándo se aplica cada una, está en [docs/variables.md](docs/variables.md). Tres reglas para no tropezar:
 
 ### 1. Aplica los cambios con `docker compose up -d`, no con `restart`
 
@@ -129,6 +129,7 @@ Las copias **no incluyen el `.env`**: guarda aparte `JWT_SECRET` (sin él el 2FA
 | [docs/permisos.md](docs/permisos.md) | Organizaciones, roles, colecciones y cómo garantiza el aislamiento la base de datos |
 | [docs/requisitos.md](docs/requisitos.md) | RAM, CPU y disco medidos; perfiles para 6/8/16 GB y qué VPS contratar |
 | [docs/instalacion.md](docs/instalacion.md) | Instalación paso a paso y configuración de OpenRouter |
+| [docs/variables.md](docs/variables.md) | Referencia de todas las variables del `.env`: qué hace cada una, su valor por defecto y cuándo se aplica |
 | [docs/produccion.md](docs/produccion.md) | Publicar con dominio y HTTPS, correo SMTP y copias fuera del servidor |
 | [docs/operacion.md](docs/operacion.md) | Copias de seguridad, usuarios e invitaciones, auditoría, cambio de modelos, calibración y problemas frecuentes |
 | [docs/api.md](docs/api.md) | Referencia de la API HTTP |
