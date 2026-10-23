@@ -159,7 +159,9 @@ export function TwoFactorCard({ enabled, recommended }: { enabled: boolean; reco
           {enabled && step.kind !== "codes" && <Badge variant="secondary">Activa</Badge>}
         </CardTitle>
         <CardDescription>
-          {recommended
+          {enabled
+            ? "Cada inicio de sesión pide un código de tu app autenticadora (o uno de recuperación)."
+            : recommended
             ? "Recomendada para la cuenta del dueño de la plataforma: protege los planes y el acceso a todas las organizaciones."
             : "Añade un código de tu app autenticadora al iniciar sesión. Es opcional."}
         </CardDescription>
