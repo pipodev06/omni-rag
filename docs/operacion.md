@@ -334,6 +334,17 @@ Reparte el cupo de OpenRouter (1.000 al día con créditos) entre tus clientes c
 
 ## Cambiar contraseñas de la base de datos
 
+**Rotación automática (recomendada):** un solo comando cambia `POSTGRES_PASSWORD` y `APP_DB_PASSWORD` por contraseñas nuevas al azar, sin pasos manuales ni mostrarlas:
+
+```bash
+sh deploy/rotate-db-password.sh --dry-run   # solo muestra lo que haría
+sh deploy/rotate-db-password.sh             # la rotación real
+```
+
+Guarda una copia del `.env` (`.env.bak-FECHA`), cambia la contraseña dentro de la base, escribe las nuevas en el `.env`, recrea los servicios y espera a que la API responda. **Si la API no responde, vuelve atrás sola** (restaura el `.env` y la contraseña anterior). Los servicios se reinician unos segundos. Cuando compruebes que todo va bien, borra el respaldo: `rm .env.bak-*` (contiene las contraseñas anteriores). Conviene rotarlas cada cierto tiempo y siempre que alguien con acceso al servidor deje el equipo. Las contraseñas nuevas solo viven en el `.env`: no hace falta que las veas.
+
+**A mano**, si prefieres elegirlas tú:
+
 - `APP_DB_PASSWORD`: cámbiala en `.env` y ejecuta `docker compose up -d api worker` (la API la aplica al arrancar).
 - `POSTGRES_PASSWORD` (después del primer arranque): la base conserva la contraseña con la que se creó, así que hay que igualarla. Cambia el valor en `.env` y ejecuta:
   ```bash
