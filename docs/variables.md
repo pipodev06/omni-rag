@@ -12,7 +12,7 @@ Todas se definen en el archivo `.env` (cópialo de `.env.example`, que trae cada
 
 | Variable | Por defecto | Qué hace | Aplica |
 |---|---|---|---|
-| `POSTGRES_PASSWORD` | — (obligatoria) | Contraseña del usuario `rag_owner` de PostgreSQL | Ver [README, regla 3](../README.md#3-las-contraseñas-de-la-base-de-datos-tienen-un-paso-extra) |
+| `POSTGRES_PASSWORD` | — (obligatoria) | Contraseña del usuario `rag_owner` de PostgreSQL. Se rota con `sh deploy/rotate-db-password.sh` | Ver [README, regla 3](../README.md#3-las-contraseñas-de-la-base-de-datos-tienen-un-paso-extra) |
 | `APP_DB_PASSWORD` | — (obligatoria) | Contraseña del usuario `rag_app` (el que usa la aplicación, sujeto a RLS) | up (la API la aplica sola) |
 | `JWT_SECRET` | — (obligatoria, 32+ caracteres) | Firma las sesiones y cifra los secretos del 2FA. Con dominio real debe ser fuerte | up (cierra todas las sesiones y **rompe el 2FA ya guardado**) |
 | `JWT_EXPIRES_IN` | `12h` | Duración de una sesión | up |
