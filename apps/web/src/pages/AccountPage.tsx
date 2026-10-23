@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { KeyRound, Loader2, LogOut, Monitor, Moon, ShieldAlert, Sun, type LucideIcon } from "lucide-react";
+import { KeyRound, Monitor, Moon, ShieldAlert, Sun, type LucideIcon } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { Page, PageHeader } from "@/components/common";
 import { ChangePasswordDialog } from "@/components/account/ChangePasswordDialog";
 import { TwoFactorCard } from "@/components/account/TwoFactorCard";
+import { SessionsCard } from "@/components/account/SessionsCard";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -106,19 +107,7 @@ export function AccountPage() {
           </Card>
         )}
 
-        {!support && (
-          <Card>
-            <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0 space-y-1">
-                <CardTitle>Sesiones</CardTitle>
-                <CardDescription>Cierra la sesión en todos tus dispositivos, también en este. Úsalo si perdiste un equipo o sospechas de un acceso ajeno.</CardDescription>
-              </div>
-              <Button variant="outline" onClick={() => void logoutEverywhere()} disabled={closing}>
-                {closing ? <Loader2 className="animate-spin" /> : <LogOut />} Cerrar todas las sesiones
-              </Button>
-            </CardContent>
-          </Card>
-        )}
+        {!support && <SessionsCard closingAll={closing} onCloseAll={() => void logoutEverywhere()} />}
       </div>
       <ChangePasswordDialog open={passwordOpen} onOpenChange={setPasswordOpen} needsCode={user.totpEnabled === true} />
     </Page>
