@@ -10,7 +10,7 @@ import { audit, auditLog } from "../lib/audit.js";
 import { badRequest, HttpError, notFound, unauthorized } from "../lib/errors.js";
 import { emailEnabled } from "../lib/mailer.js";
 import { RateLimiter } from "../lib/rateLimit.js";
-import { superadmin2faRequired } from "../lib/limits.js";
+import { twoFactorRequired } from "../lib/limits.js";
 import { clientIp } from "../lib/request.js";
 import {
   decryptSecret,
@@ -207,7 +207,7 @@ authRoutes.get("/me", requireAuth, async (c) => {
   const [mfa] = await sqlOwner<{ on: boolean }[]>`SELECT (totp_enabled_at IS NOT NULL) AS "on" FROM users WHERE id = ${u.id}`;
   return c.json({
     user: { id: u.id, username: u.username, email: u.email, name: u.name, role: u.role, isSuperadmin: u.isSuperadmin, totpEnabled: mfa?.on ?? false },
-    mfaSetupRequired: u.isSuperadmin && !u.support && !(mfa?.on ?? false) && superadmin2faRequired(),
+    mfaSetupRequired: !u.support && !(mfa?.on ?? false) && twoFactorRequired(u),
     tenant,
     support: u.support ? { name: u.support.name, username: u.support.username } : null,
   });

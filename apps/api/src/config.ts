@@ -25,6 +25,12 @@ const schema = z.object({
   COOKIE_SECURE: z.enum(["auto", "true", "false"]).default("auto"),
   // Exigir verificación en dos pasos al superadministrador. auto = solo con un dominio público.
   REQUIRE_SUPERADMIN_2FA: z.enum(["auto", "true", "false"]).default("auto"),
+  /** Exigir verificación en dos pasos a TODOS los administradores de organización. Por defecto no: es opcional. */
+  REQUIRE_ADMIN_2FA: z.enum(["true", "false"]).default("false"),
+  /** Peticiones por minuto y por IP a la API sin sesión válida (0 = sin límite). */
+  IP_RATE_LIMIT_PER_MIN: z.coerce.number().int().min(0).default(120),
+  /** Formato de los registros: `json` (una línea por evento, para buscar y filtrar) o `text`. */
+  LOG_FORMAT: z.enum(["json", "text"]).default("json"),
 
   // Dominio público (p. ej. rag.miempresa.com). Vacío = uso local.
   DOMAIN: z.string().trim().default(""),
@@ -45,6 +51,12 @@ const schema = z.object({
   AUDIT_RETENTION_DAYS: z.coerce.number().int().positive().default(365),
   /** Días que un documento borrado permanece en la papelera antes de eliminarse del todo (0 = se borra al instante). */
   TRASH_RETENTION_DAYS: z.coerce.number().int().min(0).max(365).default(30),
+
+  // Alertas por correo (las revisa el worker cada 5 minutos). Vacío = sin alertas.
+  ALERT_EMAIL: z.string().trim().default(""),
+  ALERT_DISK_FREE_PERCENT: z.coerce.number().min(1).max(90).default(15),
+  ALERT_QUEUE_MINUTES: z.coerce.number().positive().default(30),
+  ALERT_BACKUP_HOURS: z.coerce.number().positive().default(36),
 
   STORAGE_DIR: z.string().default("./data/uploads"),
   MAX_UPLOAD_MB: z.coerce.number().positive().default(50),
