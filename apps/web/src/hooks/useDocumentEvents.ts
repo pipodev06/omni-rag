@@ -16,13 +16,14 @@ interface DocumentEvent {
  * Escucha los avisos de cambios de documentos (Server-Sent Events) y:
  *  - refresca al instante las listas de documentos y colecciones;
  *  - avisa al usuario cuando un documento que subió está listo o falló.
- * Si la conexión se corta, el navegador la reabre solo (EventSource).
+ * Si la conexión se corta, el navegador la reabre solo (EventSource). Con `enabled = false` no se conecta.
  */
-export function useDocumentEvents() {
+export function useDocumentEvents(enabled = true) {
   const qc = useQueryClient();
   const connected = useRef(false);
 
   useEffect(() => {
+    if (!enabled) return; // sin permiso aún (p. ej. falta activar el 2FA obligatorio) la API responde 403 y el navegador no reintenta
     const source = new EventSource("/api/documents/events");
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -56,5 +57,5 @@ export function useDocumentEvents() {
       if (refreshTimer) clearTimeout(refreshTimer);
       source.close();
     };
-  }, [qc]);
+  }, [qc, enabled]);
 }
