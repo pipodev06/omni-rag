@@ -116,6 +116,47 @@ Tras cada copia verificada, el servicio la copia allí y borra las de más de `B
 openssl enc -d -aes-256-cbc -pbkdf2 -in db_AAAA-MM-DD_HHMM.dump.enc -out db.dump   # pide la frase
 ```
 
+**Subirlas a Backblaze B2 (integrado):** el servicio `backup-b2` (rclone) sube cada 6 horas las copias cifradas de `BACKUP_OFFSITE_DIR` a un bucket de B2 y borra de allí las de más de 30 días.
+
+1. En Backblaze, crea un bucket **privado** y una *Application Key* limitada a ese bucket (*App Keys → Add a New Application Key*; no uses la Master Key). Guarda el `keyID` y la `applicationKey`: esta última solo se muestra una vez.
+2. En `.env`, además de `BACKUP_OFFSITE=true` y la frase de cifrado:
+   ```bash
+   COMPOSE_PROFILES=backblaze        # o https,backblaze si usas Caddy
+   B2_KEY_ID=<keyID>
+   B2_APPLICATION_KEY=<applicationKey>
+   B2_BUCKET=<nombre del bucket>
+   ```
+3. `docker compose up -d` y comprueba con una subida inmediata: `docker compose run --rm backup-b2 --once`. Debe terminar con una línea `[b2] … sincronizado`. Si dice que no hay copias cifradas, falta la frase o aún no corrió ninguna copia (`docker compose exec backup sh /backup.sh --once`).
+
+**Archivos subidos incrementales (recomendado con muchos GB).** Por defecto cada copia incluye un `.tgz` completo de todos los archivos: con 150 GB serían 150 GB nuevos cada día. Con estas dos líneas en el `.env`, la copia diaria lleva solo la base de datos y los archivos se sincronizan aparte, subiendo únicamente lo nuevo:
+
+```bash
+BACKUP_UPLOADS_TGZ=false
+B2_SYNC_UPLOADS=true
+```
+
+- Los archivos viajan **cifrados** (contenido y nombres) con `BACKUP_ENCRYPTION_PASSPHRASE`; en Backblaze solo se ven nombres ilegibles. La frase es obligatoria para esta opción.
+- Lo que se **borra en la aplicación** no se borra de Backblaze al instante: pasa a `archive/AAAA-MM-DD` y se conserva `B2_KEEP_DAYS` días (30). En la aplicación no se puede deshacer un borrado; la recuperación se hace así, desde el servidor:
+  ```bash
+  docker compose run --rm backup-b2 --archive                          # fechas con archivos borrados
+  mkdir -p restore
+  docker compose run --rm -v "$PWD/restore:/restore" backup-b2 --restore /restore archive/AAAA-MM-DD
+  ```
+  Dentro de `restore/` aparecen los archivos con su ruta (`<organización>/<documento>/nombre.pdf`). Para volver a tenerlo en la aplicación, súbelo de nuevo desde *Documentos*. Para restaurar solo una parte, añade la ruta: `current/<organización>/<documento>`.
+- Un `.tgz` local de los archivos ya no existe en esta modalidad: la única copia de los archivos es la de Backblaze (el disco del servidor es el original).
+- La primera sincronización sube todo (150 GB tardan horas); las siguientes, solo los cambios. Si `/uploads` aparece vacío (error de montaje) no se sincroniza nada, para no archivar todo por error.
+
+**Horarios.** Por defecto la copia se hace cada 24 h contando desde que arrancó el contenedor `backup` (y de nuevo al recrearlo) y la subida a B2 cada 6 h. Para fijar la hora (Perú, UTC-5) añade al `.env`:
+
+```bash
+BACKUP_AT=03:00     # copia diaria a las 03:00
+B2_AT=04:00         # subida diaria a las 04:00, después de la copia
+```
+
+`BACKUP_TZ` (por defecto `<-05>5`, Lima) cambia la zona; usa ese formato POSIX, por ejemplo `<-03>3` para Argentina. Con hora fija no se hace copia al arrancar el contenedor; para una inmediata: `docker compose exec backup sh /backup.sh --once`. Aplica con `docker compose up -d`; en los registros aparece `próxima copia a las 03:00 … dentro de N min`. Las marcas de tiempo de los registros y los nombres de archivo siguen en UTC.
+
+Solo se suben archivos `.enc`: sin la frase de cifrado no sale nada del servidor. Para restaurar, baja los dos archivos del bucket (web de Backblaze o `rclone copy`), descífralos con el comando de arriba y sigue [operacion.md](operacion.md#restaurar-una-copia). Si el bucket tiene versiones o reglas de ciclo de vida propias, déjalas en «mantener solo la última versión»: el servicio ya borra definitivamente lo antiguo.
+
 **Opción manual:** copia `./backups` con `rclone` a un almacenamiento S3 compatible o al *storage box* de tu proveedor con una tarea `cron` diaria (`0 4 * * * rclone sync /ruta/rag-project/backups remoto:rag-backups`). Esa copia no va cifrada salvo que lo configures tú.
 
 Prueba alguna vez a restaurar en un servidor limpio (ver [operacion.md](operacion.md#restaurar-una-copia)).
