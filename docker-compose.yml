@@ -155,6 +155,9 @@ services:
     environment:
       PGPASSWORD: ${POSTGRES_PASSWORD}
       BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-24}
+      BACKUP_AT: ${BACKUP_AT:-}
+      BACKUP_UPLOADS_TGZ: ${BACKUP_UPLOADS_TGZ:-true}
+      BACKUP_TZ: ${BACKUP_TZ:-<-05>5}
       BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-7}
       BACKUP_OFFSITE: ${BACKUP_OFFSITE:-false}
       BACKUP_ENCRYPTION_PASSPHRASE: ${BACKUP_ENCRYPTION_PASSPHRASE:-}
@@ -167,6 +170,31 @@ services:
     depends_on:
       db:
         condition: service_healthy
+
+  # Sube las copias cifradas de BACKUP_OFFSITE_DIR a Backblaze B2. Solo con COMPOSE_PROFILES=backblaze
+  # (y BACKUP_OFFSITE=true + BACKUP_ENCRYPTION_PASSPHRASE: sin cifrar no sube nada).
+  backup-b2:
+    image: rclone/rclone:1.69.3
+    profiles: ["backblaze"]
+    restart: unless-stopped
+    entrypoint: ["sh", "/b2-sync.sh"]
+    environment:
+      RCLONE_CONFIG_B2_TYPE: b2
+      RCLONE_CONFIG_B2_ACCOUNT: ${B2_KEY_ID:-}
+      RCLONE_CONFIG_B2_KEY: ${B2_APPLICATION_KEY:-}
+      RCLONE_CONFIG_B2_HARD_DELETE: "true"
+      B2_BUCKET: ${B2_BUCKET:-}
+      B2_PATH: ${B2_PATH:-omni-rag}
+      B2_INTERVAL_HOURS: ${B2_INTERVAL_HOURS:-6}
+      B2_AT: ${B2_AT:-}
+      B2_SYNC_UPLOADS: ${B2_SYNC_UPLOADS:-false}
+      BACKUP_ENCRYPTION_PASSPHRASE: ${BACKUP_ENCRYPTION_PASSPHRASE:-}
+      BACKUP_TZ: ${BACKUP_TZ:-<-05>5}
+      B2_KEEP_DAYS: ${B2_KEEP_DAYS:-30}
+    volumes:
+      - ./deploy/b2-sync.sh:/b2-sync.sh:ro
+      - uploads:/uploads:ro
+      - ${BACKUP_OFFSITE_DIR:-./backups-offsite}:/offsite:ro
 
   # HTTPS automático (Let's Encrypt). Solo con COMPOSE_PROFILES=https y DOMAIN definido.
   caddy:
