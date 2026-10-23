@@ -89,6 +89,22 @@ SMTP_FROM="RAG Tu Empresa <no-reply@tuempresa.com>"
 
 Configura SPF y DKIM del dominio remitente según las instrucciones del proveedor, para que los correos no acaben en spam. Sin SMTP todo funciona igual, pero el administrador debe copiar y enviar a mano los enlaces de invitación.
 
+**Valores de los proveedores más usados** (la contraseña va solo en el `.env` del servidor):
+
+| Proveedor | `SMTP_HOST` | Puerto / `SMTP_SECURE` | `SMTP_USER` y `SMTP_PASSWORD` | `SMTP_FROM` |
+|---|---|---|---|---|
+| **Gmail** (cuenta propia, hasta ~500 envíos/día) | `smtp.gmail.com` | `587` / `false` | tu correo y una **contraseña de aplicación** (requiere verificación en dos pasos en Google; no vale la contraseña normal) | tiene que ser **la misma cuenta de Gmail**, Google reescribe cualquier otro remitente |
+| **Brevo** (gratis ~300/día) | `smtp-relay.brevo.com` | `587` / `false` | el *login* SMTP que muestra Brevo (no su API key) y su *clave SMTP* | un remitente o dominio **verificado** en Brevo |
+| **Correo de tu dominio** (Zoho, hosting, Google Workspace…) | el que indique el proveedor | `587` / `false` o `465` / `true` | el buzón completo y su contraseña | ese mismo buzón, p. ej. `no-reply@tuempresa.com` |
+
+**Probar antes de invitar a nadie.** Con las variables ya en el `.env` y aplicadas con `docker compose up -d`:
+
+```bash
+docker compose exec api node dist/scripts/test-email.js tu@correo.com
+```
+
+Comprueba la conexión y las credenciales (`OK` o el error real del servidor) y envía un mensaje de prueba. Si no llega, mira el spam: es lo habitual hasta tener SPF/DKIM.
+
 ### 5. Arrancar
 
 ```bash
