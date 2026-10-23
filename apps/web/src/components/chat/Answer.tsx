@@ -9,6 +9,20 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
+/** Dominio de un enlace (sin «www.»), o `null` si no es una dirección completa. */
+const hostOf = (href?: string): string | null => {
+  try {
+    return new URL(href ?? "").hostname.replace(/^www\./, "");
+  } catch {
+    return null;
+  }
+};
+
+/** Las imágenes de las respuestas y de los fragmentos no se cargan: una imagen remota puede filtrar datos en su dirección. */
+function NoImage({ alt }: { alt?: string }) {
+  return <span className="text-muted-foreground">[imagen{alt ? `: ${alt}` : ""}]</span>;
+}
+
 /** Marca de cita [n] dentro del texto, clicable y con el nombre de la fuente al pasar el ratón. */
 function CitationChip({ n, source, onClick }: { n: number; source?: Source; onClick: () => void }) {
   const chip = (
@@ -48,12 +62,17 @@ export function AnswerMarkdown({ content, sources, onCite }: { content: string; 
               const n = Number(href.slice(6));
               return <CitationChip n={n} source={sources.find((s) => s.n === n)} onClick={() => onCite(n)} />;
             }
+            // Un documento hostil puede lograr que el modelo escriba un enlace con datos en la dirección: se muestra
+            // siempre a qué sitio lleva, para que nadie lo abra sin saberlo.
+            const host = hostOf(href);
             return (
-              <a href={href} target="_blank" rel="noreferrer noopener">
+              <a href={href} target="_blank" rel="noreferrer noopener" title={href}>
                 {children}
+                {host && <span className="ml-1 text-xs text-muted-foreground no-underline">({host})</span>}
               </a>
             );
           },
+          img: NoImage,
         }}
       >
         {prepared}
@@ -71,7 +90,7 @@ export function ExcerptMarkdown({ text, className }: { text: string; className?:
         className,
       )}
     >
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: ({ children }) => <span>{children}</span> }}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: ({ children }) => <span>{children}</span>, img: NoImage }}>
         {text}
       </ReactMarkdown>
     </div>
