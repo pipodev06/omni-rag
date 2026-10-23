@@ -112,6 +112,10 @@ const schema = z.object({
   // Vacío = desactivado (se usa solo el orden de la búsqueda híbrida).
   RERANKER_URL: z.string().default(""),
   RERANK_CANDIDATES: z.coerce.number().int().positive().default(20),
+  // Recorta cada candidato a N caracteres antes de re-rankear: más rápido, pero cambia los resultados (0 = texto completo).
+  RERANK_MAX_CHARS: z.coerce.number().int().min(0).default(0),
+  // Re-rankings simultáneos: el resto espera su turno. 1 = en fila (la primera búsqueda termina antes y nadie agota el tiempo de espera).
+  RERANK_PARALLEL: z.coerce.number().int().positive().default(1),
   // Puntuación mínima (0–1) para que un fragmento se envíe al LLM. Si ninguno la
   // alcanza, se responde "no encontré información" sin gastar cupo.
   RERANK_MIN_SCORE: z.coerce.number().min(0).max(1).default(0.02),

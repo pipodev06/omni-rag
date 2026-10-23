@@ -6,8 +6,6 @@ Lo que está en curso o decidido. Lo que se termina se tacha y baja a «Hecho».
 
 | # | Qué | Tipo |
 |---|---|---|
-| 37 | Prueba de carga: cuántos usuarios y documentos aguanta el servidor | Hacer |
-| — | Optimización de frontend y backend y mejoras de experiencia de usuario, según lo medido en la prueba de carga | Hacer |
 | 46 | Revisar los PR de Dependabot cuando vuelva a abrirlos (se borraron sus ramas el 23/10) | Tú |
 
 ## Hecho
@@ -28,6 +26,8 @@ Lo que está en curso o decidido. Lo que se termina se tacha y baja a «Hecho».
 - ~~34 Sesiones activas visibles~~ (Mi cuenta: dispositivos, IP, última actividad y «Cerrar» por sesión)
 - ~~36 Monitorización y alertas~~ (el worker revisa cada 5 minutos disco, cola, copias de seguridad y errores del modelo; avisa por correo con `ALERT_EMAIL`)
 - ~~38 Registros estructurados~~ (JSON con `requestId` en cada línea y cabecera `X-Request-Id`)
+- ~~37 Prueba de carga~~ (`deploy/loadtest.mjs`; mediciones y conclusiones en docs/operacion.md → «Prueba de carga»)
+- ~~Optimización de frontend y backend~~ (Markdown perezoso: paquete principal -30 % comprimido; archivos precomprimidos con `gzip_static`: -70 % de bytes y ~50 % más peticiones por segundo; re-ranking en fila: sin pérdidas de re-ranking con carga; modal para renombrar conversaciones)
 - ~~39 Pantallas sin ver en el navegador~~ (revisadas el 23/10)
 - ~~40 Barra lateral con 2FA obligatorio~~ (se corrigió que los avisos en vivo recibían 403)
 - ~~41 Despliegue real con dominio~~ (en producción con túnel de Cloudflare)
