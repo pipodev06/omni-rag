@@ -11,12 +11,14 @@ export interface SessionClaims {
   role: Role;
   /** Superadministrador que usa esta sesión como soporte (cuenta de soporte). */
   actorId?: string;
+  /** Identificador de esta sesión (`jti`): permite verla y cerrarla individualmente. Las de soporte no lo llevan. */
+  sessionId?: string;
   /** Cuándo se emitió (segundos Unix); solo al verificar. */
   iat?: number;
 }
 
 export async function signSession(claims: SessionClaims): Promise<string> {
-  return new SignJWT({ tid: claims.tenantId, role: claims.role, ...(claims.actorId && { act: claims.actorId }) })
+  return new SignJWT({ tid: claims.tenantId, role: claims.role, ...(claims.actorId && { act: claims.actorId }), ...(claims.sessionId && { jti: claims.sessionId }) })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(claims.userId)
     .setIssuer(ISSUER)
@@ -30,7 +32,8 @@ export async function verifySession(token: string): Promise<SessionClaims | null
     const { payload } = await jwtVerify(token, key, { issuer: ISSUER, algorithms: ["HS256"] });
     if (typeof payload.sub !== "string" || typeof payload.tid !== "string") return null;
     const actorId = typeof payload.act === "string" ? payload.act : undefined;
-    return { userId: payload.sub, tenantId: payload.tid, role: payload.role as Role, actorId, iat: payload.iat };
+    const sessionId = typeof payload.jti === "string" ? payload.jti : undefined;
+    return { userId: payload.sub, tenantId: payload.tid, role: payload.role as Role, actorId, sessionId, iat: payload.iat };
   } catch {
     return null;
   }

@@ -1,9 +1,9 @@
 import { Hono, type Context } from "hono";
-import { deleteCookie } from "hono/cookie";
+import { deleteCookie, getCookie } from "hono/cookie";
 import { z } from "zod";
 import { sqlOwner, type Role } from "../db/client.js";
-import { signMfaToken, verifyMfaToken } from "../auth/jwt.js";
-import { issueSession, revokeSessions } from "../auth/session.js";
+import { signMfaToken, verifyMfaToken, verifySession } from "../auth/jwt.js";
+import { issueSession, revokeSession, revokeSessions } from "../auth/session.js";
 import { requireAuth, SESSION_COOKIE, type AppEnv } from "../auth/middleware.js";
 import { hashPassword, passwordProblem, verifyPassword } from "../auth/password.js";
 import { audit, auditLog } from "../lib/audit.js";
@@ -22,7 +22,7 @@ import {
   verifyTotp,
 } from "../lib/totp.js";
 import { createUserLink, emailLink, findValidToken } from "../lib/tokens.js";
-import { parse } from "../lib/validate.js";
+import { parse, UUID_RE } from "../lib/validate.js";
 
 export const authRoutes = new Hono<AppEnv>();
 
@@ -168,9 +168,37 @@ authRoutes.post("/login/totp", async (c) => {
   return c.json({ ...session, recoveryCodesLeft: used === "recovery" ? u.totp_recovery_hashes.length - 1 : undefined });
 });
 
-authRoutes.post("/logout", (c) => {
+authRoutes.post("/logout", async (c) => {
+  // Además de borrar la cookie, se cierra la sesión en el servidor: el token ya no sirve aunque alguien lo conserve.
+  const token = getCookie(c, SESSION_COOKIE);
+  const claims = token ? await verifySession(token) : null;
+  if (claims?.sessionId) await revokeSession(claims.userId, claims.sessionId);
   deleteCookie(c, SESSION_COOKIE, { path: "/" });
   return c.json({ ok: true });
+});
+
+/** Dispositivos con la cuenta abierta (sesiones sin cerrar y sin caducar), la más reciente primero. */
+authRoutes.get("/sessions", requireAuth, async (c) => {
+  const u = c.get("user");
+  if (u.support) throw badRequest("En modo soporte no hay sesiones que mostrar");
+  const rows = await sqlOwner<{ id: string; createdAt: Date; lastSeenAt: Date; ip: string | null; userAgent: string | null }[]>`
+    SELECT id, created_at AS "createdAt", last_seen_at AS "lastSeenAt", ip, user_agent AS "userAgent"
+      FROM user_sessions
+     WHERE user_id = ${u.id} AND revoked_at IS NULL AND expires_at > now()
+     ORDER BY last_seen_at DESC`;
+  return c.json({ sessions: rows.map((r) => ({ ...r, current: r.id === u.sessionId })) });
+});
+
+/** Cierra una sesión concreta. Si es la actual, equivale a cerrar sesión. */
+authRoutes.delete("/sessions/:id", requireAuth, async (c) => {
+  const u = c.get("user");
+  const id = c.req.param("id");
+  if (u.support) throw badRequest("En modo soporte no se pueden cerrar las sesiones");
+  if (!UUID_RE.test(id) || !(await revokeSession(u.id, id))) throw notFound("Sesión no encontrada");
+  const current = id === u.sessionId;
+  if (current) deleteCookie(c, SESSION_COOKIE, { path: "/" });
+  await audit(c, "auth.session_revoked", { targetType: "user", targetId: u.id, details: { current } });
+  return c.json({ ok: true, current });
 });
 
 authRoutes.get("/me", requireAuth, async (c) => {

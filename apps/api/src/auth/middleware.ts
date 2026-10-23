@@ -17,6 +17,8 @@ export interface AuthUser {
   isSuperadmin: boolean;
   /** Superadministrador que está dentro de esta organización como soporte. */
   support: { id: string; username: string; name: string } | null;
+  /** Sesión (token) con la que se hace la petición; `null` en tokens antiguos y en las de soporte. */
+  sessionId: string | null;
 }
 
 export type AppEnv = { Variables: { user: AuthUser } };
@@ -37,16 +39,23 @@ export const requireAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
   if (!claims) throw unauthorized("Sesión inválida o expirada");
 
   const [row] = await sqlOwner<
-    { id: string; tenant_id: string; username: string; email: string | null; name: string; role: Role; is_superadmin: boolean; support_for: string | null; valid_after: string; totp: boolean }[]
+    { id: string; tenant_id: string; username: string; email: string | null; name: string; role: Role; is_superadmin: boolean; support_for: string | null; valid_after: string; totp: boolean; session_ok: boolean | null }[]
   >`
     SELECT u.id, u.tenant_id, u.username, u.email, u.name, u.role, u.is_superadmin, u.support_for,
-           extract(epoch FROM u.sessions_valid_after)::bigint AS valid_after, (u.totp_enabled_at IS NOT NULL) AS totp
+           extract(epoch FROM u.sessions_valid_after)::bigint AS valid_after, (u.totp_enabled_at IS NOT NULL) AS totp,
+           (SELECT s.revoked_at IS NULL AND s.expires_at > now() FROM user_sessions s WHERE s.id = ${claims.sessionId ?? null}::uuid AND s.user_id = u.id) AS session_ok
       FROM users u JOIN tenants t ON t.id = u.tenant_id
      WHERE u.id = ${claims.userId} AND u.is_active AND t.is_active
   `;
   if (!row || row.tenant_id !== claims.tenantId) throw unauthorized("Usuario inactivo o inexistente");
   // Sesión anterior a un cambio de contraseña, un restablecimiento o «cerrar todas las sesiones».
   if (claims.iat !== undefined && claims.iat < Number(row.valid_after)) throw unauthorized("La sesión se cerró. Inicia sesión de nuevo.");
+  // Sesión cerrada desde Mi cuenta (o desde otro dispositivo).
+  if (claims.sessionId && row.session_ok !== true) throw unauthorized("La sesión se cerró. Inicia sesión de nuevo.");
+  // Última actividad (como mucho una vez por minuto, sin esperar a que termine).
+  if (claims.sessionId) {
+    void sqlOwner`UPDATE user_sessions SET last_seen_at = now() WHERE id = ${claims.sessionId} AND last_seen_at < now() - interval '1 minute'`.catch(() => {});
+  }
 
   // Cuenta de soporte: solo vale dentro de la sesión del superadministrador al
   // que pertenece, y solo mientras siga activo y siendo superadministrador.
@@ -75,6 +84,7 @@ export const requireAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
     role: row.role,
     isSuperadmin: row.is_superadmin,
     support,
+    sessionId: claims.sessionId ?? null,
   });
   await next();
 };
