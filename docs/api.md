@@ -18,13 +18,14 @@ Base: `http://localhost:8000/api` (a través de nginx) o `http://localhost:3001/
 | Método | Ruta | Cuerpo | Respuesta |
 |---|---|---|---|
 | POST | `/auth/login` | `{ login, password }` (`login` = usuario o email; también se acepta `email`) | `{ token, user }` + cookie. Máx. 10 intentos / 15 min por IP y usuario. |
-| POST | `/auth/logout` | — | Borra la cookie |
+| POST | `/auth/logout` | — | Cierra la sesión: la marca como cerrada en el servidor (el token deja de valer) y borra la cookie |
 | GET | `/auth/me` | — | `{ user, tenant, support, mfaSetupRequired }`. `support` = `{ name, username }` del superadministrador si la sesión es de soporte, o `null` |
 | POST | `/auth/exit-support` | — | Sale del modo soporte y vuelve a la sesión del superadministrador: `{ token, user }` + cookie |
 | POST | `/auth/change-password` | `{ newPassword, code? }` | `{ ok }` (mín. 10 caracteres). No pide la contraseña anterior; con 2FA activo exige `code` (TOTP o de recuperación). Cierra las demás sesiones |
 | GET | `/auth/config` | — | `{ emailEnabled }` (si hay SMTP configurado) |
 | POST | `/auth/login/totp` | `{ mfaToken, code }`: segundo paso si `/auth/login` devolvió `{ mfaRequired: true, mfaToken }` (el token dura 5 min y no abre sesión). `code` = 6 dígitos de la app o un código de recuperación | Igual que el login. Máx. 5 intentos / 15 min por usuario. Un código TOTP no se puede reutilizar |
 | POST | `/auth/logout-all` | — | Cierra todas las sesiones del usuario (incluida la actual). Un `401` posterior = la sesión se cerró |
+| GET | `/auth/sessions` | sesión | Dispositivos con la cuenta abierta → `{ sessions: [{ id, createdAt, lastSeenAt, ip, userAgent, current }] }`. No disponible en modo soporte || DELETE | `/auth/sessions/:id` | sesión | Cierra una sesión concreta de la persona (`404` si no existe o es de otra) → `{ ok, current }`; si es la actual, borra la cookie. Auditoría `auth.session_revoked` |
 | POST | `/auth/totp/setup` | — | `{ secret, otpauthUrl }`: empieza la configuración (aún inactiva) |
 | POST | `/auth/totp/enable` | `{ code }` | `{ recoveryCodes[] }` (8, solo se muestran esta vez): confirma y activa el 2FA |
 | POST | `/auth/totp/disable` | `{ password, code }` | Desactiva el 2FA (contraseña + código TOTP o de recuperación) |

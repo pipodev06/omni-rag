@@ -9,7 +9,8 @@ export const MAINTENANCE_QUEUE = "mantenimiento";
  *  - auditoría más antigua que AUDIT_RETENTION_DAYS;
  *  - enlaces de invitación/restablecimiento usados o caducados hace más de 7 días;
  *  - respuestas en caché más antiguas que CACHE_TTL_HOURS (ya no se usarían);
- *  - documentos en la papelera desde hace más de TRASH_RETENTION_DAYS días (se eliminan con su archivo).
+ *  - documentos en la papelera desde hace más de TRASH_RETENTION_DAYS días (se eliminan con su archivo);
+ *  - sesiones caducadas o cerradas hace más de 7 días.
  */
 export async function runMaintenance() {
   const audit = await sqlOwner`
@@ -23,6 +24,8 @@ export async function runMaintenance() {
     DELETE FROM documents
      WHERE deleted_at IS NOT NULL AND deleted_at < now() - ${`${config.TRASH_RETENTION_DAYS} days`}::interval
     RETURNING id, tenant_id`;
+  const sessions = await sqlOwner`
+    DELETE FROM user_sessions WHERE least(expires_at, coalesce(revoked_at, expires_at)) < now() - interval '7 days' RETURNING id`;
   await Promise.all(trash.map((d) => removeStored(`${d.tenant_id}/${d.id}`).catch(() => {})));
-  return { auditDeleted: audit.length, tokensDeleted: tokens.length, cacheDeleted: cache.length, trashPurged: trash.length };
+  return { auditDeleted: audit.length, tokensDeleted: tokens.length, cacheDeleted: cache.length, trashPurged: trash.length, sessionsDeleted: sessions.length };
 }

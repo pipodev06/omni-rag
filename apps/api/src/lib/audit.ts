@@ -9,7 +9,7 @@ import { clientIp } from "./request.js";
  *
  * Acciones (`categoría.verbo`): auth.login, auth.login_failed, auth.password_changed,
  * auth.reset_requested, auth.link_used, auth.login_mfa_failed, auth.totp_enabled, auth.totp_disabled,
- * auth.totp_reset, auth.sessions_revoked, user.created, user.invited, user.updated,
+ * auth.totp_reset, auth.sessions_revoked, auth.session_revoked, user.created, user.invited, user.updated,
  * user.link_created, collection.created, collection.updated, collection.deleted,
  * collection.members_updated, document.uploaded, document.deleted (a la papelera), document.bulk_deleted, document.restored, document.purged, document.infected, document.renamed, document.moved, document.reprocessed,
  * document.summary, quality.cache_cleared, quality.feedback_resolved,
