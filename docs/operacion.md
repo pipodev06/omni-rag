@@ -54,6 +54,49 @@ docker compose up -d
 
 > En un servidor nuevo, `pg_restore` mostrará avisos `role "rag_app" does not exist`. Son normales: al arrancar, la API crea el usuario `rag_app` con `APP_DB_PASSWORD` y vuelve a aplicar sus permisos.
 
+### Restaurar en un servidor limpio (desde Backblaze)
+
+Para cuando se pierde el servidor. **Las copias no incluyen el `.env`**: guarda aparte (gestor de contraseñas) al menos `JWT_SECRET` (con otro, los 2FA guardados dejan de funcionar y todas las sesiones caducan), `BACKUP_ENCRYPTION_PASSPHRASE` (sin ella no se abren las copias), las claves de los proveedores de LLM, las `B2_*` y los ajustes de embeddings (`EMBEDDING_*`: los vectores guardados deben coincidir con el modelo).
+
+1. **Instala** Docker y git, clona el repositorio y crea el `.env` con los mismos `JWT_SECRET`, `DOMAIN`, claves y ajustes de embeddings. `POSTGRES_PASSWORD` y `APP_DB_PASSWORD` pueden ser nuevas.
+2. **Baja las copias** más recientes (un `db_…dump.enc` y el `uploads_…tgz.enc` de la misma fecha) desde la web de Backblaze a una carpeta `restore/`, o con rclone:
+   ```bash
+   mkdir restore
+   docker compose run --rm --no-deps -v "$PWD/restore:/restore" --entrypoint sh backup-b2 -c 'rclone lsl "b2:$B2_BUCKET/$B2_PATH"'   # ver qué hay
+   docker compose run --rm --no-deps -v "$PWD/restore:/restore" --entrypoint sh backup-b2 -c 'rclone copy "b2:$B2_BUCKET/$B2_PATH" /restore --include "*_AAAA-MM-DD_HHMM.*"'
+   ```
+   (Requiere `COMPOSE_PROFILES=backblaze` y las `B2_*` en el `.env`.)
+3. **Descifra** (pide la frase) y comprueba que los archivos sirven:
+   ```bash
+   cd restore
+   openssl enc -d -aes-256-cbc -pbkdf2 -in db_AAAA-MM-DD_HHMM.dump.enc -out db.dump
+   openssl enc -d -aes-256-cbc -pbkdf2 -in uploads_AAAA-MM-DD_HHMM.tgz.enc -out uploads.tgz
+   pg_restore -l db.dump | head -5 ; tar tzf uploads.tgz | head -5 ; cd ..
+   ```
+4. **Levanta todo vacío** (`sh deploy/build.sh`, o `docker compose up -d --build`) y para lo que escribe datos:
+   ```bash
+   docker compose stop api worker web backup backup-b2
+   ```
+5. **Restaura la base y los archivos**:
+   ```bash
+   docker compose exec -T db pg_restore -U rag_owner -d rag --clean --if-exists --no-owner < restore/db.dump
+   docker run --rm -v rag_uploads:/data -v "$PWD/restore":/restore alpine sh -c "rm -rf /data/* && tar xzf /restore/uploads.tgz -C /data"
+   ```
+6. **Arranca** con `docker compose up -d` (la API aplica las migraciones que falten) y **comprueba**: `curl http://localhost:8000/api/health`; entra con tu usuario de siempre (la contraseña del `SEED_ADMIN_*` ya no vale: se restauró la base real); confirma que el 2FA acepta tu código; abre un documento y haz una pregunta.
+7. **Borra `restore/`** (`rm -rf restore`): contiene todos los datos sin cifrar.
+8. Si el dominio es nuevo, actualiza el DNS o el túnel antes de dar el servicio por recuperado.
+
+**Si los archivos se copian de forma incremental (`B2_SYNC_UPLOADS=true`)** no hay `uploads_….tgz.enc`: salta la parte de archivos de los pasos 2 y 3 y sustituye el `tar` del paso 5 por esto (rclone los baja ya descifrados):
+
+```bash
+mkdir restore-archivos
+docker compose run --rm -v "$PWD/restore-archivos:/restore" backup-b2 --restore /restore
+docker run --rm -v rag_uploads:/data -v "$PWD/restore-archivos":/restore alpine sh -c "rm -rf /data/* && cp -a /restore/. /data/"
+rm -rf restore-archivos
+```
+
+Haz este ensayo una vez con una copia real, en otra máquina o en otra carpeta, antes de necesitarlo.
+
 ## Reprocesar varios documentos a la vez
 
 Con las casillas de **Documentos**, elige los documentos y pulsa **Reprocesar** en la barra de selección (hasta 200). Útil con los que fallaron o tras cambiar el modelo de embeddings. Los que ya están en cola o procesándose se omiten para no duplicar trabajo.
