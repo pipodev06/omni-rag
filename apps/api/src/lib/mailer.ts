@@ -48,3 +48,8 @@ ${link ? `<p style="margin:28px 0"><a href="${escapeHtml(link.url)}" style="back
     return false;
   }
 }
+
+/** Comprueba la conexión y las credenciales con el servidor SMTP (sin enviar nada). Lanza el error del servidor si falla. */
+export async function verifyEmail(): Promise<void> {
+  await getTransporter().verify();
+}
