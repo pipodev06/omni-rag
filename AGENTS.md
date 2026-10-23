@@ -14,6 +14,7 @@ Cambiarlos solo si el usuario lo pide de forma explícita.
 - **Scroll y paginación:** el scroll interno sirve hasta cientos de filas (la API limita a 1000). Más allá hay que paginar en el servidor.
 - **Paginación:** Auditoría usa «Cargar más» (50 por carga, debajo de la tabla). Documentos no pagina: la API devuelve hasta 1000 por colección y la tabla hace scroll.
 - **Banner de soporte:** franja delgada (texto pequeño) arriba; no se quita porque indica en qué organización estás y permite volver.
+- **Renombrar:** siempre con un modal (`components/RenameDialog.tsx`, compartido por documentos y conversaciones), nunca editando sobre el propio texto. Las acciones de cada conversación del historial salen de un menú «⋮» (Renombrar, Exportar a Markdown, Borrar), visible siempre en pantallas táctiles.
 - **Cabecera de página:** `PageHeader` muestra solo el título y las acciones. La explicación de la página va en `description`, que se ve en un modal al pulsar el icono (i) junto al título. Texto formal, sin párrafos bajo el título.
 - **Desplegables (`Select`):** se abren **debajo** del selector (`position="popper"`, el valor por defecto de `ui/select.tsx`); nunca encima, porque tapan el título de la página.
 - **Tema claro/oscuro:** se aplica antes del primer pintado con `apps/web/public/theme-init.js` (archivo aparte: la CSP no permite scripts en línea). Su lógica debe ser la misma que la de `src/lib/theme.tsx`; si una cambia, cambia la otra.

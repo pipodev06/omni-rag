@@ -42,6 +42,7 @@ Base: `http://localhost:8000/api` (a través de nginx) o `http://localhost:3001/
 | GET | `/conversations?q=` | todos | Las 200 conversaciones más recientes del usuario. Con `q` filtra por el título o el texto de los mensajes (sin distinguir mayúsculas; `%` y `_` se buscan literalmente) |
 | PATCH | `/conversations/:id` | dueño | `{ title }`: renombra la conversación (1-120 caracteres) |
 | GET | `/conversations/:id` | dueño | `{ conversation, messages }` (con `sources` de cada respuesta) |
+| GET | `/conversations/:id/export` | dueño | Descarga la conversación en Markdown (`text/markdown`, adjunto): preguntas, respuestas y las fuentes citadas de cada una. Máx. 20 por minuto |
 | DELETE | `/conversations/:id` | dueño | Borra la conversación |
 
 ### `POST /chat`

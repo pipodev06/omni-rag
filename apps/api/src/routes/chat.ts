@@ -7,6 +7,7 @@ import { requireAuth, tenantCtx, type AppEnv } from "../auth/middleware.js";
 import { embedQuery } from "../ingest/embeddings.js";
 import { findCachedAnswer, markCacheHit, storeCachedAnswer } from "../rag/cache.js";
 import { streamChat } from "../rag/llm.js";
+import { conversationToMarkdown, exportFilename, type ExportMessage } from "../rag/export.js";
 import { buildMessages, citedSources, NO_CONTEXT_ANSWER, retrievalQuery, type ChatMessage } from "../rag/prompt.js";
 import { resolveScope, retrieve, type RankedHit } from "../rag/retrieve.js";
 import { HttpError, notFound } from "../lib/errors.js";
@@ -306,6 +307,28 @@ chatRoutes.get("/conversations/:id", async (c) => {
     return { conversation, messages };
   });
   return c.json(data);
+});
+
+/** Descarga la conversación en Markdown, con las fuentes de cada respuesta. */
+chatRoutes.get("/conversations/:id/export", userRateLimit(20, 60_000, "exportaciones"), async (c) => {
+  const id = c.req.param("id");
+  if (!UUID_RE.test(id)) throw notFound();
+  const { conversation, messages } = await withTenant(tenantCtx(c), async (tx) => {
+    const [conversation] = await tx<{ title: string }[]>`SELECT title FROM conversations WHERE id = ${id}`;
+    if (!conversation) throw notFound("Conversación no encontrada");
+    const messages = await tx<ExportMessage[]>`
+      SELECT role, content, sources, model, created_at AS "createdAt"
+        FROM messages WHERE conversation_id = ${id} ORDER BY created_at`;
+    return { conversation, messages };
+  });
+  const markdown = conversationToMarkdown({ title: conversation.title, appName: config.APP_NAME, exportedAt: new Date(), messages });
+  return new Response(markdown, {
+    headers: {
+      "content-type": "text/markdown; charset=utf-8",
+      "content-disposition": `attachment; filename="${exportFilename(conversation.title)}"; filename*=UTF-8''${encodeURIComponent(`${conversation.title}.md`)}`,
+      "x-content-type-options": "nosniff",
+    },
+  });
 });
 
 chatRoutes.delete("/conversations/:id", async (c) => {
