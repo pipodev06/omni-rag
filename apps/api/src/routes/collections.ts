@@ -18,7 +18,7 @@ collectionRoutes.use("*", requireAuth);
 collectionRoutes.get("/", async (c) => {
   const collections = await withTenant(tenantCtx(c), (tx) => tx`
     SELECT col.id, col.name, col.description, col.created_at AS "createdAt",
-           (SELECT count(*)::int FROM documents d WHERE d.collection_id = col.id) AS "documentCount",
+           (SELECT count(*)::int FROM documents d WHERE d.collection_id = col.id AND d.deleted_at IS NULL) AS "documentCount",
            (SELECT coalesce(array_agg(m.user_id), '{}') FROM collection_members m
              WHERE m.collection_id = col.id) AS "memberIds"
       FROM collections col

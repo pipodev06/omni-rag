@@ -75,6 +75,7 @@ export async function hybridSearch(tx: Tx, opts: SearchOptions): Promise<SearchH
            WHERE c.tenant_id = app_tenant_id()
              AND (${collections}::uuid[] IS NULL OR c.collection_id = ANY(${collections}::uuid[]))
              AND (${documents}::uuid[] IS NULL OR c.document_id = ANY(${documents}::uuid[]))
+             AND NOT EXISTS (SELECT 1 FROM documents x WHERE x.id = c.document_id AND x.deleted_at IS NOT NULL)
            ORDER BY c.embedding <=> ${vector}::vector
            LIMIT ${candidates}
         ) s
@@ -95,6 +96,7 @@ export async function hybridSearch(tx: Tx, opts: SearchOptions): Promise<SearchH
              AND c.tenant_id = app_tenant_id()
              AND (${collections}::uuid[] IS NULL OR c.collection_id = ANY(${collections}::uuid[]))
              AND (${documents}::uuid[] IS NULL OR c.document_id = ANY(${documents}::uuid[]))
+             AND NOT EXISTS (SELECT 1 FROM documents x WHERE x.id = c.document_id AND x.deleted_at IS NOT NULL)
            ORDER BY rank DESC
            LIMIT ${candidates}
         ) s
@@ -111,7 +113,7 @@ export async function hybridSearch(tx: Tx, opts: SearchOptions): Promise<SearchH
            f.keyword_rank::int AS keyword_rank, f.distance::float8 AS distance
       FROM fused f
       JOIN chunks c ON c.id = f.id
-      JOIN documents d ON d.id = c.document_id
+      JOIN documents d ON d.id = c.document_id AND d.deleted_at IS NULL
      ORDER BY f.score DESC
      LIMIT ${topK}
   `;

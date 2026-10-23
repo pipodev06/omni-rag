@@ -68,7 +68,7 @@ function DocumentActions({ doc: d, canEdit, onRename, onMove, onReprocess, onDel
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive" onSelect={() => onDelete(d)}>
-              <Trash2 /> Borrar
+              <Trash2 /> Enviar a la papelera
             </DropdownMenuItem>
           </>
         )}

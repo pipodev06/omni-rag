@@ -45,6 +45,18 @@ export interface DocumentInfo {
   hasSummary?: boolean;
 }
 
+export interface TrashedDocument {
+  id: string;
+  collectionId: string;
+  collectionName: string;
+  title: string;
+  filename: string;
+  sizeBytes: number;
+  deletedAt: string;
+  deletedBy: string | null;
+  purgeAt: string;
+}
+
 export interface Source {
   n: number;
   documentId: string;

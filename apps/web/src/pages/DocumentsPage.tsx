@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router";
+import { Link, useNavigate, useParams } from "react-router";
 import { useDropzone } from "react-dropzone";
 import { CloudUpload, FolderInput, FolderOpen, FolderPlus, Loader2, RotateCw, Search, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
@@ -185,11 +185,20 @@ export function DocumentsPage() {
         title="Documentos"
         description="Los documentos se procesan automáticamente al subirse y quedan disponibles para consultar en el chat."
         actions={
-          isAdmin && (
-            <Button onClick={() => setCollectionDialog("new")}>
-              <FolderPlus /> Nueva colección
-            </Button>
-          )
+          <>
+            {canEdit && (
+              <Button variant="outline" asChild>
+                <Link to="/papelera">
+                  <Trash2 /> Papelera
+                </Link>
+              </Button>
+            )}
+            {isAdmin && (
+              <Button onClick={() => setCollectionDialog("new")}>
+                <FolderPlus /> Nueva colección
+              </Button>
+            )}
+          </>
         }
       />
 
@@ -233,7 +242,7 @@ export function DocumentsPage() {
                   <RotateCw /> Reprocesar
                 </Button>
                 <Button size="sm" variant="destructive" onClick={() => void deleteSelected()}>
-                  <Trash2 /> Borrar
+                  <Trash2 /> Enviar a la papelera
                 </Button>
               </div>
             </div>

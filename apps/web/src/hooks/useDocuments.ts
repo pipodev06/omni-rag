@@ -61,28 +61,28 @@ export function useDocumentActions() {
 
   const removeDocument = async (d: DocumentInfo) => {
     const ok = await confirm({
-      title: `¿Borrar «${d.title}»?`,
-      description: "Se eliminará el archivo y dejará de aparecer en las respuestas. No se puede deshacer.",
-      confirmText: "Borrar",
+      title: `¿Enviar «${d.title}» a la papelera?`,
+      description: "Pasará a la papelera y dejará de aparecer en las respuestas. Podrás restaurarlo desde la papelera mientras no se elimine del todo.",
+      confirmText: "Enviar a la papelera",
       destructive: true,
     });
-    if (ok) await run(() => api.del(`/documents/${d.id}`), "Documento borrado");
+    if (ok) await run(() => api.del(`/documents/${d.id}`), "Documento enviado a la papelera");
   };
 
   const removeDocuments = async (ds: DocumentInfo[]) => {
     if (ds.length === 0) return false;
     const names = ds.slice(0, 5).map((d) => `«${d.title}»`).join(", ");
     const ok = await confirm({
-      title: `¿Borrar ${ds.length} documento${ds.length === 1 ? "" : "s"}?`,
-      description: `${names}${ds.length > 5 ? ` y ${ds.length - 5} más` : ""}. Se eliminarán los archivos y dejarán de aparecer en las respuestas. No se puede deshacer.`,
-      confirmText: `Borrar ${ds.length}`,
+      title: `¿Enviar ${ds.length} documento${ds.length === 1 ? "" : "s"} a la papelera?`,
+      description: `${names}${ds.length > 5 ? ` y ${ds.length - 5} más` : ""}. Pasarán a la papelera y dejarán de aparecer en las respuestas; podrás restaurarlos desde allí.`,
+      confirmText: `Enviar ${ds.length} a la papelera`,
       destructive: true,
     });
     if (!ok) return false;
     try {
       const r = await api.post<{ deleted: number; notFound: number }>("/documents/bulk-delete", { ids: ds.map((d) => d.id) });
-      toast.success(`${r.deleted} documento${r.deleted === 1 ? "" : "s"} borrado${r.deleted === 1 ? "" : "s"}`, {
-        description: r.notFound > 0 ? `${r.notFound} no se pudieron borrar (ya no existían o no tienes permiso).` : undefined,
+      toast.success(`${r.deleted} documento${r.deleted === 1 ? "" : "s"} enviado${r.deleted === 1 ? "" : "s"} a la papelera`, {
+        description: r.notFound > 0 ? `${r.notFound} no se pudieron enviar (ya no existían o no tienes permiso).` : undefined,
       });
       refresh();
       return true;

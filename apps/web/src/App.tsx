@@ -10,6 +10,7 @@ import { ForgotPasswordPage, LinkPage } from "@/pages/AuthLinkPages";
 // Cada página se descarga solo cuando se visita (carga inicial más ligera).
 const ChatPage = lazy(() => import("@/pages/ChatPage").then((m) => ({ default: m.ChatPage })));
 const DocumentsPage = lazy(() => import("@/pages/DocumentsPage").then((m) => ({ default: m.DocumentsPage })));
+const TrashPage = lazy(() => import("@/pages/TrashPage").then((m) => ({ default: m.TrashPage })));
 const UsersPage = lazy(() => import("@/pages/UsersPage").then((m) => ({ default: m.UsersPage })));
 const UsagePage = lazy(() => import("@/pages/UsagePage").then((m) => ({ default: m.UsagePage })));
 const PlatformPage = lazy(() => import("@/pages/PlatformPage").then((m) => ({ default: m.PlatformPage })));
@@ -71,6 +72,7 @@ export function App() {
         <Route path="/chat/:conversationId" element={<ChatPage />} />
         <Route path="/documentos" element={<DocumentsPage />} />
         <Route path="/documentos/:collectionId" element={<DocumentsPage />} />
+        <Route path="/papelera" element={<Protected allow={user?.role === "admin" || user?.role === "editor"}><TrashPage /></Protected>} />
         <Route path="/usuarios" element={<Protected allow={user?.role === "admin"}><UsersPage /></Protected>} />
         <Route path="/calidad" element={<Protected allow={user?.role === "admin"}><QualityPage /></Protected>} />
         <Route path="/auditoria" element={<Protected allow={user?.role === "admin"}><AuditPage /></Protected>} />

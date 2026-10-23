@@ -43,6 +43,8 @@ const schema = z.object({
   INVITE_EXPIRES_HOURS: z.coerce.number().positive().default(72),
   RESET_EXPIRES_MINUTES: z.coerce.number().positive().default(60),
   AUDIT_RETENTION_DAYS: z.coerce.number().int().positive().default(365),
+  /** Días que un documento borrado permanece en la papelera antes de eliminarse del todo (0 = se borra al instante). */
+  TRASH_RETENTION_DAYS: z.coerce.number().int().min(0).max(365).default(30),
 
   STORAGE_DIR: z.string().default("./data/uploads"),
   MAX_UPLOAD_MB: z.coerce.number().positive().default(50),
