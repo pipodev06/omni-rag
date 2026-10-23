@@ -173,7 +173,8 @@ function SidebarContent({ onNavigate, slotRef }: { onNavigate?: () => void; slot
 export function AppLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [slotEl, setSlotEl] = useState<HTMLElement | null>(null);
-  useDocumentEvents();
+  // Con el 2FA obligatorio pendiente la API rechaza todo salvo Mi cuenta: sin avisos en vivo hasta activarlo.
+  useDocumentEvents(!useCurrentUser().mfaSetupRequired);
 
   return (
     <SidebarSlotContext.Provider value={slotEl}>

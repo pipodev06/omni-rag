@@ -298,6 +298,7 @@ Los planes que ya tenías siguen funcionando sin cambios: sin prefijo es OpenRou
 - Con un servidor propio en Docker, `localhost` es el propio contenedor: usa `http://host.docker.internal:11434/v1` (Ollama en tu equipo) o el nombre de un servicio del compose.
 - `GET /api/health` muestra `llm: [...]` con los proveedores configurados; vacío = el chat no puede responder.
 - **Ver qué modelos puedes usar:** `docker compose exec -T api node dist/scripts/models.js groq google` lista el catálogo de cada proveedor con tus claves (sin argumentos, todos menos OpenRouter). Con `--probar` envía un mensaje mínimo a cada modelo y dice cuáles responden de verdad: aparecer en el catálogo no garantiza que sirva (Google lista modelos que dan 404 y los planes gratuitos tienen topes de tokens por minuto; en Groq gratuito puede hacer falta bajar `LLM_MAX_TOKENS`; DeepSeek exige saldo). Evita los modelos Gemma de Google para el chat: devuelven su razonamiento (`<thought>`) en la respuesta.
+  Opciones para acotar la prueba (se combinan): `--ok` muestra solo los que responden, del más rápido al más lento; `--max-ms=1000` solo los que responden en menos de ese tiempo; `--filtro=gemini` solo los modelos con ese texto en el nombre (se aplica antes de probar, así ahorra tiempo y cuota); `--gratis` en OpenRouter, solo los gratuitos; `--forzar` permite probar más de 60 de una vez. Ejemplo: `… models.js google groq --max-ms=1500`. Con OpenRouter hay que acotar siempre (`openrouter --gratis --max-ms=3000`): tiene cientos de modelos.
 
 ## Modelos gratuitos de OpenRouter
 
