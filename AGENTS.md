@@ -6,7 +6,7 @@ Plataforma RAG multiusuario (API Hono + worker + frontend React/Vite). Detalle t
 
 Cambiarlos solo si el usuario lo pide de forma explícita.
 
-- **Nombre:** «Omni RAG» (marca visible: logotipo, título de la pestaña, correos vía `APP_NAME`, documentación). Los identificadores internos conservan «rag» a propósito (proyecto de Docker `rag` y sus volúmenes, base y roles `rag*`, paquetes `@rag/*`, emisor de las sesiones): cambiarlos rompería datos o sesiones. La sal del cifrado del 2FA es `rag`; cambiarla dejaría inservibles los secretos ya guardados. El repositorio de GitHub se llama `Omni-RAG`.
+- **Nombre:** «Omni RAG» (marca visible: logotipo, título de la pestaña, correos vía `APP_NAME`, documentación). Los identificadores internos conservan «rag» a propósito (proyecto de Docker `rag` y sus volúmenes, base y roles `rag*`, paquetes `@rag/*`, emisor de las sesiones): cambiarlos rompería datos o sesiones. La sal del cifrado del 2FA es `rag`; cambiarla dejaría inservibles los secretos ya guardados. El repositorio de GitHub se llama `omni-rag` (en minúsculas).
 - **Stack de UI:** shadcn/ui + Tailwind CSS + iconos Lucide. Componentes base en `apps/web/src/components/ui/`.
 - **Ancho de página:** `Page` (`components/common.tsx`) ocupa todo el ancho disponible; no hay `max-w` global. Solo `Cuenta` se limita a `max-w-3xl`.
 - **Lista de documentos:** las columnas ordenan al pulsarlas, hay filtros por estado y tipo (`lib/documentView.ts`, todo en el navegador) y las acciones en lote (mover, reprocesar, borrar) salen de la barra de selección, con los botones a la derecha. El botón destructivo es rojo sólido (`red-600`) en ambos temas.
@@ -15,6 +15,7 @@ Cambiarlos solo si el usuario lo pide de forma explícita.
 - **Paginación:** Auditoría usa «Cargar más» (50 por carga, debajo de la tabla). Documentos no pagina: la API devuelve hasta 1000 por colección y la tabla hace scroll.
 - **Banner de soporte:** franja delgada (texto pequeño) arriba; no se quita porque indica en qué organización estás y permite volver.
 - **Renombrar:** siempre con un modal (`components/RenameDialog.tsx`, compartido por documentos y conversaciones), nunca editando sobre el propio texto. Las acciones de cada conversación del historial salen de un menú «⋮» (Renombrar, Exportar a Markdown, Borrar), visible siempre en pantallas táctiles.
+- **Rendimiento del frontend:** las librerías de Markdown solo se cargan al mostrar el primer texto con formato (`components/chat/MarkdownRenderer.tsx`, con `lazy`); no importar `react-markdown` en otro sitio. Los archivos estáticos se precomprimen al construir la imagen y nginx los sirve con `gzip_static`. El visor de PDF también es perezoso.
 - **Cabecera de página:** `PageHeader` muestra solo el título y las acciones. La explicación de la página va en `description`, que se ve en un modal al pulsar el icono (i) junto al título. Texto formal, sin párrafos bajo el título.
 - **Desplegables (`Select`):** se abren **debajo** del selector (`position="popper"`, el valor por defecto de `ui/select.tsx`); nunca encima, porque tapan el título de la página.
 - **Tema claro/oscuro:** se aplica antes del primer pintado con `apps/web/public/theme-init.js` (archivo aparte: la CSP no permite scripts en línea). Su lógica debe ser la misma que la de `src/lib/theme.tsx`; si una cambia, cambia la otra.

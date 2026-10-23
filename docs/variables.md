@@ -86,7 +86,9 @@ Para ver qué modelos funcionan con tus claves: `docker compose exec -T api node
 | `FTS_LANGUAGE` | `spanish` | Idioma de la búsqueda por palabras | reproc. |
 | `HISTORY_MESSAGES` | `6` | Mensajes anteriores de la conversación que se envían al modelo | up |
 | `RERANKER_URL`, `RERANKER_REPLICAS`, `RERANKER_MODEL` | vacío, `1`, `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1` | Modelo local que reordena resultados. Para desactivarlo (poca RAM): `RERANKER_URL` vacío y `RERANKER_REPLICAS=0` | up |
-| `RERANK_CANDIDATES`, `RERANK_MIN_SCORE` | `20`, `0.02` | Candidatos que se reordenan y puntuación mínima para usarlos | up |
+| `RERANK_CANDIDATES`, `RERANK_MIN_SCORE` | `20`, `0.02` | Candidatos que se reordenan y puntuación mínima para usarlos. **No bajes los candidatos para ganar velocidad**: con 12 en vez de 20, solo el 56 % de los 6 resultados coincide | up |
+| `RERANK_PARALLEL` | `1` | Re-rankings que se hacen a la vez; el resto espera su turno en fila. Con 6 preguntas simultáneas, antes 4 agotaban el tiempo y perdían el re-ranking; ahora ninguna | up |
+| `RERANK_MAX_CHARS` | `0` (texto completo) | Recorta cada candidato a N caracteres antes de re-rankear: más rápido pero cambia los resultados (ver [operacion.md](operacion.md#prueba-de-carga)) | up |
 | `CACHE_ENABLED`, `CACHE_TTL_HOURS`, `CACHE_MAX_DISTANCE` | `true`, `168`, `0.015` | Caché de respuestas a preguntas repetidas | up |
 | `CLAMAV_HOST`, `CLAMAV_PORT`, `CLAMAV_TIMEOUT_SECONDS`, `CLAMAV_MAX_SIZE` | vacío, `3310`, `60`, `100M` | Antivirus opcional (perfil `antivirus`, host `clamav`). `CLAMAV_MAX_SIZE` debe superar `MAX_UPLOAD_MB` | up |
 

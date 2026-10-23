@@ -426,6 +426,40 @@ El superadministrador puede ver y gestionar cualquier organización con su propi
 
 Página **Auditoría** (administradores): inicios de sesión (también los fallidos), invitaciones, cambios de rol y de acceso, documentos subidos/borrados, resúmenes, vaciados de caché, organizaciones… con fecha, usuario, detalles e IP. Se conserva `AUDIT_RETENTION_DAYS` días (365).
 
+## Prueba de carga
+
+`deploy/loadtest.mjs` (Node 18+, sin dependencias) mide cuántas peticiones por segundo aguanta la aplicación y cuánto tarda el 50 %, el 95 % y el 99 % de ellas, con varios usuarios a la vez. Escenarios: `web` (archivos estáticos, sin sesión), `lectura` (lo que hace la interfaz al navegar) y `busqueda` (búsqueda híbrida con embeddings y re-ranking; no llama al modelo de lenguaje, así que no gasta cupo).
+
+```bash
+# 1. Crea varios usuarios de prueba (la API limita cada usuario a 60 búsquedas por minuto) y bórralos al terminar.
+# 2. La contraseña va en una variable, nunca en la línea de comandos:
+export LOADTEST_PASSWORD='...'
+node deploy/loadtest.mjs --scenario lectura  --users prueba1,prueba2,prueba3,prueba4 --concurrency 20 --duration 15
+node deploy/loadtest.mjs --scenario busqueda --users prueba1,prueba2,prueba3,prueba4 --concurrency 2  --duration 20
+node deploy/loadtest.mjs --scenario web --concurrency 50 --duration 10
+```
+
+Ejecuta **un escenario a la vez** y no lo apuntes a producción en horas de uso: la búsqueda consume mucha CPU. **No levantes contenedores extra para comparar configuraciones** en una máquina con poca memoria (los dos modelos de embeddings y re-ranking ya ocupan unos 4 GB; un tercero puede dejar Docker sin responder). Mientras corre, `docker stats --no-stream` muestra el consumo de cada servicio.
+
+**Qué se midió** (portátil con 8 CPU y 7,6 GB para Docker, base con 15 documentos y 222 fragmentos; en un servidor real los números cambian, pero las proporciones sirven):
+
+- La navegación (sesión, colecciones, documentos, conversaciones, cuota) rinde unas **590 peticiones por segundo** con la mediana en 18 ms con 10 usuarios y p95 de 110 ms con 50 a la vez, sin errores.
+- Los archivos estáticos rinden unas **800 por segundo** (p95 94 ms con 50 a la vez).
+- **El cuello de botella es la búsqueda**, y dentro de ella el re-ranking (el modelo que reordena los 20 candidatos): con fragmentos reales tarda unos **3 s**, frente a 0,1 s del embedding de la pregunta y 0,02 s de la consulta a la base. Como usa la CPU, varias búsquedas a la vez se encolan casi en fila: con 4 simultáneas la última termina a los 9-12 s. Se nota sobre todo en el tiempo hasta la primera palabra de la respuesta; en un servidor con más núcleos o más rápido baja en proporción.
+- **Lo que se probó para acelerarlo:**
+
+  | Cambio | Tiempo del re-ranking | Resultados | Conclusión |
+  |---|---|---|---|
+  | `--max-batch-tokens` de 4096 a 8192 en el servicio de re-ranking | 3,6-4,2 s (peor) | iguales | No ayuda: se dejó en 4096 |
+  | Re-rankear 12 candidatos en vez de 20 | ≈ -40 % | solo 56 % de los 6 resultados coincide | **No es seguro**: el re-ranking sube fragmentos que la búsqueda dejaba abajo |
+  | Recortar cada candidato a 900 caracteres | 2,1 s (-33 %) | 81 % coincide | Opcional: `RERANK_MAX_CHARS=900` |
+  | Recortar a 600 caracteres | 1,5 s (-54 %) | 77 % coincide | Opcional |
+  | Recortar a 400 caracteres | 1,0 s (-67 %) | 60 % coincide | No recomendado |
+
+  «Coincide» es el porcentaje de los 6 fragmentos finales que son los mismos que con el texto completo: no mide si son mejores o peores, solo cuánto cambian. Sin preguntas con respuesta conocida no se puede afirmar que el recorte empeore la calidad, por eso **queda desactivado** (`RERANK_MAX_CHARS=0`). Si tu servidor es lento y prefieres rapidez, prueba 900 y revisa las respuestas.
+- **Varias búsquedas a la vez:** el re-ranking se atiende ahora **en fila** (`RERANK_PARALLEL=1`) en vez de todas a la vez. Con 6 preguntas simultáneas: antes la media era 13,2 s y **4 de las 6 agotaban el tiempo de espera** (15 s) y se quedaban sin re-ranking, es decir, con peores resultados sin que nadie lo notara; ahora la media es 8,3 s, la primera termina a los 2,5 s en vez de a los 8 s y ninguna se pierde. Con 4 simultáneas, la media pasa de 7,6 a 6,1 s.
+- **Memoria:** en la prueba, los modelos de embeddings (2,9 GB) y de re-ranking (2,5 GB) ocupaban 5,4 de los 7,6 GB disponibles, y Docling puede necesitar otros 3 GB al convertir un PDF grande. Con menos de 8 GB de RAM para Docker conviene desactivar el re-ranking o procesar documentos de uno en uno (ver [requisitos.md](requisitos.md)).
+
 ## Registros estructurados
 
 Los registros de la API y del worker son **una línea JSON por evento** (`LOG_FORMAT=json`, por defecto): hora, nivel (`info`/`warn`/`error`), mensaje, `component` (`api`, `llm`, `ingest`, `monitor`…) y, si procede, el error con su traza. Cada petición HTTP deja una línea `http` con método, ruta, estado, duración en milisegundos, IP y, con sesión, `userId` y `tenantId`; no se guarda la query ni el cuerpo. Todas las líneas generadas durante una petición llevan su `requestId`, que el cliente también recibe en la cabecera `X-Request-Id` (y en el cuerpo de los errores 500): si alguien reporta un fallo, con ese código se encuentra todo lo que pasó.
