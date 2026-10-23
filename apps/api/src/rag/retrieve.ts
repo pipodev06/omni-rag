@@ -27,7 +27,7 @@ export async function resolveScope(
     if (requestedDocuments && requestedDocuments.length > 0) {
       // Solo documentos visibles (RLS) dentro de las colecciones elegidas.
       const docs = await tx<{ id: string }[]>`
-        SELECT id FROM documents WHERE id = ANY(${requestedDocuments}::uuid[]) AND collection_id = ANY(${ids}::uuid[])`;
+        SELECT id FROM documents WHERE id = ANY(${requestedDocuments}::uuid[]) AND collection_id = ANY(${ids}::uuid[]) AND deleted_at IS NULL`;
       documentIds = docs.map((d) => d.id);
       if (documentIds.length === 0) ids = []; // ninguno accesible → no buscar nada
     }

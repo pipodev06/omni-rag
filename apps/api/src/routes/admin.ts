@@ -35,7 +35,7 @@ usageRoutes.get("/", async (c) => {
        WHERE kind = 'question' AND created_at > now() - interval '30 days'
        GROUP BY model ORDER BY 2 DESC`;
     const [totals] = await tx`
-      SELECT (SELECT count(*)::int FROM documents) AS documents,
+      SELECT (SELECT count(*)::int FROM documents WHERE deleted_at IS NULL) AS documents,
              (SELECT count(*)::int FROM chunks) AS chunks,
              (SELECT count(*)::int FROM users WHERE support_for IS NULL) AS users`;
     return { daily, byModel, totals };
@@ -68,7 +68,7 @@ platformRoutes.get("/tenants", async (c) => {
            t.created_at AS "createdAt",
            p.id AS "planId", p.name AS "planName", p.daily_question_limit AS "planDailyQuestionLimit",
            (SELECT count(*)::int FROM users u WHERE u.tenant_id = t.id AND u.support_for IS NULL) AS users,
-           (SELECT count(*)::int FROM documents d WHERE d.tenant_id = t.id) AS documents,
+           (SELECT count(*)::int FROM documents d WHERE d.tenant_id = t.id AND d.deleted_at IS NULL) AS documents,
            (SELECT count(*)::int FROM usage_events e
              WHERE e.tenant_id = t.id AND e.kind = 'question' AND e.created_at > now() - interval '30 days') AS "questions30d"
       FROM tenants t

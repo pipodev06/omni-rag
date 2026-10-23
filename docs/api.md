@@ -105,11 +105,14 @@ Los mensajes de `GET /conversations/:id` incluyen `fromCache` y `feedback` (`1`,
 | GET | `/documents/:id/file` | todos | Descarga el original |
 | POST | `/documents` | admin, editor | `multipart/form-data`: `collectionId` + uno o varios `file` |
 | PATCH | `/documents/:id` | admin, editor | `{ title }`: cambia el título mostrado (no el archivo). Vacía la caché de respuestas de la colección. Los fragmentos conservan el título antiguo en su texto de búsqueda hasta que se reprocese |
-| POST | `/documents/bulk-delete` | admin, editor | `{ ids: [...] }` (1-200): borra varios documentos y sus archivos → `{ deleted, notFound }`. Solo borra los que el usuario puede editar; el resto cuenta en `notFound`. Una sola entrada de auditoría (`document.bulk_deleted`). Máx. 10 llamadas por minuto |
+| DELETE | `/documents/:id` | admin, editor | Manda el documento a la **papelera** (deja de verse y de contar para el plan; se conserva `TRASH_RETENTION_DAYS` días). Con `TRASH_RETENTION_DAYS=0` lo elimina del todo |
+| POST | `/documents/bulk-delete` | admin, editor | `{ ids: [...] }` (1-200): manda varios documentos a la papelera → `{ deleted, notFound }`. Solo afecta a los que el usuario puede editar; el resto cuenta en `notFound`. Una sola entrada de auditoría (`document.bulk_deleted`). Máx. 10 llamadas por minuto |
+| GET | `/documents/trash` | admin, editor | Documentos de la papelera → `{ documents: [{ id, collectionId, collectionName, title, filename, sizeBytes, deletedAt, deletedBy, purgeAt }], retentionDays }` |
+| POST | `/documents/restore` | admin, editor | `{ ids: [...] }` (1-200): saca documentos de la papelera → `{ restored, skipped, reason }`. Los que no caben en el tope de documentos del plan se quedan en la papelera (`reason` lo explica). Auditoría `document.restored` |
+| POST | `/documents/purge` | admin | `{ ids: [...] }` (1-200) o `{ all: true }`: elimina definitivamente (archivo incluido) documentos que están en la papelera → `{ purged }`. Auditoría `document.purged` |
 | POST | `/documents/move` | admin, editor | `{ ids: [...] (1-200), collectionId }`: mueve documentos y sus fragmentos a otra colección sin reprocesarlos → `{ moved, skipped: [{ id, title, reason }] }`. Exige acceso a ambas colecciones (`404` si no tiene acceso al destino). Se omiten (con motivo) los que se están procesando, ya están en el destino o duplicarían un archivo allí. Vacía la caché de las colecciones afectadas. Máx. 20 por minuto |
 | POST | `/documents/reprocess` | admin, editor | `{ ids: [...] (1-200) }`: vuelve a procesar varios → `{ reprocessed, skipped }` (se omiten los que ya están en cola o procesándose). Máx. 10 por minuto |
 | POST | `/documents/:id/reprocess` | admin, editor | Vuelve a indexar uno |
-| DELETE | `/documents/:id` | admin, editor | Borra el documento, sus fragmentos y el archivo |
 
 Respuesta de la subida (`201`):
 ```json

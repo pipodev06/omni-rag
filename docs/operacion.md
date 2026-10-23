@@ -101,9 +101,34 @@ Haz este ensayo una vez con una copia real, en otra máquina o en otra carpeta, 
 
 Con las casillas de **Documentos**, elige los documentos y pulsa **Reprocesar** en la barra de selección (hasta 200). Útil con los que fallaron o tras cambiar el modelo de embeddings. Los que ya están en cola o procesándose se omiten para no duplicar trabajo.
 
+## Papelera de documentos
+
+Borrar un documento (uno o varios, desde **Documentos**) **no lo elimina**: lo manda a la **Papelera** (botón arriba a la derecha de Documentos, para administradores y editores). Mientras está allí no aparece en las colecciones, no sale en las respuestas del chat ni cuenta para el límite de documentos del plan, pero su archivo, sus fragmentos y sus vectores se conservan, así que **restaurarlo es inmediato** y no hay que procesarlo de nuevo.
+
+- **Restaurar:** botón *Restaurar* en la fila, o varias casillas y *Restaurar*. Si el plan ya está lleno de documentos, los que no caben se quedan en la papelera y el aviso lo explica.
+- **Eliminar definitivamente / Vaciar papelera:** solo administradores. Borra también el archivo y no se puede deshacer.
+- **Caducidad:** a los `TRASH_RETENTION_DAYS` días (30 por defecto) la limpieza diaria lo elimina del todo. Con `TRASH_RETENTION_DAYS=0` no hay papelera y borrar elimina al instante, como antes.
+- Subir el mismo archivo que está en la papelera de esa colección avisa de que hay que restaurarlo desde allí; mover documentos tampoco admite un archivo que ya esté en el destino, ni siquiera en su papelera.
+- Queda en la auditoría: *Envió a la papelera*, *Restauró* y *Eliminó definitivamente*.
+- Borrar una **colección** o una **organización** sí elimina todo, papelera incluida.
+- Las copias de seguridad contienen también los documentos de la papelera hasta que se eliminan del todo; la papelera cubre los errores del día a día y las copias, los desastres.
+
+### Cuánto tiempo se puede recuperar algo
+
+Con la copia incremental a Backblaze (`B2_SYNC_UPLOADS=true`) cada cosa caduca por una razón distinta. **Ningún archivo caduca por ser antiguo**: un documento subido hace un año que sigue en la aplicación sigue en Backblaze.
+
+| Qué | Dónde | Cuánto se conserva |
+|---|---|---|
+| Documento borrado en la aplicación | Papelera (se restaura con un clic) | `TRASH_RETENTION_DAYS` días (30) |
+| Archivo que ya salió de la papelera, o que se reemplazó | `archive/AAAA-MM-DD` en Backblaze (se recupera con `--restore`) | `B2_KEEP_DAYS` días (30) **desde que se borró**, no desde que se subió |
+| Archivos que existen hoy | `current` en Backblaze | Mientras existan |
+| Base de datos | Una copia por día, en el servidor y en Backblaze | 7 días en el servidor (`BACKUP_KEEP_DAYS`) y 30 en Backblaze (`B2_KEEP_DAYS`) |
+
+Un documento borrado queda recuperable unos **60 días** en total: 30 en la papelera y, cuando sale de ella y su archivo se borra del disco, otros 30 en `archive`. Pasado ese plazo no hay forma de recuperarlo. Para ampliar el margen sube `TRASH_RETENTION_DAYS` y `B2_KEEP_DAYS`; solo ocupa el espacio de lo que se haya borrado. Para volver a un estado anterior de la **base de datos** (documentos, usuarios, conversaciones) hay que restaurar una de sus copias diarias: se puede elegir cualquiera de los últimos 30 días.
+
 ## Borrar varios documentos a la vez
 
-En **Documentos**, marca las casillas de la primera columna (la casilla de la cabecera selecciona todos los que ves, también tras buscar). Aparece una barra con **Borrar** y **Quitar selección**; al pulsar Borrar se pide confirmación con los nombres. Se borran hasta 200 de una vez (los archivos también), la caché de respuestas de las colecciones afectadas se vacía y queda **una sola entrada** en la auditoría («Borró varios documentos», con la cantidad y los primeros nombres). La selección se vacía al cambiar de colección. No se puede deshacer; las copias de seguridad conservan los archivos hasta que caducan.
+En **Documentos**, marca las casillas de la primera columna (la casilla de la cabecera selecciona todos los que ves, también tras buscar). Aparece una barra con **Enviar a la papelera** y **Quitar selección**; al pulsarlo se pide confirmación con los nombres. Se envían hasta 200 de una vez a la [papelera](#papelera-de-documentos), la caché de respuestas de las colecciones afectadas se vacía y queda **una sola entrada** en la auditoría («Envió varios documentos a la papelera», con la cantidad y los primeros nombres). La selección se vacía al cambiar de colección. Se pueden recuperar desde la papelera mientras no caduquen.
 
 ## Ordenar y filtrar la lista de documentos
 
@@ -391,7 +416,7 @@ Página **Auditoría** (administradores): inicios de sesión (también los falli
 
 ## Mantenimiento automático
 
-El worker ejecuta cada día a las 03:15 (UTC) una limpieza: auditoría más antigua que la retención, enlaces usados o caducados y respuestas en caché vencidas. No requiere intervención.
+El worker ejecuta cada día a las 03:15 (UTC) una limpieza: auditoría más antigua que la retención, enlaces usados o caducados, respuestas en caché vencidas y documentos que llevan más de `TRASH_RETENTION_DAYS` días en la papelera. No requiere intervención.
 
 ## Seguridad del despliegue
 

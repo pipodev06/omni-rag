@@ -78,7 +78,7 @@ documentRoutes.get("/suggestions", async (c) => {
   const suggestions = await withTenant(tenantCtx(c), (tx) => tx`
     SELECT d.id AS "documentId", d.title AS "documentTitle", q AS question
       FROM documents d, unnest(d.suggested_questions) AS q
-     WHERE d.status = 'ready' AND (${documentId ?? null}::uuid IS NULL OR d.id = ${documentId ?? null}::uuid)
+     WHERE d.status = 'ready' AND d.deleted_at IS NULL AND (${documentId ?? null}::uuid IS NULL OR d.id = ${documentId ?? null}::uuid)
      ORDER BY random() LIMIT 8`);
   return c.json({ suggestions });
 });
@@ -88,6 +88,14 @@ const DOC_FIELDS = `
   d.size_bytes::float8 AS "sizeBytes", d.status, d.error, d.page_count AS "pageCount",
   d.chunk_count AS "chunkCount", d.created_at AS "createdAt", d.updated_at AS "updatedAt",
   (d.summary IS NOT NULL) AS "hasSummary"`;
+
+interface DocRow {
+  id: string;
+  collectionId: string;
+  title: string;
+  filename: string;
+  sizeBytes: number;
+}
 
 const idParam = (id: string) => {
   if (!UUID_RE.test(id)) throw notFound("Documento no encontrado");
@@ -101,10 +109,26 @@ documentRoutes.get("/", async (c) => {
   const documents = await withTenant(tenantCtx(c), (tx) => tx`
     SELECT ${tx.unsafe(DOC_FIELDS)}, u.name AS "createdBy"
       FROM documents d LEFT JOIN users u ON u.id = d.created_by
-     WHERE (${collectionId ?? null}::uuid IS NULL OR d.collection_id = ${collectionId ?? null}::uuid)
+     WHERE d.deleted_at IS NULL AND (${collectionId ?? null}::uuid IS NULL OR d.collection_id = ${collectionId ?? null}::uuid)
      ORDER BY d.created_at DESC
      LIMIT 1000`);
   return c.json({ documents, supportedExtensions: SUPPORTED_EXTENSIONS });
+});
+
+/** Documentos de la papelera (con cuánto falta para que se eliminen del todo). Solo quien puede restaurarlos. */
+documentRoutes.get("/trash", requireRole("admin", "editor"), async (c) => {
+  const rows = await withTenant(tenantCtx(c), (tx) => tx<(DocRow & { collectionName: string; deletedAt: Date; deletedBy: string | null })[]>`
+    SELECT d.id, d.collection_id AS "collectionId", col.name AS "collectionName", d.title, d.filename,
+           d.size_bytes::float8 AS "sizeBytes", d.deleted_at AS "deletedAt", u.name AS "deletedBy"
+      FROM documents d
+      JOIN collections col ON col.id = d.collection_id
+      LEFT JOIN users u ON u.id = d.deleted_by
+     WHERE d.deleted_at IS NOT NULL
+     ORDER BY d.deleted_at DESC
+     LIMIT 1000`);
+  const keepMs = config.TRASH_RETENTION_DAYS * 86_400_000;
+  const documents = rows.map((d) => ({ ...d, purgeAt: new Date(d.deletedAt.getTime() + keepMs) }));
+  return c.json({ documents, retentionDays: config.TRASH_RETENTION_DAYS });
 });
 
 documentRoutes.get("/:id", async (c) => {
@@ -112,7 +136,7 @@ documentRoutes.get("/:id", async (c) => {
   const [doc] = await withTenant(tenantCtx(c), (tx) => tx`
     SELECT ${tx.unsafe(DOC_FIELDS)}, d.summary, d.suggested_questions AS "suggestedQuestions",
            d.summary_model AS "summaryModel", d.summary_at AS "summaryAt"
-      FROM documents d WHERE d.id = ${id}`);
+      FROM documents d WHERE d.id = ${id} AND d.deleted_at IS NULL`);
   if (!doc) throw notFound("Documento no encontrado");
   return c.json({ document: doc });
 });
@@ -122,7 +146,9 @@ documentRoutes.get("/:id/chunks", async (c) => {
   const id = idParam(c.req.param("id"));
   const chunks = await withTenant(tenantCtx(c), (tx) => tx`
     SELECT chunk_index AS "index", heading, content, page_start AS "pageStart", page_end AS "pageEnd"
-      FROM chunks WHERE document_id = ${id} ORDER BY chunk_index LIMIT 2000`);
+      FROM chunks
+     WHERE document_id = ${id} AND NOT EXISTS (SELECT 1 FROM documents x WHERE x.id = ${id} AND x.deleted_at IS NOT NULL)
+     ORDER BY chunk_index LIMIT 2000`);
   return c.json({ chunks });
 });
 
@@ -130,7 +156,7 @@ documentRoutes.get("/:id/chunks", async (c) => {
 documentRoutes.get("/:id/file", async (c) => {
   const id = idParam(c.req.param("id"));
   const [doc] = await withTenant(tenantCtx(c), (tx) => tx<{ storage_key: string; filename: string; mime_type: string }[]>`
-    SELECT storage_key, filename, mime_type FROM documents WHERE id = ${id}`);
+    SELECT storage_key, filename, mime_type FROM documents WHERE id = ${id} AND deleted_at IS NULL`);
   if (!doc) throw notFound("Documento no encontrado");
   const data = await readStoredFile(doc.storage_key);
   return new Response(new Uint8Array(data), {
@@ -217,9 +243,9 @@ documentRoutes.post(
       const title = titleFromFilename(file.name) || filename;
 
       const inserted = await withTenant(ctx, async (tx) => {
-        const [existing] = await tx<{ id: string }[]>`
-          SELECT id FROM documents WHERE collection_id = ${collectionId} AND sha256 = ${sha256}`;
-        if (existing) return { duplicateOf: existing.id };
+        const [existing] = await tx<{ id: string; trashed: boolean }[]>`
+          SELECT id, deleted_at IS NOT NULL AS trashed FROM documents WHERE collection_id = ${collectionId} AND sha256 = ${sha256}`;
+        if (existing) return { duplicateOf: existing.id, trashed: existing.trashed };
         // Comprueba acceso a la colección (RLS ya lo impone; esto da un mensaje claro).
         const [col] = await tx`SELECT id FROM collections WHERE id = ${collectionId}`;
         if (!col) throw notFound("Colección no encontrada o sin acceso");
@@ -229,14 +255,14 @@ documentRoutes.post(
                                  sha256, storage_key, created_by)
           VALUES (${id}, ${ctx.tenantId}, ${collectionId}, ${title}, ${filename}, ${format.mime},
                   ${file.size}, ${sha256}, ${storageKey}, ${user.id})`;
-        return { duplicateOf: null };
+        return { duplicateOf: null, trashed: false };
       }).catch(async (err) => {
         await removeStored(`${ctx.tenantId}/${id}`).catch(() => {});
         throw err;
       });
 
       if (inserted.duplicateOf) {
-        results.push({ filename, id: inserted.duplicateOf, status: "duplicate", reason: "Ya existe en esta colección" });
+        results.push({ filename, id: inserted.duplicateOf, status: "duplicate", reason: inserted.trashed ? "Está en la papelera de esta colección: restáuralo desde allí" : "Ya existe en esta colección" });
         continue;
       }
       if (left !== null) left -= 1;
@@ -258,7 +284,7 @@ documentRoutes.post("/:id/summary", userRateLimit(10, 60_000, "resúmenes"), asy
   const ctx = tenantCtx(c);
   const { doc, chunks } = await withTenant(ctx, async (tx) => {
     const [d] = await tx<{ title: string; status: string; tenant_id: string }[]>`
-      SELECT title, status, tenant_id FROM documents WHERE id = ${id}`;
+      SELECT title, status, tenant_id FROM documents WHERE id = ${id} AND deleted_at IS NULL`;
     if (!d) throw notFound("Documento no encontrado");
     if (d.status !== "ready") throw badRequest("El documento todavía no está listo");
     const rows = await tx<{ heading: string; content: string }[]>`
@@ -299,7 +325,7 @@ documentRoutes.patch("/:id", requireRole("admin", "editor"), async (c) => {
   const ctx = tenantCtx(c);
   const doc = await withTenant(ctx, async (tx) => {
     const [d] = await tx<{ collection_id: string }[]>`
-      UPDATE documents SET title = ${body.title}, updated_at = now() WHERE id = ${id} RETURNING collection_id`;
+      UPDATE documents SET title = ${body.title}, updated_at = now() WHERE id = ${id} AND deleted_at IS NULL RETURNING collection_id`;
     if (d) await invalidateCollections(tx, [d.collection_id]);
     return d;
   });
@@ -336,7 +362,7 @@ documentRoutes.post("/move", requireRole("admin", "editor"), userRateLimit(20, 6
     const [to] = await tx<{ id: string; name: string }[]>`SELECT id, name FROM collections WHERE id = ${body.collectionId}`;
     if (!to) throw notFound("Colección de destino no encontrada o sin acceso");
     const docs = await tx<MoveRow[]>`
-      SELECT id, collection_id, sha256, status, title FROM documents WHERE id = ANY(${ids}::uuid[])`;
+      SELECT id, collection_id, sha256, status, title FROM documents WHERE id = ANY(${ids}::uuid[]) AND deleted_at IS NULL`;
     const known = new Set(docs.map((d) => d.id));
     const skipped: { id: string; title: string; reason: string }[] = ids
       .filter((id) => !known.has(id))
@@ -349,7 +375,7 @@ documentRoutes.post("/move", requireRole("admin", "editor"), userRateLimit(20, 6
       const reason =
         d.collection_id === to.id ? "ya está en esa colección"
         : d.status === "pending" || d.status === "processing" ? "se está procesando"
-        : inTarget.has(d.sha256) ? "ya existe ese archivo en el destino"
+        : inTarget.has(d.sha256) ? "ya existe ese archivo en el destino (o en su papelera)"
         : null;
       if (reason) {
         skipped.push({ id: d.id, title: d.title, reason });
@@ -384,7 +410,7 @@ documentRoutes.post("/move", requireRole("admin", "editor"), userRateLimit(20, 6
 async function reprocessDocuments(ctx: ReturnType<typeof tenantCtx>, ids: string[], skipBusy: boolean): Promise<number> {
   const rows = await withTenant(ctx, (tx) => tx<{ id: string }[]>`
     UPDATE documents SET status = 'pending', error = NULL, updated_at = now()
-     WHERE id = ANY(${ids}::uuid[]) AND (${!skipBusy} OR status NOT IN ('pending', 'processing'))
+     WHERE id = ANY(${ids}::uuid[]) AND deleted_at IS NULL AND (${!skipBusy} OR status NOT IN ('pending', 'processing'))
     RETURNING id`);
   for (const r of rows) await enqueueIngest({ tenantId: ctx.tenantId, documentId: r.id });
   return rows.length;
@@ -409,17 +435,108 @@ documentRoutes.post("/:id/reprocess", requireRole("admin", "editor"), async (c) 
   return c.json({ ok: true });
 });
 
+interface Removed {
+  id: string;
+  collection_id: string;
+  filename: string;
+}
+
+/**
+ * Manda documentos a la papelera: dejan de verse y de contar para el plan, pero se conservan (archivo, fragmentos y
+ * vectores) para poder restaurarlos. Con TRASH_RETENTION_DAYS=0 no hay papelera y se borran del todo.
+ */
+async function trashDocuments(ctx: ReturnType<typeof tenantCtx>, ids: string[]): Promise<Removed[]> {
+  const rows = await withTenant(ctx, async (tx) => {
+    const removed =
+      config.TRASH_RETENTION_DAYS === 0
+        ? await tx<Removed[]>`DELETE FROM documents WHERE id = ANY(${ids}::uuid[]) RETURNING id, collection_id, filename`
+        : await tx<Removed[]>`
+            UPDATE documents SET deleted_at = now(), deleted_by = ${ctx.userId}, updated_at = now()
+             WHERE id = ANY(${ids}::uuid[]) AND deleted_at IS NULL RETURNING id, collection_id, filename`;
+    await invalidateCollections(tx, [...new Set(removed.map((r) => r.collection_id))]);
+    return removed;
+  });
+  if (config.TRASH_RETENTION_DAYS === 0) await Promise.all(rows.map((r) => removeStored(`${ctx.tenantId}/${r.id}`).catch(() => {})));
+  return rows;
+}
+
+/** Elimina del todo documentos que ya están en la papelera (y sus archivos). */
+async function eraseTrashed(ctx: ReturnType<typeof tenantCtx>, ids: string[] | null): Promise<Removed[]> {
+  const rows = await withTenant(ctx, (tx) => tx<Removed[]>`
+    DELETE FROM documents
+     WHERE deleted_at IS NOT NULL AND (${ids}::uuid[] IS NULL OR id = ANY(${ids}::uuid[]))
+    RETURNING id, collection_id, filename`);
+  await Promise.all(rows.map((r) => removeStored(`${ctx.tenantId}/${r.id}`).catch(() => {})));
+  return rows;
+}
+
+const IdsBody = z.object({ ids: z.array(z.string().regex(UUID_RE)).min(1).max(200) });
+
+/** Manda varios documentos a la papelera de una vez. Deja una sola entrada en la auditoría. */
+documentRoutes.post("/bulk-delete", requireRole("admin", "editor"), userRateLimit(10, 60_000, "borrados"), async (c) => {
+  const { ids } = parse(IdsBody, await c.req.json().catch(() => ({})));
+  const unique = [...new Set(ids)];
+  const deleted = await trashDocuments(tenantCtx(c), unique);
+  if (deleted.length > 0) {
+    await audit(c, "document.bulk_deleted", {
+      targetType: "document",
+      details: { count: deleted.length, filenames: deleted.slice(0, 20).map((d) => d.filename).join(", ") },
+    });
+  }
+  return c.json({ deleted: deleted.length, notFound: unique.length - deleted.length });
+});
+
+/** Saca documentos de la papelera. Los que ya no caben en el plan (tope de documentos) se devuelven en `skipped`. */
+documentRoutes.post("/restore", requireRole("admin", "editor"), userRateLimit(10, 60_000, "restauraciones"), async (c) => {
+  const { ids } = parse(IdsBody, await c.req.json().catch(() => ({})));
+  const unique = [...new Set(ids)];
+  const ctx = tenantCtx(c);
+  const slots = await documentSlots(ctx.tenantId);
+  const restored = await withTenant(ctx, async (tx) => {
+    const trashed = await tx<{ id: string; title: string }[]>`
+      SELECT id, title FROM documents WHERE id = ANY(${unique}::uuid[]) AND deleted_at IS NOT NULL ORDER BY deleted_at DESC`;
+    const fit = slots.left === null ? trashed : trashed.slice(0, slots.left);
+    if (fit.length === 0) return { fit, trashed };
+    const rows = await tx<{ collection_id: string }[]>`
+      UPDATE documents SET deleted_at = NULL, deleted_by = NULL, updated_at = now()
+       WHERE id = ANY(${fit.map((d) => d.id)}::uuid[]) RETURNING collection_id`;
+    await invalidateCollections(tx, [...new Set(rows.map((r) => r.collection_id))]);
+    return { fit, trashed };
+  });
+  const skipped = unique.length - restored.fit.length;
+  if (restored.fit.length > 0) {
+    await audit(c, "document.restored", {
+      targetType: "document",
+      details: { count: restored.fit.length, filenames: restored.fit.slice(0, 20).map((d) => d.title).join(", ") },
+    });
+  }
+  const noRoom = restored.trashed.length - restored.fit.length;
+  return c.json({
+    restored: restored.fit.length,
+    skipped,
+    reason: noRoom > 0 ? `Tu plan permite hasta ${slots.max} documentos: libera espacio para restaurar el resto.` : null,
+  });
+});
+
+const PurgeBody = z.union([IdsBody, z.object({ all: z.literal(true) })]);
+
+/** Elimina definitivamente (archivo incluido) documentos de la papelera, o toda la papelera con `all`. Solo administradores. */
+documentRoutes.post("/purge", requireRole("admin"), userRateLimit(10, 60_000, "eliminaciones"), async (c) => {
+  const body = parse(PurgeBody, await c.req.json().catch(() => ({})));
+  const erased = await eraseTrashed(tenantCtx(c), "ids" in body ? [...new Set(body.ids)] : null);
+  if (erased.length > 0) {
+    await audit(c, "document.purged", {
+      targetType: "document",
+      details: { count: erased.length, filenames: erased.slice(0, 20).map((d) => d.filename).join(", ") },
+    });
+  }
+  return c.json({ purged: erased.length });
+});
+
 documentRoutes.delete("/:id", requireRole("admin", "editor"), async (c) => {
   const id = idParam(c.req.param("id"));
-  const ctx = tenantCtx(c);
-  const doc = await withTenant(ctx, async (tx) => {
-    const [d] = await tx<{ collection_id: string; filename: string }[]>`
-      DELETE FROM documents WHERE id = ${id} RETURNING collection_id, filename`;
-    if (d) await invalidateCollections(tx, [d.collection_id]);
-    return d;
-  });
+  const [doc] = await trashDocuments(tenantCtx(c), [id]);
   if (!doc) throw notFound("Documento no encontrado");
-  await removeStored(`${ctx.tenantId}/${id}`);
   await audit(c, "document.deleted", { targetType: "document", targetId: id, details: { filename: doc.filename } });
   return c.json({ ok: true });
 });

@@ -17,7 +17,7 @@ const slug = arg && !onlyFailed ? arg : null;
 
 const docs = await sqlOwner<{ id: string; tenant_id: string }[]>`
   SELECT d.id, d.tenant_id FROM documents d JOIN tenants t ON t.id = d.tenant_id
-   WHERE (${slug}::text IS NULL OR t.slug = ${slug})
+   WHERE d.deleted_at IS NULL AND (${slug}::text IS NULL OR t.slug = ${slug})
      AND (${onlyFailed} = false OR d.status = 'failed')`;
 
 for (const d of docs) {
