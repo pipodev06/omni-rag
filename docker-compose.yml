@@ -32,6 +32,11 @@ services:
     restart: unless-stopped
     # Lotes de 4096 tokens: misma calidad, ~2,3 GB de RAM en vez de ~3,2 GB.
     command: ["--model-id", "${EMBEDDING_MODEL:-intfloat/multilingual-e5-base}", "--max-batch-tokens", "4096", "--max-client-batch-size", "32"]
+    # Recursos (los calcula deploy/autotune.sh según el hardware; 0 / 1024 = sin límite y peso normal).
+    # Limitar la CPU también reduce la memoria del modelo (~0,2 GB menos por núcleo que no usa).
+    cpus: ${EMBEDDINGS_CPUS:-0}
+    cpu_shares: ${EMBEDDINGS_CPU_SHARES:-1024}
+    mem_limit: ${EMBEDDINGS_MEM_LIMIT:-0}
     volumes:
       - hf-cache:/data # el modelo se descarga una sola vez
     ports:
@@ -44,6 +49,10 @@ services:
     image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.8
     restart: unless-stopped
     command: ["--model-id", "${RERANKER_MODEL:-cross-encoder/mmarco-mMiniLMv2-L12-H384-v1}", "--max-batch-tokens", "4096", "--max-client-batch-size", "32"]
+    # Recursos (ver deploy/autotune.sh). Pasados los núcleos reales casi no gana velocidad y sí memoria.
+    cpus: ${RERANKER_CPUS:-0}
+    cpu_shares: ${RERANKER_CPU_SHARES:-1024}
+    mem_limit: ${RERANKER_MEM_LIMIT:-0}
     volumes:
       - hf-cache:/data
     deploy:
@@ -59,6 +68,12 @@ services:
       DOCLING_SERVE_ENG_LOC_NUM_WORKERS: ${DOCLING_WORKERS:-1}
       DOCLING_SERVE_MAX_DOCUMENT_TIMEOUT: ${DOCLING_TIMEOUT_SECONDS:-900}
       DOCLING_SERVE_ENABLE_UI: "false"
+    # Recursos (ver deploy/autotune.sh). Si la memoria se agota, el sistema cierra este servicio antes que a los modelos
+    # de búsqueda o a otros contenedores del servidor (oom_score_adj alto).
+    cpus: ${DOCLING_CPUS:-0}
+    cpu_shares: ${DOCLING_CPU_SHARES:-1024}
+    mem_limit: ${DOCLING_MEM_LIMIT:-0}
+    oom_score_adj: ${DOCLING_OOM_SCORE_ADJ:-0}
     # Procesa archivos de usuarios (no confiables): red interna, sin salida a internet
     # ni acceso a la base de datos. Solo el worker puede hablar con él.
     networks: [ingest]
@@ -120,6 +135,8 @@ services:
       dockerfile: apps/api/Dockerfile
     restart: unless-stopped
     command: ["node", "dist/worker.js"]
+    # Peso de CPU (ver deploy/autotune.sh): la ingesta cede CPU a las búsquedas y a otros servicios si hay competencia.
+    cpu_shares: ${WORKER_CPU_SHARES:-1024}
     env_file: .env
     environment: *backend-env
     volumes:
