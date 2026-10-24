@@ -107,7 +107,7 @@ export function ConversationList({ activeId, onSelect }: { activeId?: string; on
                     <EllipsisVertical />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
+                <DropdownMenuContent side="right" align="start" sideOffset={8}>
                   <DropdownMenuItem onSelect={() => setRenaming(c)}>
                     <Pencil /> Renombrar
                   </DropdownMenuItem>
