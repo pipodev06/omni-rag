@@ -491,6 +491,22 @@ Ejecuta **un escenario a la vez** y no lo apuntes a producción en horas de uso:
 - **Varias búsquedas a la vez:** el re-ranking se atiende ahora **en fila** (`RERANK_PARALLEL=1`) en vez de todas a la vez. Con 6 preguntas simultáneas: antes la media era 13,2 s y **4 de las 6 agotaban el tiempo de espera** (15 s) y se quedaban sin re-ranking, es decir, con peores resultados sin que nadie lo notara; ahora la media es 8,3 s, la primera termina a los 2,5 s en vez de a los 8 s y ninguna se pierde. Con 4 simultáneas, la media pasa de 7,6 a 6,1 s.
 - **Memoria:** en la prueba, los modelos de embeddings (2,9 GB) y de re-ranking (2,5 GB) ocupaban 5,4 de los 7,6 GB disponibles, y Docling puede necesitar otros 3 GB al convertir un PDF grande. Con menos de 8 GB de RAM para Docker conviene desactivar el re-ranking o procesar documentos de uno en uno (ver [requisitos.md](requisitos.md)).
 
+### Medición en un servidor compartido, antes y después del autoajuste
+
+Servidor real: Intel i7-8700T (6 núcleos, 12 hilos), 14 GB de RAM, NVMe, con otros 16 contenedores (Nextcloud, Rocket.Chat, Immich, Jellyfin…). Escenario `busqueda`, 4 usuarios, 20 s por prueba, 0 errores en todas.
+
+| Búsquedas a la vez | Sin límites (12 hilos por modelo) | Con `deploy/autotune.sh` (4 CPU por modelo) | Cambio |
+|---|---|---|---|
+| 1 | 1.142 ms | **728 ms** | −36 % |
+| 4 | 4.870 ms | **2.707 ms** | −44 % |
+| 8 | 7.836 ms | **5.358 ms** | −32 % |
+| Búsquedas por segundo | 0,8 a 1,0 | **1,4 a 1,5** | +50 a 70 % |
+
+- **Memoria:** el re-ranker y los embeddings pasaron de 3,5 + 4,1 GB a 1,6 + 2,3 GB; la memoria disponible subió de 5,2 a 6,2 GB y el swap en uso bajó de 2,8 GB a 0,13 GB. Ninguno superó el 70 % de su límite ni se reinició.
+- **Por qué mejora:** sin límite, cada modelo abre un hilo por CPU lógica (12) sobre 6 núcleos reales: los hilos compiten entre sí y con los demás contenedores, y cada hilo reserva ~0,2 GB. Con los límites, trabajan sin estorbarse. Además, con `swappiness=10` los modelos dejan de pasar al swap.
+- **Capacidad estimada:** unas 1,5 búsquedas por segundo (~90 al minuto). Como la respuesta del modelo de lenguaje tarda varios segundos más y el servidor no gasta CPU mientras espera, equivale a unos 60 a 80 usuarios conversando de forma activa. Es una estimación, no una medición con usuarios reales.
+- **Matiz:** las dos series se midieron con unos minutos de diferencia y con la carga de los demás servicios en su estado habitual; sirven como orden de magnitud, no como cifras exactas.
+
 ## Registros estructurados
 
 Los registros de la API y del worker son **una línea JSON por evento** (`LOG_FORMAT=json`, por defecto): hora, nivel (`info`/`warn`/`error`), mensaje, `component` (`api`, `llm`, `ingest`, `monitor`…) y, si procede, el error con su traza. Cada petición HTTP deja una línea `http` con método, ruta, estado, duración en milisegundos, IP y, con sesión, `userId` y `tenantId`; no se guarda la query ni el cuerpo. Todas las líneas generadas durante una petición llevan su `requestId`, que el cliente también recibe en la cabecera `X-Request-Id` (y en el cuerpo de los errores 500): si alguien reporta un fallo, con ese código se encuentra todo lo que pasó.
