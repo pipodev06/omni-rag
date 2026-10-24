@@ -218,6 +218,10 @@ curl -s localhost:8000/api/search -H "authorization: Bearer $TOKEN" -H 'content-
 | `CHUNK_SIZE_CHARS` | `1200` | Tamaño de los fragmentos. El modelo E5 lee como máximo 512 tokens (unos 1.800 caracteres en español), así que no conviene superar ~1.500. |
 | `FTS_LANGUAGE` | `spanish` | Idioma de la búsqueda por palabras (raíces, palabras vacías). Cambiarlo requiere una migración nueva. |
 
+## Mayúsculas y minúsculas
+
+Iniciar sesión, la caché de respuestas, la búsqueda por palabras y la búsqueda de conversaciones ignoran las mayúsculas. La búsqueda **semántica** (embeddings y re-ranker) sí las distingue: una pregunta en MAYÚSCULAS encontraba otros fragmentos que la misma en minúsculas (medido: en una prueba solo coincidían 3 de 6, y a veces aparecía uno sin relación). Por eso una pregunta escrita casi toda en mayúsculas (70 % de sus letras o más) se busca en minúsculas. Un texto normal, con siglas o nombres propios («¿Qué dice el contrato con la SUNAT?»), no se toca, y el modelo de lenguaje siempre recibe la pregunta tal como se escribió.
+
 ## Re-ranking
 
 El servicio `reranker` reordena los candidatos de la búsqueda con un modelo *cross-encoder* (lee pregunta y fragmento juntos). Es la mejora de calidad más importante, pero usa ~1,9 GB de RAM y ~0,6 s por pregunta en CPU.
