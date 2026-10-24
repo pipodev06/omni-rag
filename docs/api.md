@@ -19,7 +19,7 @@ Base: `http://localhost:8000/api` (a través de nginx) o `http://localhost:3001/
 |---|---|---|---|
 | POST | `/auth/login` | `{ login, password }` (`login` = usuario o email; también se acepta `email`) | `{ token, user }` + cookie. Máx. 10 intentos / 15 min por IP y usuario. |
 | POST | `/auth/logout` | — | Cierra la sesión: la marca como cerrada en el servidor (el token deja de valer) y borra la cookie |
-| GET | `/auth/me` | — | `{ user, tenant, support, mfaSetupRequired }`. `support` = `{ name, username }` del superadministrador si la sesión es de soporte, o `null` |
+| GET | `/auth/me` | — | `{ user, tenant, support, mfaSetupRequired }`. `tenant` = `{ name, slug, isPlatform }`: `isPlatform` es `true` para la organización interna «Plataforma», donde vive el superadministrador. `support` = `{ name, username }` del superadministrador si la sesión es de soporte, o `null` |
 | POST | `/auth/exit-support` | — | Sale del modo soporte y vuelve a la sesión del superadministrador: `{ token, user }` + cookie |
 | POST | `/auth/change-password` | `{ newPassword, code? }` | `{ ok }` (mín. 10 caracteres). No pide la contraseña anterior; con 2FA activo exige `code` (TOTP o de recuperación). Cierra las demás sesiones |
 | GET | `/auth/config` | — | `{ emailEnabled }` (si hay SMTP configurado) |
@@ -161,7 +161,7 @@ curl localhost:8000/api/documents -H "authorization: Bearer $TOKEN" \
 
 | Método | Ruta | Cuerpo |
 |---|---|---|
-| GET | `/platform/tenants` | → `{ tenants: [{ id, name, slug, isActive, dailyQuestionLimit, planId, planName, planDailyQuestionLimit, users, documents, questions30d, createdAt }] }`. `dailyQuestionLimit` es la excepción puntual (`null` = rige el plan) |
+| GET | `/platform/tenants` | → las organizaciones de clientes (la interna «Plataforma» no se lista) `{ tenants: [{ id, name, slug, isActive, dailyQuestionLimit, planId, planName, planDailyQuestionLimit, users, documents, questions30d, createdAt }] }`. `dailyQuestionLimit` es la excepción puntual (`null` = rige el plan) |
 | GET | `/platform/plans` | → `{ plans: [{ id, name, description, llmModels, dailyQuestionLimit, userDailyQuestionLimit, maxUsers, maxDocuments, isDefault, tenants }] }` |
 | POST | `/platform/plans` | `{ name, description?, llmModels[], dailyQuestionLimit, userDailyQuestionLimit\|null, maxUsers\|null, maxDocuments\|null }` → `{ id }` |
 | PUT | `/platform/plans/:id` | Mismo cuerpo: reemplaza el plan. En este y en el POST, cada modelo de `llmModels` debe existir en el catálogo público de OpenRouter (`400` con los nombres que no existen); si el catálogo no responde, no se bloquea |
@@ -169,7 +169,7 @@ curl localhost:8000/api/documents -H "authorization: Bearer $TOKEN" \
 | DELETE | `/platform/plans/:id` | `409` si lo usa alguna organización; no se puede borrar el plan por defecto |
 | POST | `/platform/tenants` | `{ name, slug, dailyQuestionLimit?, planId?, admin: { username, email?, name, password? } }` → crea la organización, su admin y la colección "General". Sin `password`, el admin recibe una invitación (`inviteUrl`, `emailSent`) |
 | POST | `/platform/tenants/:id/enter` | — → entra en la organización como soporte (rol admin) y cambia la cookie de sesión. Queda en su auditoría (`support.entered`) |
-| DELETE | `/platform/tenants/:id` | `{ confirmSlug }`: borra la organización y todos sus datos. Exige que esté desactivada y que `confirmSlug` coincida con su identificador |
+| DELETE | `/platform/tenants/:id` | `{ confirmSlug }`: borra la organización y todos sus datos. Exige que esté desactivada y que `confirmSlug` coincida con su identificador. «Plataforma» no se puede modificar, desactivar ni borrar (`400`), ni tampoco la organización en la que estás (sal del modo soporte antes) |
 | PATCH | `/platform/tenants/:id` | `{ name?, slug?, isActive?, dailyQuestionLimit?, planId? }` (`dailyQuestionLimit`: `null` = el del plan, `0` = sin límite) |
 
 ## Auditoría — `/audit` (admin)

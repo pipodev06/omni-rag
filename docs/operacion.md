@@ -416,11 +416,26 @@ Cierra todas las sesiones abiertas de ese usuario y deja constancia en su audito
 
 ## Cambiar el nombre o el identificador de una organización
 
-**Organizaciones → ⋮ → Renombrar** (cambia el nombre y el identificador). `SEED_TENANT_NAME` y `SEED_TENANT_SLUG` del `.env` solo dan los valores iniciales (primer arranque); después se cambian aquí. El identificador (`slug`) es el nombre técnico: minúsculas, números y guiones, único. Solo se muestra y se pide para confirmar un borrado; no aparece en URLs ni en rutas de archivos, así que cambiarlo no afecta a usuarios ni documentos.
+**Organizaciones → ⋮ → Renombrar** (cambia el nombre y el identificador). El identificador (`slug`) es el nombre técnico: minúsculas, números y guiones, único. Solo se muestra y se pide para confirmar un borrado; no aparece en URLs ni en rutas de archivos, así que cambiarlo no afecta a usuarios ni documentos.
 
 ## Entrar en una organización como soporte
 
-El superadministrador puede ver y gestionar cualquier organización con su propio usuario: **Organizaciones → ⋮ → Entrar como soporte**. Arriba aparece un aviso con **Volver a mi organización**. Se entra con permisos de administrador y queda registrado en la auditoría del cliente (categoría *Soporte*). Detalles en [permisos.md](permisos.md#acceso-de-soporte-del-superadministrador).
+El superadministrador puede ver y gestionar cualquier organización con su propio usuario: **Organizaciones → ⋮ → Entrar como soporte**. Arriba aparece un aviso con **Volver a Plataforma**. Se entra con permisos de administrador y queda registrado en la auditoría del cliente (categoría *Soporte*). Detalles en [permisos.md](permisos.md#acceso-de-soporte-del-superadministrador).
+
+## La organización «Plataforma» (dónde vive el superadministrador)
+
+El superadministrador es el dueño de la plataforma, no parte de un cliente. Por eso su cuenta vive en una organización **interna** llamada «Plataforma» (`tenants.is_platform`): no aparece en la lista de Organizaciones, no cuenta en los totales ni en la facturación y **no se puede desactivar ni borrar**. Todas las organizaciones de clientes, incluida la primera, se pueden borrar (desactivada y escribiendo su identificador). Desde Plataforma solo se ven **Organizaciones** y **Mi cuenta**; para trabajar dentro de un cliente se usa «Entrar como soporte».
+
+En una instalación nueva, el primer arranque crea solo el superadministrador en Plataforma: **ninguna organización de cliente se crea sola**. La primera la creas tú en *Organizaciones → Nueva organización*, con el nombre que quieras.
+
+**Si tu superadministrador ya vivía en una organización** (instalaciones anteriores), esa organización no se podrá borrar mientras tu cuenta esté dentro. Para moverla a Plataforma:
+
+```bash
+docker compose exec api node dist/scripts/move-superadmin.js [usuario]               # muestra qué pasaría; no cambia nada
+docker compose exec api node dist/scripts/move-superadmin.js [usuario] --confirmar   # lo hace
+```
+
+Conserva usuario, correo, nombre, contraseña y verificación en dos pasos. **Se pierden** el historial de chat y las valoraciones de esa cuenta en su organización de origen, y las cuentas de soporte en otras organizaciones (se recrean solas al entrar como soporte). Hay que iniciar sesión de nuevo. No se hace solo al actualizar: si no lo ejecutas, nada cambia. Después, la organización de origen es una más: la puedes desactivar y borrar.
 
 ## Auditoría
 

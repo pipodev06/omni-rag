@@ -78,7 +78,7 @@ Si el build falla con `EAI_AGAIN registry.npmjs.org` (el DNS del servidor es sol
 
 Al arrancar, la API:
 1. aplica las migraciones de la base de datos (crea tablas, políticas y el usuario `rag_app`);
-2. si no hay usuarios, crea la organización inicial y tu superadministrador.
+2. si no hay usuarios, crea tu superadministrador en la organización interna «Plataforma» (no es un cliente y no se puede borrar).
 
 El servicio de embeddings descarga el modelo (~1 GB) la primera vez. Comprueba que todo responde:
 
@@ -91,8 +91,8 @@ curl http://localhost:8000/api/health
 
 1. Abre <http://localhost:8000> y entra con `SEED_ADMIN_USERNAME` / `SEED_ADMIN_PASSWORD`.
 2. **Mi cuenta:** cambia la contraseña inicial.
-3. **Organizaciones:** crea una organización por cliente, indicando su administrador. Pásale sus credenciales.
-4. Como administrador de cada organización (o con tu propia organización):
+3. **Organizaciones:** crea una organización por cliente (también la tuya para probar), con el nombre que quieras y su administrador. Pásale sus credenciales. Entras en cualquiera con «Entrar como soporte»; tu cuenta no pertenece a ninguna.
+4. Como administrador de cada organización (o entrando como soporte):
    - **Documentos → + Nueva colección** (ya existe una llamada *General*).
    - Arrastra archivos. Un PDF de pocas páginas tarda segundos; uno escaneado y largo, minutos.
    - **Usuarios → + Nuevo usuario:** elige el rol y sus colecciones.
