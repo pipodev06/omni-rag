@@ -426,6 +426,37 @@ El superadministrador puede ver y gestionar cualquier organización con su propi
 
 Página **Auditoría** (administradores): inicios de sesión (también los fallidos), invitaciones, cambios de rol y de acceso, documentos subidos/borrados, resúmenes, vaciados de caché, organizaciones… con fecha, usuario, detalles e IP. Se conserva `AUDIT_RETENTION_DAYS` días (365).
 
+## Autoajuste de recursos
+
+`deploy/autotune.sh` detecta el hardware (RAM, hilos, núcleos, swap) y los **demás contenedores del servidor**, y calcula cuánta CPU y memoria puede usar Omni RAG sin ahogarlos. Úsalo al instalar, al cambiar de máquina (por ejemplo, de un servidor de 16 GB a un VPS de 8 GB) o cuando añadas o quites otros servicios.
+
+```bash
+bash deploy/autotune.sh                            # solo muestra la propuesta; no cambia nada
+bash deploy/autotune.sh --aplicar                  # la escribe en el .env (copia en .env.bak-autotune)
+docker compose up -d                               # aplica el bloque
+bash deploy/autotune.sh --simular=ram=8,hilos=4    # qué haría con otro hardware, sin tenerlo (más opciones: nucleos, swap, otros)
+bash deploy/autotune.sh --quitar                   # vuelve a «sin límites»
+```
+
+**Cómo decide**
+- **Modo compartido** (hay otros contenedores): descuenta lo que usan, con un 25 % de holgura, y deja libres parte de los núcleos (el re-ranker y los embeddings usan unos dos tercios de los núcleos reales, Docling la mitad). **Modo dedicado** (nada más corre ahí): usa los núcleos reales, hasta 6 por servicio.
+- Reparte la memoria **por prioridad**: primero los modelos de búsqueda y la base de datos, que es lo que el usuario nota al preguntar; a Docling, lo que sobre (entre 1,5 y 3,8 GB). Si falta, baja primero la CPU de los embeddings (solo importa al ingerir) y después la del re-ranker. **El re-ranker se mantiene**: solo se desactiva con `--sin-reranker`, y nunca solo.
+- Da menos peso de CPU a la ingesta de documentos (Docling y el worker) que a las búsquedas, y menos a Omni RAG que a los demás servicios cuando hay competencia. Si el servidor está libre, usan todo lo que necesiten.
+- Marca a Docling para que, si el sistema se queda sin memoria, se cierre **él** antes que los modelos o que otros contenedores.
+
+**Por qué limitar la CPU casi no cuesta velocidad.** Medido con el re-ranker de 20 fragmentos (equipo de 8 hilos): 2 CPU, 2,4 s y 1,3 GiB · 4 CPU, 2,0 s y 1,7 GiB · 6 CPU, 1,85 s y 2,05 GiB · sin límite (8 hilos), 2,15 s y 2,5 GiB. Pasados los núcleos reales no se gana velocidad, solo memoria: cada hilo extra cuesta unos 0,2 GiB. Por eso el autoajuste fija CPU y no deja que los modelos tomen todos los hilos de la máquina.
+
+**Qué no hace.** No lee ni muestra el contenido del `.env` (solo escribe su bloque entre las marcas `# >>> autotune` y `# <<< autotune`; las variables del bloque ganan sobre las mismas escritas antes). No cambia el sistema: si hace falta swap o bajar el `swappiness`, solo te dice los comandos. La memoria de los demás contenedores es una medida del momento: ejecútalo cuando estén en su uso normal.
+
+Ejemplos de lo que propone (verifícalo con `--simular`):
+
+| Máquina | Modo | Re-ranker | Embeddings | Docling |
+|---|---|---|---|---|
+| 14 GB, 6 núcleos / 12 hilos, con otros 2,3 GB de servicios | compartido | 4 CPU | 4 CPU | hasta 3,8 GB y 3 CPU |
+| 16 GB, 6 núcleos / 12 hilos, sin otros servicios | dedicado | 6 CPU | 6 CPU | hasta 3,8 GB |
+| 8 GB, 4 vCPU, sin otros servicios | dedicado | 2 CPU | 1 CPU | hasta 2,5 GB (avisa de que un PDF muy grande puede fallar) |
+| 4 GB, 2 vCPU | dedicado | avisa de que **no cabe** | | |
+
 ## Prueba de carga
 
 `deploy/loadtest.mjs` (Node 18+, sin dependencias) mide cuántas peticiones por segundo aguanta la aplicación y cuánto tarda el 50 %, el 95 % y el 99 % de ellas, con varios usuarios a la vez. Escenarios: `web` (archivos estáticos, sin sesión), `lectura` (lo que hace la interfaz al navegar) y `busqueda` (búsqueda híbrida con embeddings y re-ranking; no llama al modelo de lenguaje, así que no gasta cupo).

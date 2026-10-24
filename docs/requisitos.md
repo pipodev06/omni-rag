@@ -50,6 +50,12 @@ RERANKER_REPLICAS=1
 
 Los perfiles se cambian **solo en `.env`**, sin tocar código: `docker compose up -d`.
 
+## La memoria depende de los hilos (medido)
+
+Los modelos de búsqueda reservan memoria por hilo de CPU: unos **0,2 GB por hilo**. Medido en un i7-8700T (6 núcleos, 12 hilos) con todo en marcha: embeddings 4,1 GB y re-ranker 3,5 GB, frente a 2,4 y 1,7 GB con 4 núcleos. Si no se limita, en una máquina con muchos hilos los modelos ocupan más de lo necesario y sin ir más rápido. `deploy/autotune.sh` calcula los límites según tu hardware y los demás contenedores del servidor (ver [operacion.md](operacion.md#autoajuste-de-recursos)); con `--simular=ram=8,hilos=4` ves qué haría en otro servidor antes de migrar.
+
+Fórmulas usadas (re-ranker y embeddings, por CPU asignada): `re-ranker ≈ 950 + 205·CPU MB` · `embeddings ≈ 1550 + 215·CPU MB`.
+
 ## Disco
 
 | Concepto | Tamaño |

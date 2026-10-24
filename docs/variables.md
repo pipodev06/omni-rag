@@ -92,6 +92,17 @@ Para ver qué modelos funcionan con tus claves: `docker compose exec -T api node
 | `CACHE_ENABLED`, `CACHE_TTL_HOURS`, `CACHE_MAX_DISTANCE` | `true`, `168`, `0.015` | Caché de respuestas a preguntas repetidas | up |
 | `CLAMAV_HOST`, `CLAMAV_PORT`, `CLAMAV_TIMEOUT_SECONDS`, `CLAMAV_MAX_SIZE` | vacío, `3310`, `60`, `100M` | Antivirus opcional (perfil `antivirus`, host `clamav`). `CLAMAV_MAX_SIZE` debe superar `MAX_UPLOAD_MB` | up |
 
+### Reparto de recursos (los calcula `deploy/autotune.sh`)
+
+Límites de CPU y memoria de los servicios pesados, para no ahogar a otros contenedores del servidor. Vacíos o en su valor por defecto = sin límite (como antes). No hace falta escribirlos a mano: `bash deploy/autotune.sh --aplicar` los calcula según el hardware y los deja en un bloque del `.env` (ver [operacion.md](operacion.md#autoajuste-de-recursos)).
+
+| Variable | Por defecto | Qué hace | Aplica |
+|---|---|---|---|
+| `RERANKER_CPUS`, `EMBEDDINGS_CPUS`, `DOCLING_CPUS` | `0` (sin límite) | Máximo de CPU que puede usar cada servicio (admite decimales: `2.5`). Limitarla también baja su memoria (~0,2 GB por CPU) | up |
+| `RERANKER_MEM_LIMIT`, `EMBEDDINGS_MEM_LIMIT`, `DOCLING_MEM_LIMIT` | `0` (sin límite) | Memoria máxima (`2478m`, `3g`). Si un servicio la supera, se reinicia solo él y no el resto | up |
+| `RERANKER_CPU_SHARES`, `EMBEDDINGS_CPU_SHARES`, `DOCLING_CPU_SHARES`, `WORKER_CPU_SHARES` | `1024` | Peso de CPU frente a los demás contenedores (1024 = igual que el resto). Solo importa cuando hay competencia | up |
+| `DOCLING_OOM_SCORE_ADJ` | `0` | Con valor alto (`500`), si el servidor se queda sin memoria, el sistema cierra primero a Docling | up |
+
 ## Retención, copias de seguridad y alertas
 
 | Variable | Por defecto | Qué hace | Aplica |
