@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildMessages, citedSources, formatContext, formatPages, retrievalQuery, SYSTEM_PROMPT } from "../src/rag/prompt.js";
+import { buildMessages, citedSources, formatContext, foldShouting, formatPages, retrievalQuery, SYSTEM_PROMPT } from "../src/rag/prompt.js";
 
 const chunk = { documentTitle: "Contrato", heading: "Plazos", content: "4 horas.", pageStart: 2, pageEnd: 3 };
 
@@ -40,5 +40,23 @@ describe("prompt", () => {
 
   it("detecta las citas usadas", () => {
     expect([...citedSources("Dato [1] y otro [3][1]. Año [2024] no.")].sort()).toEqual([1, 3]);
+  });
+});
+
+describe("foldShouting (preguntas en mayúsculas)", () => {
+  it("pasa a minúsculas un texto escrito casi todo en mayúsculas", () => {
+    expect(foldShouting("CUÁLES SON LOS REQUISITOS DE LA EVALUACIÓN FINAL")).toBe("cuáles son los requisitos de la evaluación final");
+    expect(foldShouting("ARQUITECTURA EMPRESARIAL TOGAF")).toBe("arquitectura empresarial togaf");
+  });
+
+  it("no toca textos normales ni siglas dentro de una frase", () => {
+    expect(foldShouting("¿Qué dice el contrato con la SUNAT sobre el plazo?")).toBe("¿Qué dice el contrato con la SUNAT sobre el plazo?");
+    expect(foldShouting("Qué es TOGAF")).toBe("Qué es TOGAF");
+    expect(foldShouting("OK")).toBe("OK"); // demasiado corto para decidir
+  });
+
+  it("la búsqueda de una pregunta de seguimiento también se normaliza", () => {
+    const history = [{ role: "user" as const, content: "CUÁNTO CUESTA EL PLAN" }];
+    expect(retrievalQuery("Y EL ANUAL", history)).toBe("cuánto cuesta el plan\ny el anual");
   });
 });

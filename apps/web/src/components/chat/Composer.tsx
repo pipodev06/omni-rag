@@ -1,7 +1,8 @@
-import type { KeyboardEvent, RefObject } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 import { ArrowUp, ListFilter, Square, X } from "lucide-react";
 import type { Collection } from "@/api";
 import { FileTypeIcon } from "@/components/common";
+import { nextHistoryIndex } from "@/lib/promptHistory";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -83,11 +84,45 @@ export function Composer(props: {
   documentFilter: { title?: string; filename?: string } | null;
   onOpenDocument: () => void;
   onClearDocument: () => void;
+  /** Preguntas anteriores, de la más antigua a la más reciente, para recuperarlas con ↑ y ↓. */
+  history: string[];
 }) {
+  // Posición en el historial (null = escribiendo un texto propio) y el borrador que se tenía antes de pulsar ↑.
+  const [histIndex, setHistIndex] = useState<number | null>(null);
+  const draft = useRef("");
+  useEffect(() => {
+    if (props.value === "") setHistIndex(null); // se envió o se borró todo
+  }, [props.value]);
+
+  const showHistory = (index: number | null) => {
+    setHistIndex(index);
+    const text = index === null ? draft.current : (props.history[index] ?? "");
+    props.onChange(text);
+    requestAnimationFrame(() => props.textareaRef.current?.setSelectionRange(text.length, text.length));
+  };
+
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+    if (e.nativeEvent.isComposing) return;
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       props.onSend();
+      return;
+    }
+    // ↑ / ↓ recorren las preguntas anteriores, pero solo si el cursor está en la primera / última línea: en un texto de
+    // varias líneas siguen moviendo el cursor como siempre.
+    if ((e.key !== "ArrowUp" && e.key !== "ArrowDown") || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return;
+    const el = e.currentTarget;
+    if (el.selectionStart !== el.selectionEnd || props.history.length === 0) return;
+    if (e.key === "ArrowUp") {
+      const firstLine = !el.value.slice(0, el.selectionStart).includes("\n");
+      if (firstLine && (props.value === "" || histIndex !== null || el.selectionStart === 0)) {
+        e.preventDefault();
+        if (histIndex === null) draft.current = props.value;
+        showHistory(nextHistoryIndex(props.history.length, histIndex, "up"));
+      }
+    } else if (histIndex !== null && !el.value.slice(el.selectionEnd).includes("\n")) {
+      e.preventDefault();
+      showHistory(nextHistoryIndex(props.history.length, histIndex, "down"));
     }
   };
 
@@ -102,7 +137,10 @@ export function Composer(props: {
           <Textarea
             ref={props.textareaRef}
             value={props.value}
-            onChange={(e) => props.onChange(e.target.value)}
+            onChange={(e) => {
+              props.onChange(e.target.value);
+              setHistIndex(null); // si edita lo recuperado, deja de recorrer el historial
+            }}
             onKeyDown={onKeyDown}
             placeholder="Escribe tu pregunta…"
             rows={1}

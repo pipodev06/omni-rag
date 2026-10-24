@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { History, Loader2, Plus } from "lucide-react";
@@ -9,6 +9,7 @@ import { useChatSuggestions } from "@/hooks/useChatSuggestions";
 import { SidebarSlot } from "@/components/AppLayout";
 import { AssistantMessage, UserMessage } from "@/components/chat/ChatMessage";
 import { messageKey } from "@/lib/messages";
+import { loadHistory, mergeHistory, rememberPrompt } from "@/lib/promptHistory";
 import { ChatWelcome } from "@/components/chat/ChatWelcome";
 import { Composer } from "@/components/chat/Composer";
 import { QuotaBanner } from "@/components/chat/QuotaBanner";
@@ -105,6 +106,12 @@ export function ChatPage() {
     if (!conversationId) setDocFilter(null);
   });
 
+  // Preguntas anteriores para ↑ ↓: las guardadas en este navegador más los mensajes de la conversación abierta.
+  const history = useMemo(
+    () => mergeHistory(loadHistory(user.id), messages.filter((m) => m.role === "user").map((m) => m.content)),
+    [messages, user.id],
+  );
+
   const { data: collectionsData } = useQuery({
     queryKey: ["collections"],
     queryFn: () => api.get<{ collections: Collection[] }>("/collections"),
@@ -133,6 +140,7 @@ export function ChatPage() {
   const send = async (text?: string) => {
     const question = (text ?? input).trim();
     if (!question || busy) return;
+    rememberPrompt(user.id, question);
     setInput("");
     setBusy(true);
     setMessages((prev) => [
@@ -244,6 +252,7 @@ export function ChatPage() {
         documentFilter={docFilter ? { title: filterDoc?.title, filename: filterDoc?.filename } : null}
         onOpenDocument={() => docFilter && openDocument({ documentId: docFilter })}
         onClearDocument={() => setDocFilter(null)}
+        history={history}
       />
     </div>
   );

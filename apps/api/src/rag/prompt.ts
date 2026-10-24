@@ -96,14 +96,26 @@ export function buildMessages(question: string, chunks: ContextChunk[], history:
 }
 
 /**
+ * Pasa a minúsculas un texto escrito casi todo en MAYÚSCULAS. El modelo de embeddings y el re-ranker distinguen mayúsculas: «CUÁLES
+ * SON LOS REQUISITOS» encontraba otros fragmentos (y alguno sin relación) que «cuáles son los requisitos». Un texto normal, con
+ * siglas o nombres propios, no se toca. Solo se usa para buscar; el modelo de lenguaje recibe la pregunta tal como se escribió.
+ */
+export function foldShouting(text: string): string {
+  const letters = text.match(new RegExp(String.raw`\p{L}`, "gu")) ?? [];
+  if (letters.length < 4) return text;
+  const upper = letters.filter((l) => l === l.toUpperCase() && l !== l.toLowerCase()).length;
+  return upper / letters.length >= 0.7 ? text.toLowerCase() : text;
+}
+
+/**
  * Texto que se usa para buscar. Si la pregunta es corta y hay historial
  * (p. ej. "¿y cuánto cuesta?"), se le añade la pregunta anterior del usuario
- * para que la búsqueda tenga contexto.
+ * para que la búsqueda tenga contexto. Un texto en MAYÚSCULAS se pasa a minúsculas (ver foldShouting).
  */
 export function retrievalQuery(question: string, history: ChatMessage[]): string {
   const previous = [...history].reverse().find((m) => m.role === "user");
-  if (previous && question.trim().length < 80) return `${previous.content}\n${question}`;
-  return question;
+  if (previous && question.trim().length < 80) return foldShouting(`${previous.content}\n${question}`);
+  return foldShouting(question);
 }
 
 /** Números de fuente citados en una respuesta, p. ej. "[1] … [3]" → {1, 3}. */

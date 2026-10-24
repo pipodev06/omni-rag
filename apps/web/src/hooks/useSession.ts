@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { api, ApiError, type Session } from "@/api";
+import { clearPromptHistory } from "@/lib/promptHistory";
 
 /** Sesión actual. `data === null` significa "no ha iniciado sesión". */
 export function useSession() {
@@ -39,6 +40,7 @@ export function useSession() {
  * vieja y otras ninguna (bucle infinito entre /login y /chat).
  */
 export function clearSession(qc: QueryClient) {
+  clearPromptHistory(); // las preguntas guardadas para ↑ ↓ no deben quedar en un equipo compartido
   qc.setQueryData(["session"], null);
   qc.removeQueries({ predicate: (q) => q.queryKey[0] !== "session" });
 }
