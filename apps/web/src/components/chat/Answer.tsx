@@ -6,6 +6,7 @@ import type { Source } from "@/api";
 import { pagesLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { AnswerTable, ScrollTable } from "./AnswerTable";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 // Las librerías de Markdown se descargan al mostrar el primer texto con formato, no en la primera pantalla.
@@ -39,6 +40,7 @@ function CitationChip({ n, source, onClick }: { n: number; source?: Source; onCl
   const chip = (
     <button
       type="button"
+      data-export-skip
       onClick={onClick}
       className="relative -top-px mx-0.5 inline-flex h-[1.15rem] min-w-[1.15rem] items-center justify-center rounded-md bg-primary/10 px-1 align-middle text-[0.7rem] leading-none font-semibold text-primary no-underline transition-colors hover:bg-primary hover:text-primary-foreground"
     >
@@ -79,11 +81,12 @@ export function AnswerMarkdown({ content, sources, onCite }: { content: string; 
             return (
               <a href={href} target="_blank" rel="noreferrer noopener" title={href}>
                 {children}
-                {host && <span className="ml-1 text-xs text-muted-foreground no-underline">({host})</span>}
+                {host && <span data-export-skip className="ml-1 text-xs text-muted-foreground no-underline">({host})</span>}
               </a>
             );
           },
           img: NoImage,
+          table: AnswerTable,
         }}
       />
     </div>
@@ -99,7 +102,7 @@ export function ExcerptMarkdown({ text, className }: { text: string; className?:
         className,
       )}
     >
-      <Markdown text={text} components={{ a: ({ children }) => <span>{children}</span>, img: NoImage }} />
+      <Markdown text={text} components={{ a: ({ children }) => <span>{children}</span>, img: NoImage, table: ScrollTable }} />
     </div>
   );
 }
