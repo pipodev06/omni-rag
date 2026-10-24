@@ -82,7 +82,7 @@ Con un solo usuario puedes entrar en cualquier organización: **Organizaciones �
 - La cuenta **no tiene contraseña** y no se puede usar para iniciar sesión: solo vale dentro de tu sesión (el token lleva tu identificador y se comprueba en cada petición que sigues siendo superadministrador y estás activo).
 - No aparece en la lista de usuarios del cliente ni en los recuentos, y sus administradores **no pueden modificarla ni borrarla** (política RLS).
 - La entrada, la salida y todo lo que hagas se registran en la **auditoría del cliente** con tu usuario real seguido de "(soporte)".
-- Mientras estás dentro se muestra un aviso fijo con **Volver a mi organización**. En modo soporte no se puede gestionar la plataforma ni cambiar la contraseña.
+- Mientras estás dentro se muestra un aviso fijo con **Volver a Plataforma**. En modo soporte no se puede gestionar la plataforma ni cambiar la contraseña.
 
 Si tus contratos lo requieren, informa a tus clientes de que el proveedor puede acceder como soporte y de que esos accesos quedan en su auditoría.
 

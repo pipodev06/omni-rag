@@ -30,7 +30,6 @@ Ideas que **pueden o no agregarse**. No son pendientes: se hacen solo si algún 
 | 20 | Botón «organización principal» para el superadministrador (hoy basta el selector de Organizaciones) | bajo |
 | 21 | Cobro automático de planes (Stripe u otro) | alto |
 | 22 | Alta de organizaciones por autoservicio (hoy solo las crea el superadministrador) | alto |
-| 23 | Marcar tu organización como «Plataforma», excluida de conteos de uso y facturación | bajo |
 
 ## Integraciones y acceso
 | # | Idea | Esfuerzo |

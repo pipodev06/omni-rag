@@ -20,8 +20,7 @@ Todas se definen en el archivo `.env` (cópialo de `.env.example`, que trae cada
 | `REQUIRE_SUPERADMIN_2FA` | `auto` | 2FA obligatorio al superadministrador: `auto` = solo con dominio real | up |
 | `REQUIRE_ADMIN_2FA` | `false` | 2FA obligatorio a todos los administradores de organización (`false` = opcional) | up |
 | `IP_RATE_LIMIT_PER_MIN` | `120` | Peticiones por minuto y por IP de quien no ha iniciado sesión (`0` = sin límite) | up |
-| `SEED_ADMIN_USERNAME`, `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD` | `admin`, `admin@example.com`, — | Primer superadministrador. El email es opcional | 1.ª vez |
-| `SEED_TENANT_NAME`, `SEED_TENANT_SLUG` | `Mi organización`, `principal` | Organización inicial del superadministrador | 1.ª vez |
+| `SEED_ADMIN_USERNAME`, `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD` | `admin`, `admin@example.com`, — | Primer superadministrador, que vive en la organización interna «Plataforma» (no es un cliente). El email es opcional. `SEED_TENANT_*` ya no se usan | 1.ª vez |
 
 ## Dominio, HTTPS y puertos
 

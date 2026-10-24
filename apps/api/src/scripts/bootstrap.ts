@@ -3,14 +3,22 @@ import { hashPassword, passwordProblem } from "../auth/password.js";
 import { weakSeedPassword } from "../lib/secrets.js";
 import { USERNAME_RE } from "../lib/validate.js";
 
+export const PLATFORM_NAME = "Plataforma";
+export const PLATFORM_SLUG = "plataforma";
+
 /**
- * Crea la primera organización y su superadministrador si la base de datos
- * está vacía. Usa las variables SEED_* (ver .env.example). Es idempotente.
+ * Crea el superadministrador si la base de datos está vacía. Usa las variables SEED_ADMIN_* (ver .env.example).
+ * Vive en la organización interna «Plataforma» (`is_platform`), que no es un cliente: no aparece en la lista de
+ * organizaciones ni se puede borrar. Ninguna organización de cliente se crea sola: la primera la creas tú en
+ * Organizaciones, con el nombre que quieras. Es idempotente.
  */
 export async function ensureInitialAdmin(): Promise<void> {
   const [{ n } = { n: 0 }] = await sqlOwner<{ n: number }[]>`SELECT count(*)::int AS n FROM users`;
   if (n > 0) return;
 
+  if (process.env.SEED_TENANT_NAME || process.env.SEED_TENANT_SLUG) {
+    console.warn("[bootstrap] SEED_TENANT_NAME y SEED_TENANT_SLUG ya no se usan: crea la primera organización en Organizaciones.");
+  }
   // El usuario es obligatorio; el email es opcional (si falta, se usa la parte anterior a «@» o «admin»).
   const email = process.env.SEED_ADMIN_EMAIL?.trim().toLowerCase() || null;
   const username =
@@ -26,20 +34,15 @@ export async function ensureInitialAdmin(): Promise<void> {
   const problem = passwordProblem(password) ?? weakSeedPassword(process.env.DOMAIN?.trim() ?? "", password);
   if (problem) throw new Error(`SEED_ADMIN_PASSWORD: ${problem}`);
 
-  const tenantName = process.env.SEED_TENANT_NAME ?? "Mi organización";
-  const tenantSlug = process.env.SEED_TENANT_SLUG ?? "principal";
   const hash = await hashPassword(password);
 
   await sqlOwner.begin(async (tx) => {
     const [t] = await tx<{ id: string }[]>`
-      INSERT INTO tenants (name, slug) VALUES (${tenantName}, ${tenantSlug})
-      ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name RETURNING id`;
+      INSERT INTO tenants (name, slug, is_platform) VALUES (${PLATFORM_NAME}, ${PLATFORM_SLUG}, true)
+      ON CONFLICT (slug) DO UPDATE SET is_platform = true RETURNING id`;
     await tx`
       INSERT INTO users (tenant_id, username, email, name, password_hash, role, is_superadmin)
       VALUES (${t!.id}, ${username}, ${email}, 'Administrador', ${hash}, 'admin', true)`;
-    await tx`
-      INSERT INTO collections (tenant_id, name, description)
-      VALUES (${t!.id}, 'General', 'Colección por defecto') ON CONFLICT DO NOTHING`;
   });
-  console.log(`[bootstrap] creado el superadministrador ${username} en la organización "${tenantName}"`);
+  console.log(`[bootstrap] creado el superadministrador ${username} en la organización interna «${PLATFORM_NAME}». Crea tu primera organización en Organizaciones.`);
 }

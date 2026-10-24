@@ -75,7 +75,7 @@ Un `#` al inicio de una línea la anula: esa variable usa su valor por defecto (
 
 | Variable | Qué ocurre si la cambias más tarde |
 |---|---|
-| `SEED_ADMIN_*`, `SEED_TENANT_*` | **Nada.** Solo se usan con la base de datos vacía (primer arranque). La organización se edita en *Organizaciones → ⋮ → Renombrar*; la contraseña, en *Mi cuenta*, o con `docker compose exec api node dist/scripts/reset-password.js admin` si no puedes entrar. |
+| `SEED_ADMIN_*` | **Nada.** Solo se usan con la base de datos vacía (primer arranque). La contraseña, en *Mi cuenta*, o con `docker compose exec api node dist/scripts/reset-password.js admin` si no puedes entrar. |
 | `LLM_MODELS`, `TENANT_DAILY_QUESTION_LIMIT` | **Nada.** Solo siembran el plan «Estándar». Después se editan en *Organizaciones → Planes*. |
 | `EMBEDDING_MODEL`, `EMBEDDING_DIM` | Hay que recrear los fragmentos y reprocesar todos los documentos (ver [operacion.md](docs/operacion.md#cambiar-el-modelo-de-embeddings)). |
 | `JWT_SECRET` | Se aplica, pero **todos cierran sesión y el 2FA de todos deja de funcionar**. Cámbialo solo si hace falta. |

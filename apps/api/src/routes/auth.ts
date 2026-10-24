@@ -203,7 +203,7 @@ authRoutes.delete("/sessions/:id", requireAuth, async (c) => {
 
 authRoutes.get("/me", requireAuth, async (c) => {
   const u = c.get("user");
-  const [tenant] = await sqlOwner<{ name: string; slug: string }[]>`SELECT name, slug FROM tenants WHERE id = ${u.tenantId}`;
+  const [tenant] = await sqlOwner<{ name: string; slug: string; isPlatform: boolean }[]>`SELECT name, slug, is_platform AS "isPlatform" FROM tenants WHERE id = ${u.tenantId}`;
   const [mfa] = await sqlOwner<{ on: boolean }[]>`SELECT (totp_enabled_at IS NOT NULL) AS "on" FROM users WHERE id = ${u.id}`;
   return c.json({
     user: { id: u.id, username: u.username, email: u.email, name: u.name, role: u.role, isSuperadmin: u.isSuperadmin, totpEnabled: mfa?.on ?? false },

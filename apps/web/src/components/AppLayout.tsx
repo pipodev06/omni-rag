@@ -55,14 +55,15 @@ interface NavItem {
 }
 
 function useNavItems(): NavItem[] {
-  const { user } = useCurrentUser();
+  const { user, tenant } = useCurrentUser();
+  const client = tenant.isPlatform !== true; // en «Plataforma» (donde vive el superadministrador) solo hay Organizaciones
   return [
-    { to: "/chat", label: "Chat", icon: MessagesSquare, show: true },
-    { to: "/documentos", label: "Documentos", icon: Files, show: true },
-    { to: "/usuarios", label: "Usuarios", icon: Users, show: user.role === "admin" },
-    { to: "/calidad", label: "Calidad", icon: ThumbsUp, show: user.role === "admin" },
-    { to: "/consumo", label: "Consumo", icon: ChartColumn, show: user.role === "admin" },
-    { to: "/auditoria", label: "Auditoría", icon: ScrollText, show: user.role === "admin" },
+    { to: "/chat", label: "Chat", icon: MessagesSquare, show: client },
+    { to: "/documentos", label: "Documentos", icon: Files, show: client },
+    { to: "/usuarios", label: "Usuarios", icon: Users, show: client && user.role === "admin" },
+    { to: "/calidad", label: "Calidad", icon: ThumbsUp, show: client && user.role === "admin" },
+    { to: "/consumo", label: "Consumo", icon: ChartColumn, show: client && user.role === "admin" },
+    { to: "/auditoria", label: "Auditoría", icon: ScrollText, show: client && user.role === "admin" },
     { to: "/organizaciones", label: "Organizaciones", icon: Building2, show: user.isSuperadmin },
   ].filter((i) => i.show);
 }
@@ -232,7 +233,7 @@ function SupportBanner() {
         Soporte en <strong>{tenant.name}</strong> · queda registrado en su auditoría
       </span>
       <Button size="sm" variant="secondary" className="h-6 px-2 text-xs" onClick={() => void exit()} disabled={busy}>
-        {busy ? <Loader2 className="animate-spin" /> : <Undo2 />} Volver a mi organización
+        {busy ? <Loader2 className="animate-spin" /> : <Undo2 />} Volver a Plataforma
       </Button>
     </div>
   );
