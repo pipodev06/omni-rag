@@ -114,7 +114,7 @@ function UserMenu() {
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>
             {theme === "dark" ? <Moon /> : theme === "light" ? <Sun /> : <Monitor />}
-            <span className="ml-2">Tema</span>
+            Tema
           </DropdownMenuSubTrigger>
           <DropdownMenuSubContent>
             <DropdownMenuRadioGroup value={theme} onValueChange={(v) => setTheme(v as Theme)}>
