@@ -222,6 +222,15 @@ curl -s localhost:8000/api/search -H "authorization: Bearer $TOKEN" -H 'content-
 
 Iniciar sesión, la caché de respuestas, la búsqueda por palabras y la búsqueda de conversaciones ignoran las mayúsculas. La búsqueda **semántica** (embeddings y re-ranker) sí las distingue: una pregunta en MAYÚSCULAS encontraba otros fragmentos que la misma en minúsculas (medido: en una prueba solo coincidían 3 de 6, y a veces aparecía uno sin relación). Por eso una pregunta escrita casi toda en mayúsculas (70 % de sus letras o más) se busca en minúsculas. Un texto normal, con siglas o nombres propios («¿Qué dice el contrato con la SUNAT?»), no se toca, y el modelo de lenguaje siempre recibe la pregunta tal como se escribió.
 
+## Tablas en las respuestas
+
+Cuando la respuesta compara elementos o lista datos con varios atributos (fechas, montos, requisitos, responsables), el modelo la escribe como tabla. La pantalla la dibuja con desplazamiento horizontal (en el móvil no se corta) y, debajo, dos botones:
+
+- **Copiar tabla:** copia el contenido separado por tabuladores; al pegarlo en Excel o Google Sheets cada dato cae en su celda, sea cual sea el idioma de la hoja.
+- **Descargar CSV:** archivo `tabla-AAAA-MM-DD.csv` con comas y codificación para que Excel lea bien los acentos. (Si tu Excel está configurado con punto y coma como separador, usa «Copiar tabla» o importa el CSV desde *Datos → Desde texto*.)
+
+Al exportar se quitan los números de cita y los dominios que se muestran junto a los enlaces. Como el contenido de una tabla puede venir de un documento ajeno, las celdas que Excel interpretaría como fórmula (empiezan por `=`, `+`, `-` o `@`, y no son un número) llevan una comilla simple delante. Si un modelo pequeño no usa tablas cuando convendría, se nota en la calidad del modelo, no es un ajuste de la pantalla; un plan con un modelo mejor lo corrige.
+
 ## Re-ranking
 
 El servicio `reranker` reordena los candidatos de la búsqueda con un modelo *cross-encoder* (lee pregunta y fragmento juntos). Es la mejora de calidad más importante, pero usa ~1,9 GB de RAM y ~0,6 s por pregunta en CPU.
