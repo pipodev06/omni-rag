@@ -8,7 +8,7 @@ import { embedQuery } from "../ingest/embeddings.js";
 import { findCachedAnswer, markCacheHit, storeCachedAnswer } from "../rag/cache.js";
 import { streamChat } from "../rag/llm.js";
 import { conversationToMarkdown, exportFilename, type ExportMessage } from "../rag/export.js";
-import { buildMessages, citedSources, NO_CONTEXT_ANSWER, retrievalQuery, type ChatMessage } from "../rag/prompt.js";
+import { buildMessages, citedSources, foldShouting, NO_CONTEXT_ANSWER, retrievalQuery, type ChatMessage } from "../rag/prompt.js";
 import { resolveScope, retrieve, type RankedHit } from "../rag/retrieve.js";
 import { HttpError, notFound } from "../lib/errors.js";
 import { userRateLimit } from "../lib/limits.js";
@@ -96,8 +96,9 @@ const SearchBody = z.object({
 chatRoutes.post("/search", userRateLimit(60, 60_000, "búsquedas"), async (c) => {
   const body = parse(SearchBody, await c.req.json().catch(() => ({})));
   const ctx = tenantCtx(c);
-  const [vector, scope] = await Promise.all([embedQuery(body.query, c.req.raw.signal), resolveScope(ctx, body.collectionIds, body.documentIds)]);
-  const results = await retrieve(ctx, { queryText: body.query, queryVector: vector, scope, topK: body.topK, signal: c.req.raw.signal });
+  const query = foldShouting(body.query);
+  const [vector, scope] = await Promise.all([embedQuery(query, c.req.raw.signal), resolveScope(ctx, body.collectionIds, body.documentIds)]);
+  const results = await retrieve(ctx, { queryText: query, queryVector: vector, scope, topK: body.topK, signal: c.req.raw.signal });
   return c.json({ results });
 });
 
