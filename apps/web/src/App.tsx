@@ -32,7 +32,7 @@ function Protected({ children, allow = true }: { children: ReactNode; allow?: bo
   const location = useLocation();
   if (isLoading) return <FullScreenLoader />;
   if (!data) return <Navigate to="/login" replace state={{ from: location.pathname }} />;
-  if (!allow) return <Navigate to="/chat" replace />;
+  if (!allow) return <Navigate to={data.tenant.isPlatform ? "/organizaciones" : "/chat"} replace />;
   // Con 2FA obligatorio, el superadministrador solo puede ir a Mi cuenta hasta activarlo.
   if (data.mfaSetupRequired && location.pathname !== "/cuenta") return <Navigate to="/cuenta" replace />;
   return (
@@ -53,7 +53,9 @@ function LoginRoute() {
 }
 
 export function App() {
-  const user = useSession().data?.user;
+  const session = useSession().data;
+  const user = session?.user;
+  const platform = session?.tenant.isPlatform === true; // el superadministrador en «Plataforma» solo usa Organizaciones y Mi cuenta
 
   return (
     <Routes>
@@ -68,15 +70,15 @@ export function App() {
           </Protected>
         }
       >
-        <Route path="/chat" element={<ChatPage />} />
-        <Route path="/chat/:conversationId" element={<ChatPage />} />
-        <Route path="/documentos" element={<DocumentsPage />} />
-        <Route path="/documentos/:collectionId" element={<DocumentsPage />} />
-        <Route path="/papelera" element={<Protected allow={user?.role === "admin" || user?.role === "editor"}><TrashPage /></Protected>} />
-        <Route path="/usuarios" element={<Protected allow={user?.role === "admin"}><UsersPage /></Protected>} />
-        <Route path="/calidad" element={<Protected allow={user?.role === "admin"}><QualityPage /></Protected>} />
-        <Route path="/auditoria" element={<Protected allow={user?.role === "admin"}><AuditPage /></Protected>} />
-        <Route path="/consumo" element={<Protected allow={user?.role === "admin"}><UsagePage /></Protected>} />
+        <Route path="/chat" element={<Protected allow={!platform}><ChatPage /></Protected>} />
+        <Route path="/chat/:conversationId" element={<Protected allow={!platform}><ChatPage /></Protected>} />
+        <Route path="/documentos" element={<Protected allow={!platform}><DocumentsPage /></Protected>} />
+        <Route path="/documentos/:collectionId" element={<Protected allow={!platform}><DocumentsPage /></Protected>} />
+        <Route path="/papelera" element={<Protected allow={!platform && (user?.role === "admin" || user?.role === "editor")}><TrashPage /></Protected>} />
+        <Route path="/usuarios" element={<Protected allow={!platform && user?.role === "admin"}><UsersPage /></Protected>} />
+        <Route path="/calidad" element={<Protected allow={!platform && user?.role === "admin"}><QualityPage /></Protected>} />
+        <Route path="/auditoria" element={<Protected allow={!platform && user?.role === "admin"}><AuditPage /></Protected>} />
+        <Route path="/consumo" element={<Protected allow={!platform && user?.role === "admin"}><UsagePage /></Protected>} />
         <Route path="/organizaciones" element={<Protected allow={user?.isSuperadmin === true}><PlatformPage /></Protected>} />
         <Route path="/cuenta" element={<AccountPage />} />
       </Route>

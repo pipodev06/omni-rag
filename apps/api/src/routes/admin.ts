@@ -73,6 +73,7 @@ platformRoutes.get("/tenants", async (c) => {
              WHERE e.tenant_id = t.id AND e.kind = 'question' AND e.created_at > now() - interval '30 days') AS "questions30d"
       FROM tenants t
       JOIN plans p ON p.id = coalesce(t.plan_id, (SELECT id FROM plans WHERE is_default))
+     WHERE NOT t.is_platform
      ORDER BY t.created_at`;
   return c.json({ tenants });
 });
@@ -100,7 +101,7 @@ const auditTenant = (tenantId: string, action: string, details: Record<string, u
 /** Avisa en la auditoría de cada organización que usa el plan (asignado o por defecto) de que sus condiciones cambiaron. */
 async function auditPlanTenants(planId: string, planName: string): Promise<void> {
   const tenants = await sqlOwner<{ id: string }[]>`
-    SELECT id FROM tenants WHERE coalesce(plan_id, (SELECT id FROM plans WHERE is_default)) = ${planId}`;
+    SELECT id FROM tenants WHERE NOT is_platform AND coalesce(plan_id, (SELECT id FROM plans WHERE is_default)) = ${planId}`;
   await Promise.all(tenants.map((t) => auditTenant(t.id, "plan.edited", { plan: planName })));
 }
 
@@ -129,7 +130,7 @@ platformRoutes.get("/plans", async (c) => {
   const plans = await sqlOwner`
     SELECT p.id, p.name, p.description, p.llm_models AS "llmModels", p.daily_question_limit AS "dailyQuestionLimit",
            p.max_users AS "maxUsers", p.max_documents AS "maxDocuments", p.user_daily_question_limit AS "userDailyQuestionLimit", p.is_default AS "isDefault",
-           (SELECT count(*)::int FROM tenants t WHERE coalesce(t.plan_id, (SELECT id FROM plans WHERE is_default)) = p.id) AS tenants
+           (SELECT count(*)::int FROM tenants t WHERE NOT t.is_platform AND coalesce(t.plan_id, (SELECT id FROM plans WHERE is_default)) = p.id) AS tenants
       FROM plans p ORDER BY p.is_default DESC, p.created_at`;
   return c.json({ plans });
 });
@@ -261,10 +262,17 @@ const UpdateTenant = z.object({
   planId: z.string().regex(UUID_RE).optional(),
 });
 
+/** La organización interna «Plataforma» (donde vive el superadministrador) no se modifica, desactiva ni borra desde aquí. */
+async function assertNotPlatform(id: string, action: string): Promise<void> {
+  const [t] = await sqlOwner<{ is_platform: boolean }[]>`SELECT is_platform FROM tenants WHERE id = ${id}`;
+  if (t?.is_platform) throw badRequest(`La organización Plataforma es interna: no se puede ${action}`);
+}
+
 platformRoutes.patch("/tenants/:id", async (c) => {
   const id = c.req.param("id");
   if (!UUID_RE.test(id)) throw notFound();
   const body = parse(UpdateTenant, await c.req.json().catch(() => ({})));
+  await assertNotPlatform(id, "modificar");
   if (id === c.get("user").tenantId && body.isActive === false) {
     throw badRequest("No puedes desactivar tu propia organización");
   }
@@ -308,7 +316,8 @@ platformRoutes.delete("/tenants/:id", async (c) => {
   const id = c.req.param("id");
   if (!UUID_RE.test(id)) throw notFound();
   const body = parse(DeleteTenant, await c.req.json().catch(() => ({})));
-  if (id === c.get("user").tenantId) throw badRequest("No puedes borrar tu propia organización");
+  await assertNotPlatform(id, "borrar");
+  if (id === c.get("user").tenantId) throw badRequest("No puedes borrar la organización en la que estás. Sal del modo soporte (o muévete a Plataforma con move-superadmin.js) y vuelve a intentarlo");
   const [t] = await sqlOwner<{ name: string; slug: string; is_active: boolean; users: number; documents: number }[]>`
     SELECT t.name, t.slug, t.is_active,
            (SELECT count(*)::int FROM users u WHERE u.tenant_id = t.id AND u.support_for IS NULL) AS users,
@@ -332,6 +341,7 @@ platformRoutes.post("/tenants/:id/enter", async (c) => {
   const id = c.req.param("id");
   if (!UUID_RE.test(id)) throw notFound();
   const me = c.get("user");
+  await assertNotPlatform(id, "usar como organización de soporte");
   if (id === me.tenantId) throw badRequest("Ya estás en tu organización");
   const [tenant] = await sqlOwner<{ id: string; name: string; is_active: boolean }[]>`
     SELECT id, name, is_active FROM tenants WHERE id = ${id}`;

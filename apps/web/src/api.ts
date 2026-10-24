@@ -19,6 +19,8 @@ export interface User {
 export interface Tenant {
   name: string;
   slug: string;
+  /** Organización interna donde vive el superadministrador: no es un cliente y solo muestra Organizaciones. */
+  isPlatform?: boolean;
 }
 
 export interface Collection {

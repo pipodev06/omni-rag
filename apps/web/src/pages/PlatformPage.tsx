@@ -216,7 +216,7 @@ function LimitDialog({ tenant, onOpenChange, onSaved }: { tenant: TenantRow | nu
   );
 }
 
-/** Cambiar el nombre y el identificador de una organización (p. ej. la tuya, creada con los valores del .env). */
+/** Cambiar el nombre y el identificador de una organización (también se puede cambiar después de crearla). */
 function EditTenantDialog({ tenant, onOpenChange, onSaved }: { tenant: TenantRow | null; onOpenChange: (o: boolean) => void; onSaved: () => void }) {
   const [form, setForm] = useState({ name: "", slug: "" });
   const [busy, setBusy] = useState(false);
