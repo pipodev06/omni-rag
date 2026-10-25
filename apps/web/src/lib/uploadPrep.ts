@@ -28,6 +28,12 @@ export async function expandUploads(input: File[], extensions: string[]): Promis
   const files: File[] = [];
   const skipped: string[] = [];
   let unzipped = 0;
+  // Los ZIP se leen todos a la vez (en paralelo) y la librería se descarga una sola vez, solo si hay alguno.
+  const zips = input.filter((f) => extension(f.name) === ".zip" && !isJunk(f.webkitRelativePath || f.name));
+  const [fflate, zipData] = await Promise.all([
+    zips.length ? import("fflate") : null,
+    Promise.all(zips.map(async (f) => [f, new Uint8Array(await f.arrayBuffer())] as const)).then((pairs) => new Map(pairs)),
+  ]);
 
   for (const file of input) {
     const name = file.webkitRelativePath || file.name;
@@ -37,12 +43,10 @@ export async function expandUploads(input: File[], extensions: string[]): Promis
       else skipped.push(`${file.name}: formato no admitido`);
       continue;
     }
-    // La librería se descarga solo al abrir el primer ZIP.
-    const { unzipSync } = await import("fflate");
     let entries: Record<string, Uint8Array>;
     try {
       let count = 0;
-      entries = unzipSync(new Uint8Array(await file.arrayBuffer()), {
+      entries = fflate!.unzipSync(zipData.get(file)!, {
         filter: (entry) => {
           if (entry.name.endsWith("/") || isJunk(entry.name)) return false;
           const ext = extension(entry.name);

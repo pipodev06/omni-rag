@@ -121,6 +121,78 @@ function UploadZone({ collectionId, extensions, onUploaded }: { collectionId: st
   );
 }
 
+function emptyDescription(search: string, filtered: boolean, canEdit: boolean): string | undefined {
+  if (search) return `Ningún documento coincide con «${search}»${filtered ? " y los filtros activos" : ""}.`;
+  if (filtered) return "Ningún documento cumple los filtros activos.";
+  return canEdit ? "Sube el primer documento con el recuadro de arriba." : undefined;
+}
+
+/** Selección para acciones en lote: vale para la colección abierta y solo cuenta lo que sigue visible. */
+function useDocumentSelection(documents: DocumentInfo[], canEdit: boolean, collectionId: string | undefined) {
+  // Se guarda junto a la colección en la que se eligió: al cambiar de colección deja de valer sin efectos ni renders extra.
+  const [picked, setPicked] = useState<{ collectionId?: string; ids: Set<string> }>({ ids: new Set() });
+  const own = picked.collectionId === collectionId ? picked.ids : new Set<string>();
+  const selectedDocs = documents.filter((d) => own.has(d.id));
+  const selected = new Set(selectedDocs.map((d) => d.id)); // solo lo visible (con los filtros actuales)
+  const update = (change: (ids: Set<string>) => void) =>
+    setPicked((prev) => {
+      const ids = new Set(prev.collectionId === collectionId ? prev.ids : []);
+      change(ids);
+      return { collectionId, ids };
+    });
+  const selection: DocumentSelection | undefined = canEdit
+    ? {
+        selected,
+        onToggle: (id, checked) => update((ids) => (checked ? ids.add(id) : ids.delete(id))),
+        onToggleAll: (checked) => update((ids) => (checked ? documents.forEach((d) => ids.add(d.id)) : ids.clear())),
+      }
+    : undefined;
+  return { selectedDocs, selection, clear: () => setPicked({ ids: new Set() }) };
+}
+
+/** Barra de acciones en lote, con los botones a la derecha. Solo aparece con algo seleccionado. */
+function SelectionBar({ docs, onClear, onMove, onReprocess, onDelete }: {
+  docs: DocumentInfo[];
+  onClear: () => void;
+  onMove: () => void;
+  onReprocess: () => void;
+  onDelete: () => void;
+}) {
+  if (docs.length === 0) return null;
+  // Los originales en un ZIP. Los topes son los de la API (100 documentos, 1 GB): se comprueban aquí para avisar sin esperar.
+  const download = () => {
+    if (docs.length > 100) return toast.warning("Se pueden descargar como máximo 100 documentos a la vez");
+    if (docs.reduce((sum, d) => sum + d.sizeBytes, 0) > 1024 ** 3) {
+      return toast.warning("Los documentos elegidos pasan de 1 GB: descárgalos en varias tandas");
+    }
+    startDownload(`/api/documents/download?ids=${docs.map((d) => d.id).join(",")}`);
+  };
+  return (
+    <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2 text-sm">
+      <span className="font-medium">
+        {docs.length} seleccionado{docs.length === 1 ? "" : "s"}
+      </span>
+      <div className="ml-auto flex flex-wrap items-center gap-2">
+        <Button size="sm" variant="ghost" onClick={onClear}>
+          <X /> Quitar selección
+        </Button>
+        <Button size="sm" variant="outline" onClick={download}>
+          <Download /> Descargar
+        </Button>
+        <Button size="sm" variant="outline" onClick={onMove}>
+          <FolderInput /> Mover
+        </Button>
+        <Button size="sm" variant="outline" onClick={onReprocess}>
+          <RotateCw /> Reprocesar
+        </Button>
+        <Button size="sm" variant="destructive" onClick={onDelete}>
+          <Trash2 /> Enviar a la papelera
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 /** Tabla de documentos, o su estado de carga / vacío. */
 function DocumentsSection({ loading, documents, search, filtered, canEdit, selection, sort, onSort, onRename, onMove, onReprocess, onDelete }: {
   loading: boolean;
@@ -142,12 +214,7 @@ function DocumentsSection({ loading, documents, search, filtered, canEdit, selec
       <EmptyState
         icon={search || filtered ? Search : FolderOpen}
         title={search || filtered ? "Sin resultados" : "Esta colección está vacía"}
-        description={
-          search ? `Ningún documento coincide con «${search}»${filtered ? " y los filtros activos" : ""}.`
-          : filtered ? "Ningún documento cumple los filtros activos."
-          : canEdit ? "Sube el primer documento con el recuadro de arriba."
-          : undefined
-        }
+        description={emptyDescription(search, filtered, canEdit)}
       />
     );
   }
@@ -178,49 +245,11 @@ export function DocumentsPage() {
   const onSort = (key: SortKey) =>
     setView((v) => ({ ...v, sort: v.sort.key === key ? { key, dir: v.sort.dir === "asc" ? "desc" : "asc" } : { key, dir: FIRST_DIR[key] } }));
 
-  // Selección para acciones en lote: se vacía al cambiar de colección y solo conserva lo que sigue visible.
-  const [selected, setSelected] = useState<Set<string>>(new Set());
   const currentId = current?.id;
   useEffect(() => {
-    setSelected(new Set());
     setView((v) => ({ ...DEFAULT_VIEW, sort: v.sort }));
   }, [currentId]);
-  const visibleKey = documents.map((d) => d.id).join(",");
-  useEffect(() => {
-    setSelected((prev) => {
-      const visible = new Set(visibleKey.split(","));
-      const next = new Set([...prev].filter((id) => visible.has(id)));
-      return next.size === prev.size ? prev : next;
-    });
-  }, [visibleKey]);
-  const selectedDocs = documents.filter((d) => selected.has(d.id));
-  const selection: DocumentSelection | undefined = canEdit
-    ? {
-        selected,
-        onToggle: (id, checked) =>
-          setSelected((prev) => {
-            const next = new Set(prev);
-            if (checked) next.add(id);
-            else next.delete(id);
-            return next;
-          }),
-        onToggleAll: (checked) => setSelected(checked ? new Set(documents.map((d) => d.id)) : new Set()),
-      }
-    : undefined;
-  const deleteSelected = async () => {
-    if (await removeDocuments(selectedDocs)) setSelected(new Set());
-  };
-  const reprocessSelected = async () => {
-    if (await reprocessDocuments(selectedDocs)) setSelected(new Set());
-  };
-  // Los originales en un ZIP. Los topes son los de la API (100 documentos, 1 GB): se comprueban aquí para avisar sin esperar.
-  const downloadSelected = () => {
-    if (selectedDocs.length > 100) return toast.warning("Se pueden descargar como máximo 100 documentos a la vez");
-    if (selectedDocs.reduce((sum, d) => sum + d.sizeBytes, 0) > 1024 ** 3) {
-      return toast.warning("Los documentos elegidos pasan de 1 GB: descárgalos en varias tandas");
-    }
-    startDownload(`/api/documents/download?ids=${selectedDocs.map((d) => d.id).join(",")}`);
-  };
+  const { selectedDocs, selection, clear } = useDocumentSelection(documents, canEdit, currentId);
 
   if (loadingCollections) {
     return (
@@ -278,30 +307,13 @@ export function DocumentsPage() {
 
           {canEdit && <UploadZone collectionId={current.id} extensions={extensions} onUploaded={refresh} />}
 
-          {selectedDocs.length > 0 && (
-            <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2 text-sm">
-              <span className="font-medium">
-                {selectedDocs.length} seleccionado{selectedDocs.length === 1 ? "" : "s"}
-              </span>
-              <div className="ml-auto flex flex-wrap items-center gap-2">
-                <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
-                  <X /> Quitar selección
-                </Button>
-                <Button size="sm" variant="outline" onClick={downloadSelected}>
-                  <Download /> Descargar
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => setMoveDocs(selectedDocs)}>
-                  <FolderInput /> Mover
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => void reprocessSelected()}>
-                  <RotateCw /> Reprocesar
-                </Button>
-                <Button size="sm" variant="destructive" onClick={() => void deleteSelected()}>
-                  <Trash2 /> Enviar a la papelera
-                </Button>
-              </div>
-            </div>
-          )}
+          <SelectionBar
+            docs={selectedDocs}
+            onClear={clear}
+            onMove={() => setMoveDocs(selectedDocs)}
+            onReprocess={async () => (await reprocessDocuments(selectedDocs)) && clear()}
+            onDelete={async () => (await removeDocuments(selectedDocs)) && clear()}
+          />
 
           <DocumentsSection
             loading={loadingDocuments}
@@ -340,7 +352,7 @@ export function DocumentsPage() {
         onOpenChange={(o) => !o && setMoveDocs(null)}
         onMoved={() => {
           refresh();
-          setSelected(new Set());
+          clear();
         }}
       />
       <RenameDocumentDialog doc={renameDoc} onOpenChange={(o) => !o && setRenameDoc(null)} onSaved={refresh} />

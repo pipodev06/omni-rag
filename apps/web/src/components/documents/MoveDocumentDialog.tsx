@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage, type Collection, type DocumentInfo } from "@/api";
@@ -19,18 +19,30 @@ export function MoveDocumentDialog({ docs, collections, onOpenChange, onMoved }:
   onOpenChange: (o: boolean) => void;
   onMoved: () => void;
 }) {
+  return (
+    <Dialog open={docs !== null} onOpenChange={onOpenChange}>
+      <DialogContent>
+        {/* El formulario vive dentro del contenido, que se desmonta al cerrar: cada apertura empieza sin destino elegido. */}
+        {docs && <MoveForm docs={docs} collections={collections} onClose={() => onOpenChange(false)} onMoved={onMoved} />}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function MoveForm({ docs, collections, onClose, onMoved }: {
+  docs: DocumentInfo[];
+  collections: Collection[];
+  onClose: () => void;
+  onMoved: () => void;
+}) {
   // La colección donde ya están todos los documentos elegidos no es un destino válido.
-  const targets = collections.filter((c) => !docs?.every((d) => d.collectionId === c.id));
+  const targets = collections.filter((c) => !docs.every((d) => d.collectionId === c.id));
   const [target, setTarget] = useState("");
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    if (docs) setTarget("");
-  }, [docs]);
-
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!docs || !target) return;
+    if (!target) return;
     setBusy(true);
     try {
       const r = await api.post<MoveResult>("/documents/move", { ids: docs.map((d) => d.id), collectionId: target });
@@ -46,7 +58,7 @@ export function MoveDocumentDialog({ docs, collections, onOpenChange, onMoved }:
         toast.error("No se movió ningún documento", { description: `${why}${more}` });
       }
       onMoved();
-      onOpenChange(false);
+      onClose();
     } catch (err) {
       toast.error(errorMessage(err));
     } finally {
@@ -54,47 +66,43 @@ export function MoveDocumentDialog({ docs, collections, onOpenChange, onMoved }:
     }
   };
 
-  const many = (docs?.length ?? 0) > 1;
+  const many = docs.length > 1;
   return (
-    <Dialog open={docs !== null} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <form onSubmit={submit} className="space-y-5">
-          <DialogHeader>
-            <DialogTitle>{many ? `Mover ${docs?.length} documentos` : `Mover «${docs?.[0]?.title}»`}</DialogTitle>
-            <DialogDescription>
-              Pasan a la colección elegida sin volver a procesarse. A partir de ahora los verán quienes tengan acceso a esa colección, no a la actual. Los que se estén procesando o ya existan en el destino se omiten.
-            </DialogDescription>
-          </DialogHeader>
-          {targets.length === 0 ? (
-            <p className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">No hay otra colección a la que puedas mover documentos.</p>
-          ) : (
-            <div className="space-y-2">
-              <Label>Colección de destino</Label>
-              <Select value={target} onValueChange={setTarget}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Elige una colección" />
-                </SelectTrigger>
-                <SelectContent>
-                  {targets.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.name} <span className="text-muted-foreground">({c.documentCount})</span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Cancelar
-            </Button>
-            <Button type="submit" disabled={busy || !target}>
-              {busy && <Loader2 className="animate-spin" />}
-              Mover
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+    <form onSubmit={submit} className="space-y-5">
+      <DialogHeader>
+        <DialogTitle>{many ? `Mover ${docs.length} documentos` : `Mover «${docs[0]?.title}»`}</DialogTitle>
+        <DialogDescription>
+          Pasan a la colección elegida sin volver a procesarse. A partir de ahora los verán quienes tengan acceso a esa colección, no a la actual. Los que se estén procesando o ya existan en el destino se omiten.
+        </DialogDescription>
+      </DialogHeader>
+      {targets.length === 0 ? (
+        <p className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">No hay otra colección a la que puedas mover documentos.</p>
+      ) : (
+        <div className="space-y-2">
+          <Label>Colección de destino</Label>
+          <Select value={target} onValueChange={setTarget}>
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Elige una colección" />
+            </SelectTrigger>
+            <SelectContent>
+              {targets.map((c) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.name} <span className="text-muted-foreground">({c.documentCount})</span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onClose}>
+          Cancelar
+        </Button>
+        <Button type="submit" disabled={busy || !target}>
+          {busy && <Loader2 className="animate-spin" />}
+          Mover
+        </Button>
+      </DialogFooter>
+    </form>
   );
 }

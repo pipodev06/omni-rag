@@ -52,7 +52,7 @@ export function PlanDialog({ plan, open, onOpenChange, onSaved }: {
   onOpenChange: (o: boolean) => void;
   onSaved: () => void;
 }) {
-  const [form, setForm] = useState<PlanForm>(toForm());
+  const [form, setForm] = useState<PlanForm>(() => toForm());
   const [busy, setBusy] = useState(false);
   const models = form.models.split(/[\n,]/).map((m) => m.trim()).filter(Boolean);
 
