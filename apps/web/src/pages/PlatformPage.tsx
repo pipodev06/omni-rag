@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Building2, Download, EllipsisVertical, Gauge, Layers, LifeBuoy, Loader2, Pencil, Plus, Power, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -161,18 +161,28 @@ function NewTenantDialog({ open, onOpenChange, onCreated }: {
   );
 }
 
-function LimitDialog({ tenant, onOpenChange, onSaved }: { tenant: TenantRow | null; onOpenChange: (o: boolean) => void; onSaved: () => void }) {
-  const defaultLimit = tenant?.planDailyQuestionLimit ?? 0;
-  const [value, setValue] = useState("");
+/**
+ * Diálogo de una organización. El contenido se desmonta al cerrar, así que cada formulario arranca con los datos de la
+ * organización elegida sin efectos que copien props al estado.
+ */
+function TenantDialog({ tenant, onOpenChange, children }: { tenant: TenantRow | null; onOpenChange: (o: boolean) => void; children: (t: TenantRow) => ReactNode }) {
+  return (
+    <Dialog open={tenant !== null} onOpenChange={onOpenChange}>
+      <DialogContent>{tenant && children(tenant)}</DialogContent>
+    </Dialog>
+  );
+}
+
+function LimitDialog(props: { tenant: TenantRow | null; onOpenChange: (o: boolean) => void; onSaved: () => void }) {
+  return <TenantDialog tenant={props.tenant} onOpenChange={props.onOpenChange}>{(t) => <LimitDialogBody {...props} tenant={t} />}</TenantDialog>;
+}
+
+function LimitDialogBody({ tenant, onOpenChange, onSaved }: { tenant: TenantRow; onOpenChange: (o: boolean) => void; onSaved: () => void }) {
+  const defaultLimit = tenant.planDailyQuestionLimit ?? 0;
+  const [value, setValue] = useState(() => tenant.dailyQuestionLimit?.toString() ?? "");
   const [busy, setBusy] = useState(false);
 
-  // El diálogo se abre desde fuera (por `tenant`): cargar el valor actual cada vez que cambia.
-  useEffect(() => {
-    if (tenant) setValue(tenant.dailyQuestionLimit?.toString() ?? "");
-  }, [tenant]);
-
   const save = async (limit: number | null) => {
-    if (!tenant) return;
     setBusy(true);
     try {
       await api.patch(`/platform/tenants/${tenant.id}`, { dailyQuestionLimit: limit });
@@ -187,48 +197,45 @@ function LimitDialog({ tenant, onOpenChange, onSaved }: { tenant: TenantRow | nu
   };
 
   return (
-    <Dialog open={tenant !== null} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Límite diario de «{tenant?.name}»</DialogTitle>
-          <DialogDescription>
-            Preguntas al LLM por día. Vacío = límite del plan {tenant?.planName} ({defaultLimit === 0 ? "sin límite" : defaultLimit}); 0 = sin límite.
-          </DialogDescription>
-        </DialogHeader>
-        <Input
-          type="number"
-          min={0}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          placeholder={`Del plan: ${defaultLimit === 0 ? "sin límite" : defaultLimit}`}
-          autoFocus
-        />
-        <DialogFooter>
-          <Button variant="outline" onClick={() => void save(null)} disabled={busy}>
-            Usar el del plan
-          </Button>
-          <Button onClick={() => void save(value.trim() === "" ? null : Number(value))} disabled={busy}>
-            {busy && <Loader2 className="animate-spin" />}
-            Guardar
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <>
+      <DialogHeader>
+        <DialogTitle>Límite diario de «{tenant.name}»</DialogTitle>
+        <DialogDescription>
+          Preguntas al LLM por día. Vacío = límite del plan {tenant.planName} ({defaultLimit === 0 ? "sin límite" : defaultLimit}); 0 = sin límite.
+        </DialogDescription>
+      </DialogHeader>
+      <Input
+        type="number"
+        min={0}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder={`Del plan: ${defaultLimit === 0 ? "sin límite" : defaultLimit}`}
+        autoFocus
+      />
+      <DialogFooter>
+        <Button variant="outline" onClick={() => void save(null)} disabled={busy}>
+          Usar el del plan
+        </Button>
+        <Button onClick={() => void save(value.trim() === "" ? null : Number(value))} disabled={busy}>
+          {busy && <Loader2 className="animate-spin" />}
+          Guardar
+        </Button>
+      </DialogFooter>
+    </>
   );
 }
 
 /** Cambiar el nombre y el identificador de una organización (también se puede cambiar después de crearla). */
-function EditTenantDialog({ tenant, onOpenChange, onSaved }: { tenant: TenantRow | null; onOpenChange: (o: boolean) => void; onSaved: () => void }) {
-  const [form, setForm] = useState({ name: "", slug: "" });
-  const [busy, setBusy] = useState(false);
+function EditTenantDialog(props: { tenant: TenantRow | null; onOpenChange: (o: boolean) => void; onSaved: () => void }) {
+  return <TenantDialog tenant={props.tenant} onOpenChange={props.onOpenChange}>{(t) => <EditTenantDialogBody {...props} tenant={t} />}</TenantDialog>;
+}
 
-  useEffect(() => {
-    if (tenant) setForm({ name: tenant.name, slug: tenant.slug });
-  }, [tenant]);
+function EditTenantDialogBody({ tenant, onOpenChange, onSaved }: { tenant: TenantRow; onOpenChange: (o: boolean) => void; onSaved: () => void }) {
+  const [form, setForm] = useState({ name: tenant.name, slug: tenant.slug });
+  const [busy, setBusy] = useState(false);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!tenant) return;
     setBusy(true);
     try {
       await api.patch(`/platform/tenants/${tenant.id}`, { name: form.name, slug: form.slug });
@@ -243,50 +250,45 @@ function EditTenantDialog({ tenant, onOpenChange, onSaved }: { tenant: TenantRow
   };
 
   return (
-    <Dialog open={tenant !== null} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <form onSubmit={submit} className="space-y-5">
-          <DialogHeader>
-            <DialogTitle>Editar «{tenant?.name}»</DialogTitle>
-            <DialogDescription>El identificador es el nombre técnico (único); solo se muestra y se pide para confirmar borrados. Los usuarios y documentos no se ven afectados.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="e-name">Nombre</Label>
-              <Input id="e-name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} maxLength={120} required autoFocus />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="e-slug">Identificador</Label>
-              <Input id="e-slug" value={form.slug} onChange={(e) => setForm({ ...form, slug: e.target.value })} pattern="[a-z0-9][a-z0-9-]{1,62}" title="Minúsculas, números y guiones" autoCapitalize="none" spellCheck={false} required />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Cancelar
-            </Button>
-            <Button type="submit" disabled={busy || (form.name.trim() === tenant?.name && form.slug === tenant?.slug)}>
-              {busy && <Loader2 className="animate-spin" />}
-              Guardar
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+    <form onSubmit={submit} className="space-y-5">
+      <DialogHeader>
+        <DialogTitle>Editar «{tenant.name}»</DialogTitle>
+        <DialogDescription>El identificador es el nombre técnico (único); solo se muestra y se pide para confirmar borrados. Los usuarios y documentos no se ven afectados.</DialogDescription>
+      </DialogHeader>
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="e-name">Nombre</Label>
+          <Input id="e-name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} maxLength={120} required autoFocus />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="e-slug">Identificador</Label>
+          <Input id="e-slug" value={form.slug} onChange={(e) => setForm({ ...form, slug: e.target.value })} pattern="[a-z0-9][a-z0-9-]{1,62}" title="Minúsculas, números y guiones" autoCapitalize="none" spellCheck={false} required />
+        </div>
+      </div>
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+          Cancelar
+        </Button>
+        <Button type="submit" disabled={busy || (form.name.trim() === tenant.name && form.slug === tenant.slug)}>
+          {busy && <Loader2 className="animate-spin" />}
+          Guardar
+        </Button>
+      </DialogFooter>
+    </form>
   );
 }
 
 /** Borrado definitivo: hay que escribir el identificador de la organización. */
-function DeleteTenantDialog({ tenant, onOpenChange, onDeleted }: { tenant: TenantRow | null; onOpenChange: (o: boolean) => void; onDeleted: () => void }) {
+function DeleteTenantDialog(props: { tenant: TenantRow | null; onOpenChange: (o: boolean) => void; onDeleted: () => void }) {
+  return <TenantDialog tenant={props.tenant} onOpenChange={props.onOpenChange}>{(t) => <DeleteTenantDialogBody {...props} tenant={t} />}</TenantDialog>;
+}
+
+function DeleteTenantDialogBody({ tenant, onOpenChange, onDeleted }: { tenant: TenantRow; onOpenChange: (o: boolean) => void; onDeleted: () => void }) {
   const [slug, setSlug] = useState("");
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    if (tenant) setSlug("");
-  }, [tenant]);
-
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!tenant) return;
     setBusy(true);
     try {
       await api.del(`/platform/tenants/${tenant.id}`, { confirmSlug: slug });
@@ -301,47 +303,43 @@ function DeleteTenantDialog({ tenant, onOpenChange, onDeleted }: { tenant: Tenan
   };
 
   return (
-    <Dialog open={tenant !== null} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <form onSubmit={submit} className="space-y-5">
-          <DialogHeader>
-            <DialogTitle>Borrar «{tenant?.name}» definitivamente</DialogTitle>
-            <DialogDescription>
-              Se borran sus {tenant?.users} usuarios, {tenant?.documents} documentos, conversaciones y archivos. No se puede deshacer; las copias de seguridad la conservan hasta que caduquen.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="del-slug">
-              Escribe <b className="font-mono">{tenant?.slug}</b> para confirmar
-            </Label>
-            <Input id="del-slug" value={slug} onChange={(e) => setSlug(e.target.value)} autoComplete="off" autoCapitalize="none" spellCheck={false} autoFocus />
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Cancelar
-            </Button>
-            <Button type="submit" variant="destructive" disabled={busy || slug !== tenant?.slug}>
-              {busy && <Loader2 className="animate-spin" />}
-              Borrar definitivamente
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+    <form onSubmit={submit} className="space-y-5">
+      <DialogHeader>
+        <DialogTitle>Borrar «{tenant.name}» definitivamente</DialogTitle>
+        <DialogDescription>
+          Se borran sus {tenant.users} usuarios, {tenant.documents} documentos, conversaciones y archivos. No se puede deshacer; las copias de seguridad la conservan hasta que caduquen.
+        </DialogDescription>
+      </DialogHeader>
+      <div className="space-y-2">
+        <Label htmlFor="del-slug">
+          Escribe <b className="font-mono">{tenant.slug}</b> para confirmar
+        </Label>
+        <Input id="del-slug" value={slug} onChange={(e) => setSlug(e.target.value)} autoComplete="off" autoCapitalize="none" spellCheck={false} autoFocus />
+      </div>
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+          Cancelar
+        </Button>
+        <Button type="submit" variant="destructive" disabled={busy || slug !== tenant.slug}>
+          {busy && <Loader2 className="animate-spin" />}
+          Borrar definitivamente
+        </Button>
+      </DialogFooter>
+    </form>
   );
 }
 
-function ChangePlanDialog({ tenant, onOpenChange, onSaved }: { tenant: TenantRow | null; onOpenChange: (o: boolean) => void; onSaved: () => void }) {
+function ChangePlanDialog(props: { tenant: TenantRow | null; onOpenChange: (o: boolean) => void; onSaved: () => void }) {
+  return <TenantDialog tenant={props.tenant} onOpenChange={props.onOpenChange}>{(t) => <ChangePlanDialogBody {...props} tenant={t} />}</TenantDialog>;
+}
+
+function ChangePlanDialogBody({ tenant, onOpenChange, onSaved }: { tenant: TenantRow; onOpenChange: (o: boolean) => void; onSaved: () => void }) {
   const plans = usePlans().data?.plans ?? [];
-  const [planId, setPlanId] = useState("");
+  const [planId, setPlanId] = useState(tenant.planId);
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    if (tenant) setPlanId(tenant.planId);
-  }, [tenant]);
-
   const save = async () => {
-    if (!tenant || !planId) return;
+    if (!planId) return;
     setBusy(true);
     try {
       await api.patch(`/platform/tenants/${tenant.id}`, { planId });
@@ -356,35 +354,33 @@ function ChangePlanDialog({ tenant, onOpenChange, onSaved }: { tenant: TenantRow
   };
 
   return (
-    <Dialog open={tenant !== null} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Plan de «{tenant?.name}»</DialogTitle>
-          <DialogDescription>Define los modelos y los topes de la organización. El cambio aplica a partir de la siguiente pregunta.</DialogDescription>
-        </DialogHeader>
-        <Select value={planId} onValueChange={setPlanId}>
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder="Plan" />
-          </SelectTrigger>
-          <SelectContent>
-            {plans.map((p: Plan) => (
-              <SelectItem key={p.id} value={p.id}>
-                {p.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancelar
-          </Button>
-          <Button onClick={() => void save()} disabled={busy || !planId || planId === tenant?.planId}>
-            {busy && <Loader2 className="animate-spin" />}
-            Guardar
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <>
+      <DialogHeader>
+        <DialogTitle>Plan de «{tenant.name}»</DialogTitle>
+        <DialogDescription>Define los modelos y los topes de la organización. El cambio aplica a partir de la siguiente pregunta.</DialogDescription>
+      </DialogHeader>
+      <Select value={planId} onValueChange={setPlanId}>
+        <SelectTrigger className="w-full">
+          <SelectValue placeholder="Plan" />
+        </SelectTrigger>
+        <SelectContent>
+          {plans.map((p: Plan) => (
+            <SelectItem key={p.id} value={p.id}>
+              {p.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <DialogFooter>
+        <Button variant="outline" onClick={() => onOpenChange(false)}>
+          Cancelar
+        </Button>
+        <Button onClick={() => void save()} disabled={busy || !planId || planId === tenant.planId}>
+          {busy && <Loader2 className="animate-spin" />}
+          Guardar
+        </Button>
+      </DialogFooter>
+    </>
   );
 }
 

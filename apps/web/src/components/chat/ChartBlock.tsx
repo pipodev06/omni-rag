@@ -81,7 +81,7 @@ function XLabels({ chart, x }: { chart: ChartSpec; x: (i: number) => number }) {
     <g className="text-muted-foreground">
       {chart.labels.map((l, i) =>
         i % every === 0 ? (
-          <text key={i} x={x(i)} y={H - PAD.bottom + 18} textAnchor="middle" fontSize="11" fill="currentColor">
+          <text key={l} x={x(i)} y={H - PAD.bottom + 18} textAnchor="middle" fontSize="11" fill="currentColor">
             {short(l)}
           </text>
         ) : null,
@@ -120,9 +120,9 @@ function Bars({ chart, onTip }: { chart: ChartSpec; onTip: (t: Tip | null) => vo
     <>
       <Grid axis={axis} />
       {chart.labels.map((label, i) => (
-        <g key={i}>
+        <g key={label}>
           {chart.series.map((s, j) =>
-            s.data[i] === null ? null : <path key={j} d={barPath(x(i) - groupW / 2 + j * (barW + 2), barW, axis.y(s.data[i]!), yZero)} fill={color(j)} />,
+            s.data[i] === null ? null : <path key={s.name} d={barPath(x(i) - groupW / 2 + j * (barW + 2), barW, axis.y(s.data[i]!), yZero)} fill={color(j)} />,
           )}
           {/* Zona de hover de toda la columna: más grande que la barra. */}
           <rect
@@ -156,18 +156,18 @@ function Lines({ chart, onTip }: { chart: ChartSpec; onTip: (t: Tip | null) => v
       <Grid axis={axis} />
       {hover !== null && <line x1={x(hover)} x2={x(hover)} y1={PAD.top} y2={H - PAD.bottom} stroke="var(--border)" />}
       {chart.series.map((s, j) => (
-        <g key={j}>
+        <g key={s.name}>
           <path d={path(s.data)} fill="none" stroke={color(j)} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
           {s.data.map((v, i) =>
             v === null || (n > 12 && hover !== i) ? null : (
-              <circle key={i} cx={x(i)} cy={axis.y(v)} r={4} fill={color(j)} stroke="var(--card)" strokeWidth={2} />
+              <circle key={chart.labels[i]} cx={x(i)} cy={axis.y(v)} r={4} fill={color(j)} stroke="var(--card)" strokeWidth={2} />
             ),
           )}
         </g>
       ))}
       {chart.labels.map((label, i) => (
         <rect
-          key={i}
+          key={label}
           x={x(i) - axis.plotW / Math.max(1, n - 1) / 2}
           y={PAD.top}
           width={axis.plotW / Math.max(1, n - 1)}
@@ -214,7 +214,7 @@ function Pie({ chart, onTip }: { chart: ChartSpec; onTip: (t: Tip | null) => voi
         const pct = formatValue((v / total) * 100, "%");
         return (
           <path
-            key={i}
+            key={chart.labels[i]}
             d={`M${x1},${y1}A${R},${R} 0 ${large} 1 ${x2},${y2}L${x3},${y3}A${r},${r} 0 ${large} 0 ${x4},${y4}Z`}
             fill={color(i)}
             stroke="var(--card)"
@@ -247,7 +247,7 @@ function DataTable({ chart }: { chart: ChartSpec }) {
         </thead>
         <tbody>
           {chart.labels.map((l, i) => (
-            <tr key={i}>
+            <tr key={l}>
               <td className="px-3 py-1">{l}</td>
               {chart.series.map((s) => (
                 <td key={s.name} className="px-3 py-1 text-right tabular-nums">
@@ -302,7 +302,7 @@ export function ChartBlock({ source, streaming }: { source: string; streaming?: 
       {legend.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
           {legend.map((name, i) => (
-            <span key={`${name}-${i}`} className="flex items-center gap-1.5">
+            <span key={name} className="flex items-center gap-1.5">
               <span className="size-2.5 rounded-sm" style={{ background: color(i) }} />
               {name}
             </span>
