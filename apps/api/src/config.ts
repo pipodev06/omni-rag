@@ -64,6 +64,8 @@ const schema = z.object({
   DOCLING_URL: z.string().url().default("http://localhost:5001"),
   DOCLING_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(900),
   DOCLING_OCR_LANGS: z.string().default("es,en"),
+  DOCLING_DO_OCR: z.enum(["true", "false"]).default("true"),
+  DOCLING_TABLE_MODE: z.enum(["accurate", "fast"]).default("accurate"),
 
   EMBEDDINGS_URL: z.string().url().default("http://localhost:8080"),
   EMBEDDING_MODEL: z.string().default("intfloat/multilingual-e5-base"),
