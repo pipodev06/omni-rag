@@ -21,6 +21,7 @@ import { userRateLimit } from "../lib/limits.js";
 import { notifyQuota } from "../lib/quotaNotice.js";
 import { documentSlots } from "../lib/plans.js";
 import { parse, UUID_RE } from "../lib/validate.js";
+import { uniqueZipName, zipHeaders, zipStream } from "../lib/zipStream.js";
 
 export const documentRoutes = new Hono<AppEnv>();
 documentRoutes.use("*", requireAuth);
@@ -113,6 +114,37 @@ documentRoutes.get("/", async (c) => {
      ORDER BY d.created_at DESC
      LIMIT 1000`);
   return c.json({ documents, supportedExtensions: SUPPORTED_EXTENSIONS });
+});
+
+const MAX_ZIP_DOCS = 100;
+const MAX_ZIP_BYTES = 1024 ** 3; // 1 GB
+
+/**
+ * Descarga varios documentos originales en un ZIP. Es un GET para que el navegador lo guarde directamente en disco, sin
+ * cargarlo en memoria; el ZIP se arma en streaming, un archivo a la vez. Con documentos de varias colecciones, cada una va
+ * en su carpeta. Solo los que el usuario puede ver (RLS) y que no están en la papelera.
+ */
+documentRoutes.get("/download", userRateLimit(10, 60_000, "descargas"), async (c) => {
+  const ids = [...new Set((c.req.query("ids") ?? "").split(",").filter((id) => UUID_RE.test(id)))];
+  if (ids.length === 0) throw badRequest("Indica los documentos que quieres descargar");
+  if (ids.length > MAX_ZIP_DOCS) throw badRequest(`Se pueden descargar como máximo ${MAX_ZIP_DOCS} documentos a la vez`);
+  const docs = await withTenant(tenantCtx(c), (tx) => tx<{ filename: string; storage_key: string; size_bytes: number; collection: string }[]>`
+    SELECT d.filename, d.storage_key, d.size_bytes::float8 AS size_bytes, col.name AS collection
+      FROM documents d JOIN collections col ON col.id = d.collection_id
+     WHERE d.id = ANY(${ids}::uuid[]) AND d.deleted_at IS NULL
+     ORDER BY col.name, d.filename`);
+  if (docs.length === 0) throw notFound("No se encontró ninguno de esos documentos");
+  const total = docs.reduce((sum, d) => sum + d.size_bytes, 0);
+  if (total > MAX_ZIP_BYTES) throw new HttpError(413, "Los documentos elegidos pasan de 1 GB: descárgalos en varias tandas");
+
+  const byFolder = new Set(docs.map((d) => d.collection)).size > 1;
+  const used = new Set<string>();
+  const entries = docs.map((d) => ({ name: uniqueZipName(used, byFolder ? d.collection : "", d.filename), data: () => readStoredFile(d.storage_key) }));
+  await audit(c, "document.downloaded", {
+    targetType: "document",
+    details: { count: docs.length, filenames: docs.slice(0, 20).map((d) => d.filename).join(", ") },
+  });
+  return new Response(zipStream(entries), { headers: zipHeaders(`documentos-${new Date().toISOString().slice(0, 10)}.zip`) });
 });
 
 /** Documentos de la papelera (con cuánto falta para que se eliminen del todo). Solo quien puede restaurarlos. */

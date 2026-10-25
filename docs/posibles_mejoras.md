@@ -5,8 +5,6 @@ Ideas que **pueden o no agregarse**. No son pendientes: se hacen solo si algún 
 ## Documentos
 | # | Idea | Esfuerzo |
 |---|---|---|
-| 4 | Subir una carpeta o un ZIP (hoy se arrastran archivos sueltos) | medio |
-| 5 | Descargar varios documentos en un ZIP | bajo-medio |
 | 6 | Reemplazar un archivo conservando título y colección (nueva versión) | medio |
 | 7 | Copiar un documento a otra colección sin quitarlo de la original (duplica fragmentos) | medio |
 | 8 | Paginación en el servidor si una colección supera los 1000 documentos (hoy es el tope) | medio |
@@ -43,7 +41,6 @@ Ideas que **pueden o no agregarse**. No son pendientes: se hacen solo si algún 
 ## Seguridad y operación
 | # | Idea | Esfuerzo |
 |---|---|---|
-| 33 | Exportar todos los datos de un cliente (portabilidad). El borrado completo de una organización ya existe | medio |
 | 35 | Pruebas de extremo a extremo con Playwright: login, subir, preguntar, borrar. Hoy ninguna recorre la interfaz | alto |
 
 ## Si una de ellas se decide

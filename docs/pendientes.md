@@ -33,6 +33,9 @@ Lo que está en curso o decidido. Lo que se termina se tacha y baja a «Hecho».
 - ~~40 Barra lateral con 2FA obligatorio~~ (se corrigió que los avisos en vivo recibían 403)
 - ~~41 Despliegue real con dominio~~ (en producción con túnel de Cloudflare)
 - ~~42 Banner de cuota~~ (se ve bien al 80 % y al agotarse el límite)
+- ~~4 Subir una carpeta o un ZIP~~ (los ZIP se abren en el navegador; tandas de 20 archivos y 90 MB)
+- ~~5 Descargar varios documentos en un ZIP~~ (barra de selección; ZIP en streaming)
+- ~~33 Exportar todos los datos de un cliente~~ (Organizaciones → ⋮ → Exportar datos; sin secretos)
 - ~~23 Organización «Plataforma»~~ (el superadmin vive en una organización interna, excluida de totales y facturación; todas las organizaciones de clientes se pueden borrar; `move-superadmin.js` para instalaciones anteriores)
 - ~~43 Copia fuera del servidor~~ (cifrada, a Backblaze B2)
 - ~~47 Subir los commits pendientes~~
