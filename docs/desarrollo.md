@@ -49,6 +49,24 @@ RUN_DB_TESTS=1 DATABASE_URL=... APP_DATABASE_URL=... APP_DB_PASSWORD=... pnpm te
 
 Prueba de punta a punta contra un sistema en marcha: ver [instalacion.md §6](instalacion.md#6-comprobar-la-instalación-con-la-prueba-de-humo).
 
+### Pruebas de extremo a extremo (Playwright)
+
+Recorren la interfaz real en un navegador: login (correcto e incorrecto), subir un documento y esperar a que se procese, enviarlo a la papelera y restaurarlo, ver la sesión en Mi cuenta, preguntar en el chat (opcional) y cerrar sesión. Crean una organización temporal con el superadministrador y la borran al terminar.
+
+```bash
+cd apps/web
+E2E_USER=<superadmin> E2E_PASSWORD=<contraseña> E2E_BROWSER_CHANNEL=chrome pnpm e2e
+```
+
+| Variable | Para qué |
+|---|---|
+| `E2E_USER`, `E2E_PASSWORD` | Superadministrador del sistema que se prueba. Si tiene 2FA no se puede automatizar: úsalo contra una instalación local o de pruebas |
+| `E2E_BASE_URL` | Dirección del sistema (por defecto `http://localhost:8000`) |
+| `E2E_BROWSER_CHANNEL` | `chrome` usa el Chrome instalado; sin ella hace falta `npx playwright install chromium` |
+| `E2E_CHAT=1` | Incluye la pregunta al chat (gasta una petición del modelo) |
+
+Las credenciales solo van por entorno, nunca en el repositorio. Los archivos de prueba están en `apps/web/e2e/` y se llaman `*.e2e.ts` para que Vitest no los ejecute; si una falla, `npx playwright show-report` muestra la captura y la traza. No se lanzan contra producción: crean y borran una organización.
+
 | Archivo | Qué prueba |
 |---|---|
 | `apps/api/test/chunker.test.ts` | Fragmentación: títulos, tablas, solape, páginas, cortes |

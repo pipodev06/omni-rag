@@ -11,3 +11,8 @@ backups-offsite/
 
 # Ajustes locales de cada servidor (ver docker-compose.override.example.yml)
 docker-compose.override.yml
+
+# Pruebas de extremo a extremo (Playwright)
+apps/web/e2e/.state.json
+apps/web/test-results/
+apps/web/playwright-report/
