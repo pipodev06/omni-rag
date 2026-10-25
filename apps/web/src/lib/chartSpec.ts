@@ -64,6 +64,7 @@ export function parseChart(source: string): ChartResult {
   if (rawLabels.length > MAX_LABELS) return { ok: false, error: `Demasiadas etiquetas (máximo ${MAX_LABELS})` };
   const labels = rawLabels.map((l) => (typeof l === "number" ? String(l) : text(l, 40)));
   if (labels.some((l) => !l)) return { ok: false, error: "Hay etiquetas vacías" };
+  if (new Set(labels).size !== labels.length) return { ok: false, error: "Hay etiquetas repetidas" };
 
   const rawSeries = o.series;
   if (!Array.isArray(rawSeries) || rawSeries.length === 0) return { ok: false, error: "Faltan los datos del gráfico" };
@@ -79,7 +80,11 @@ export function parseChart(source: string): ChartResult {
     }
     const data = values.map(toNumber);
     if (data.some((d) => d === undefined)) return { ok: false, error: "Hay valores que no son números" };
-    series.push({ name: text(so.name ?? so.nombre, 60) || `Serie ${i + 1}`, data: data as (number | null)[] });
+    // Nombres únicos: la leyenda y la tabla los usan para identificar cada serie.
+    const base = text(so.name ?? so.nombre, 60) || `Serie ${i + 1}`;
+    let name = base;
+    for (let n = 2; series.some((x) => x.name === name); n++) name = `${base} (${n})`;
+    series.push({ name, data: data as (number | null)[] });
   }
   if (series.every((s) => s.data.every((d) => d === null))) return { ok: false, error: "El gráfico no tiene datos" };
 
@@ -103,9 +108,11 @@ export function niceScale(min: number, max: number, ticks = 4): { min: number; m
   return { min: Math.floor(lo / step) * step, max: Math.ceil(hi / step) * step, step };
 }
 
+const NUMBER_FORMAT = new Intl.NumberFormat("es-PE", { maximumFractionDigits: 2 });
+
 /** Número con separador de miles según el idioma (es-PE) y la unidad, si la hay. */
 export function formatValue(value: number, unit = ""): string {
-  const n = new Intl.NumberFormat("es-PE", { maximumFractionDigits: 2 }).format(value);
+  const n = NUMBER_FORMAT.format(value);
   if (!unit) return n;
   return unit === "%" ? `${n} %` : /^[A-Za-z$€£S/]{1,4}\.?$/.test(unit) ? `${unit} ${n}` : `${n} ${unit}`;
 }

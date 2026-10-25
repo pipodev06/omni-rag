@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from "react";
+import { useRef, type KeyboardEvent, type RefObject } from "react";
 import { ArrowUp, Globe, ListFilter, Square, X } from "lucide-react";
 import type { Collection } from "@/api";
 import { FileTypeIcon } from "@/components/common";
@@ -116,14 +116,12 @@ export function Composer(props: {
   webSearch: { on: boolean; onChange: (on: boolean) => void } | null;
 }) {
   // Posición en el historial (null = escribiendo un texto propio) y el borrador que se tenía antes de pulsar ↑.
-  const [histIndex, setHistIndex] = useState<number | null>(null);
+  // Solo la leen los manejadores de teclado: un ref basta y no provoca renders.
+  const histIndex = useRef<number | null>(null);
   const draft = useRef("");
-  useEffect(() => {
-    if (props.value === "") setHistIndex(null); // se envió o se borró todo
-  }, [props.value]);
 
   const showHistory = (index: number | null) => {
-    setHistIndex(index);
+    histIndex.current = index;
     const text = index === null ? draft.current : (props.history[index] ?? "");
     props.onChange(text);
     requestAnimationFrame(() => props.textareaRef.current?.setSelectionRange(text.length, text.length));
@@ -141,16 +139,19 @@ export function Composer(props: {
     if ((e.key !== "ArrowUp" && e.key !== "ArrowDown") || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return;
     const el = e.currentTarget;
     if (el.selectionStart !== el.selectionEnd || props.history.length === 0) return;
+    // Si el texto ya no es el recuperado (se envió o se borró), se vuelve a escribir un texto propio.
+    if (histIndex.current !== null && props.value !== props.history[histIndex.current]) histIndex.current = null;
+    const index = histIndex.current;
     if (e.key === "ArrowUp") {
       const firstLine = !el.value.slice(0, el.selectionStart).includes("\n");
-      if (firstLine && (props.value === "" || histIndex !== null || el.selectionStart === 0)) {
+      if (firstLine && (props.value === "" || index !== null || el.selectionStart === 0)) {
         e.preventDefault();
-        if (histIndex === null) draft.current = props.value;
-        showHistory(nextHistoryIndex(props.history.length, histIndex, "up"));
+        if (index === null) draft.current = props.value;
+        showHistory(nextHistoryIndex(props.history.length, index, "up"));
       }
-    } else if (histIndex !== null && !el.value.slice(el.selectionEnd).includes("\n")) {
+    } else if (index !== null && !el.value.slice(el.selectionEnd).includes("\n")) {
       e.preventDefault();
-      showHistory(nextHistoryIndex(props.history.length, histIndex, "down"));
+      showHistory(nextHistoryIndex(props.history.length, index, "down"));
     }
   };
 
@@ -167,7 +168,7 @@ export function Composer(props: {
             value={props.value}
             onChange={(e) => {
               props.onChange(e.target.value);
-              setHistIndex(null); // si edita lo recuperado, deja de recorrer el historial
+              histIndex.current = null; // si edita lo recuperado, deja de recorrer el historial
             }}
             onKeyDown={onKeyDown}
             placeholder="Escribe tu pregunta…"

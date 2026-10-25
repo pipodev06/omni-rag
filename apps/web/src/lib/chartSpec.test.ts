@@ -20,11 +20,17 @@ describe("parseChart", () => {
     const bad = (o: object) => parseChart(JSON.stringify({ ...bar, ...o }));
     expect(parseChart("{no es json").ok).toBe(false);
     expect(bad({ type: "radar" }).ok).toBe(false);
+    expect(bad({ labels: ["2023", "2023"] }).ok).toBe(false); // etiquetas repetidas
     expect(bad({ series: [{ name: "x", data: [1] }] }).ok).toBe(false); // un valor menos que etiquetas
     expect(bad({ series: [{ name: "x", data: ["1,200", 3] }] }).ok).toBe(false); // ambiguo
     expect(bad({ series: [{ name: "x", data: ["mucho", 3] }] }).ok).toBe(false);
     expect(bad({ labels: Array.from({ length: 41 }, (_, i) => `e${i}`), series: [{ name: "x", data: Array(41).fill(1) }] }).ok).toBe(false);
     expect(bad({ series: Array.from({ length: 9 }, () => ({ name: "s", data: [1, 2] })) }).ok).toBe(false);
+  });
+
+  it("nombres de serie repetidos se numeran", () => {
+    const r = parseChart(JSON.stringify({ ...bar, series: [{ name: "A", data: [1, 2] }, { name: "A", data: [3, 4] }] }));
+    expect(r.ok && r.chart.series.map((s) => s.name)).toEqual(["A", "A (2)"]);
   });
 
   it("un gráfico circular: una serie, partes positivas y como mucho 8", () => {
