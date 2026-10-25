@@ -25,7 +25,6 @@ Ideas que **pueden o no agregarse**. No son pendientes: se hacen solo si algún 
 |---|---|---|
 | 17 | Costo estimado por organización (tokens por precio del modelo) para facturar | medio |
 | 19 | Clave de API propia por organización, cifrada, que prevalezca sobre la global | medio |
-| 20 | Botón «organización principal» para el superadministrador (hoy basta el selector de Organizaciones) | bajo |
 | 21 | Cobro automático de planes (Stripe u otro) | alto |
 | 22 | Alta de organizaciones por autoservicio (hoy solo las crea el superadministrador) | alto |
 
@@ -36,11 +35,6 @@ Ideas que **pueden o no agregarse**. No son pendientes: se hacen solo si algún 
 | 25 | Inicio de sesión con Google o Microsoft (SSO) | alto |
 | 26 | Webhooks (aviso a un sistema externo al terminar de procesar un documento) | medio |
 | 27 | Interfaz en varios idiomas (hoy solo español) | alto |
-
-## Seguridad y operación
-| # | Idea | Esfuerzo |
-|---|---|---|
-| 35 | Pruebas de extremo a extremo con Playwright: login, subir, preguntar, borrar. Hoy ninguna recorre la interfaz | alto |
 
 ## Si una de ellas se decide
 Pasa a [pendientes.md](pendientes.md) con su número, y cuando se termine se tacha allí.

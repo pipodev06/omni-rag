@@ -423,6 +423,8 @@ Guarda una copia del `.env` (`.env.bak-FECHA`), cambia la contraseña dentro de 
 | Documento en *Error*: "Docling no extrajo texto" | Archivo protegido con contraseña, dañado o vacío | Ábrelo y guárdalo de nuevo / quita la protección |
 | Documento en *Error*: "dimensiones" | `EMBEDDING_DIM` no coincide con el modelo | Ver "Cambiar el modelo de embeddings" |
 | Documentos atascados en *En cola* | El worker no está en marcha | `docker compose ps worker`; `docker compose logs worker` |
+| Un documento vuelve a *En cola* un par de minutos y luego pasa a *Error* | Falló y el worker lo reintenta (3 intentos, con espera entre ellos) | Mira el motivo en *Error* cuando termine; `docker compose logs worker` |
+| CSV con varias tablas, separado por `;` o guardado desde Excel | — | Se leen sin Docling (`ingest/csv.ts`): cada bloque de filas con el mismo número de columnas es una tabla; detecta `,` `;` tabulador y `\|`, quita el BOM y acepta Windows-1252. Un CSV que falló antes del cambio se arregla con «Reprocesar» |
 | Chat: "La clave de OpenRouter no es válida" | `OPENROUTER_API_KEY` vacía o incorrecta | Corrígela en `.env` y ejecuta `docker compose up -d api` |
 | Chat: "No endpoints found matching your data policy" (en registros) | La privacidad de OpenRouter bloquea los proveedores gratuitos | [instalacion.md §3](instalacion.md#3-clave-y-privacidad-en-openrouter) |
 | Chat: "límite de N preguntas por día" | Límite de la organización | Ajusta el límite (ver arriba) |

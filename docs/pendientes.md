@@ -1,6 +1,6 @@
 # Pendientes
 
-Lo que está en curso o decidido. Lo que se termina se tacha y baja a «Hecho». Las ideas que pueden o no agregarse están en [posibles_mejoras.md](posibles_mejoras.md). La numeración es la de la lista original (1-47).
+Lo que está en curso o decidido. Lo que se termina se tacha y baja a «Hecho». Las ideas que pueden o no agregarse están en [posibles_mejoras.md](posibles_mejoras.md). La numeración es la de la lista original (1-48).
 
 ## Abiertos
 
@@ -36,9 +36,11 @@ Lo que está en curso o decidido. Lo que se termina se tacha y baja a «Hecho».
 - ~~4 Subir una carpeta o un ZIP~~ (los ZIP se abren en el navegador; tandas de 20 archivos y 90 MB)
 - ~~5 Descargar varios documentos en un ZIP~~ (barra de selección; ZIP en streaming)
 - ~~33 Exportar todos los datos de un cliente~~ (Organizaciones → ⋮ → Exportar datos; sin secretos)
-- ~~23 Organización «Plataforma»~~ (el superadmin vive en una organización interna, excluida de totales y facturación; todas las organizaciones de clientes se pueden borrar; `move-superadmin.js` para instalaciones anteriores)
+- ~~20 y 23 Organización «Plataforma»~~ (con «Volver a Plataforma» en el banner de soporte, que sustituye al botón «organización principal»; el superadmin vive en una organización interna, excluida de totales y facturación; todas las organizaciones de clientes se pueden borrar; `move-superadmin.js` para instalaciones anteriores)
 - ~~43 Copia fuera del servidor~~ (cifrada, a Backblaze B2)
 - ~~47 Subir los commits pendientes~~
+- ~~35 Pruebas de extremo a extremo con Playwright~~ (`apps/web/e2e/`, `pnpm e2e`; organización temporal que se borra al terminar)
+- ~~CSV que fallaban en Docling~~ (se leen sin Docling: varias tablas por archivo, separador automático, BOM y Windows-1252)
 - ~~Gráficos y diagramas en las respuestas~~ (bloques ```chart, dibujados en SVG propio y validados, y ```mermaid, cargado solo al primer diagrama y en modo `strict`)
 
 También se hicieron, sin estar en la lista: capa de proveedores de LLM (OpenRouter, Groq, Google, OpenAI, DeepSeek, servidor propio), planes por organización, inicio de sesión con usuario o correo, 2FA opcional (TOTP), papelera de documentos, copias de seguridad a hora fija e incrementales de los archivos, script para probar el SMTP (`test-email.js`), script para listar y probar modelos (`models.js`) y renombrar el proyecto a Omni RAG.

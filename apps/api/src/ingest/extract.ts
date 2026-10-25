@@ -1,4 +1,5 @@
 import { config } from "../config.js";
+import { csvToMarkdown, decodeText } from "./csv.js";
 import { formatFor } from "./formats.js";
 
 export interface ExtractedPage {
@@ -20,10 +21,8 @@ export async function extractText(filename: string, data: Uint8Array, signal?: A
   const format = formatFor(filename);
   if (!format) throw new Error(`Formato no soportado: ${filename}`);
 
-  if (format.via === "text") {
-    const text = new TextDecoder("utf-8").decode(data);
-    return { pages: [{ page: null, text }], pageCount: null };
-  }
+  if (format.via === "text") return { pages: [{ page: null, text: decodeText(data) }], pageCount: null };
+  if (format.via === "csv") return { pages: [{ page: null, text: csvToMarkdown(data) }], pageCount: null };
 
   const markdown = await convertWithDocling(filename, format.mime, data, signal);
   return splitPages(markdown, format.paged === true);
