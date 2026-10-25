@@ -203,11 +203,19 @@ export async function streamChat(
  * Sube archivos con progreso (fetch no informa del progreso de subida).
  * onProgress recibe un valor entre 0 y 1.
  */
+/** Resultado de cada archivo de una subida. */
+export interface UploadResult {
+  filename: string;
+  id?: string;
+  status: "queued" | "duplicate" | "rejected";
+  reason?: string;
+}
+
 export function uploadDocuments(
   collectionId: string,
   files: File[],
   onProgress: (fraction: number) => void,
-): Promise<{ results: { filename: string; id?: string; status: "queued" | "duplicate" | "rejected"; reason?: string }[] }> {
+): Promise<{ results: UploadResult[] }> {
   return new Promise((resolve, reject) => {
     const form = new FormData();
     form.append("collectionId", collectionId);

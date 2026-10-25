@@ -101,6 +101,28 @@ Haz este ensayo una vez con una copia real, en otra máquina o en otra carpeta, 
 
 Con las casillas de **Documentos**, elige los documentos y pulsa **Reprocesar** en la barra de selección (hasta 200). Útil con los que fallaron o tras cambiar el modelo de embeddings. Los que ya están en cola o procesándose se omiten para no duplicar trabajo.
 
+## Subir carpetas o archivos ZIP
+
+En **Documentos** puedes arrastrar archivos sueltos, **carpetas enteras** o **archivos ZIP**, o usar «elegir una carpeta» debajo del recuadro. Los ZIP se abren en el navegador (el servidor nunca recibe un ZIP, así que no corre riesgos con archivos comprimidos maliciosos) y se descartan las carpetas `__MACOSX`, los archivos ocultos y los temporales de Office. No se abren ZIP dentro de otro ZIP.
+
+- Topes por operación: 500 archivos, 500 por ZIP y 1 GB descomprimido entre todos los ZIP.
+- Se sube en tandas de hasta 20 archivos y 90 MB (Cloudflare corta las peticiones de más de 100 MB). Un archivo de más de 90 MB va solo, y si pasa de 100 MB y entras por Cloudflare, no se podrá subir.
+- Al terminar sale **un solo aviso** con cuántos quedaron en cola y, si alguno no se subió, el motivo de los primeros (formato no admitido, duplicado, tope del plan…).
+
+## Descargar varios documentos en un ZIP
+
+Marca los documentos y pulsa **Descargar** en la barra de selección. Se descargan los originales en un ZIP (`documentos-AAAA-MM-DD.zip`); si son de varias colecciones, cada una va en su carpeta. Hasta 100 documentos y 1 GB por descarga; el ZIP se arma sobre la marcha, así que no pesa en el servidor. Queda en la auditoría («Descargó varios documentos»). Los que están en la papelera no se incluyen.
+
+## Exportar todos los datos de un cliente
+
+Para entregar sus datos a un cliente (portabilidad) o guardarlos antes de borrar su organización: **Organizaciones → ⋮ → Exportar datos**. Descarga `<identificador>-exportacion-AAAA-MM-DD.zip` con:
+
+- `organizacion.json`, `usuarios.json`, `colecciones.json` (con sus miembros), `documentos.json` (también los de la papelera, marcados), `conversaciones.json` (con mensajes y fuentes), `valoraciones.json`, `uso.json` (llamadas y tokens por día y modelo) y `auditoria.json`.
+- `archivos/<colección>/…`: los documentos originales.
+- `LEEME.txt` con la explicación del contenido.
+
+**No incluye** contraseñas, secretos ni códigos de la verificación en dos pasos, sesiones ni enlaces de acceso. Solo el superadministrador puede exportar, y queda registrado en tu auditoría y en la del cliente. La organización Plataforma no se exporta. El ZIP se arma sobre la marcha (un archivo a la vez), así que una organización grande no satura la memoria del servidor, aunque la descarga tarde.
+
 ## Papelera de documentos
 
 Borrar un documento (uno o varios, desde **Documentos**) **no lo elimina**: lo manda a la **Papelera** (botón arriba a la derecha de Documentos, para administradores y editores). Mientras está allí no aparece en las colecciones, no sale en las respuestas del chat ni cuenta para el límite de documentos del plan, pero su archivo, sus fragmentos y sus vectores se conservan, así que **restaurarlo es inmediato** y no hay que procesarlo de nuevo.
