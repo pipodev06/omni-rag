@@ -13,6 +13,7 @@ import { loadHistory, mergeHistory, rememberPrompt } from "@/lib/promptHistory";
 import { ChatWelcome } from "@/components/chat/ChatWelcome";
 import { Composer } from "@/components/chat/Composer";
 import { QuotaBanner } from "@/components/chat/QuotaBanner";
+import { useQuota } from "@/hooks/useQuota";
 import { ConversationList } from "@/components/chat/ConversationList";
 import { useOpenDocument } from "@/components/documents/DocumentViewer";
 import { Button } from "@/components/ui/button";
@@ -95,6 +96,9 @@ export function ChatPage() {
   const [selectedCollections, setSelectedCollections] = useState<string[]>([]);
   const [activeSource, setActiveSource] = useState<Record<string, number | null>>({});
   const [docFilter, setDocFilter] = useState<string | null>(null);
+  // «Buscar también en internet»: apagado al entrar; solo aparece si el plan lo permite y hay buscador en el servidor.
+  const [webSearch, setWebSearch] = useState(false);
+  const webAvailable = useQuota().data?.webSearch === true;
 
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -157,6 +161,7 @@ export function ChatPage() {
           conversationId,
           collectionIds: selectedCollections.length ? selectedCollections : undefined,
           documentIds: docFilter ? [docFilter] : undefined,
+          webSearch: webAvailable && webSearch ? true : undefined,
         },
         {
           onMeta: (meta) => {
@@ -165,6 +170,7 @@ export function ChatPage() {
               navigate(`/chat/${meta.conversationId}`, { replace: true });
             }
             updateLast((m) => ({ ...m, sources: meta.sources }));
+            if (meta.web?.failed) toast.warning("No se pudo buscar en internet", { description: "La respuesta usa solo tus documentos." });
           },
           onToken: (t) => updateLast((m) => ({ ...m, content: m.content + t })),
           onDone: (d) => updateLast((m) => ({ ...m, id: d.messageId, model: d.model, sources: d.sources, fromCache: d.fromCache })),
@@ -253,6 +259,7 @@ export function ChatPage() {
         onOpenDocument={() => docFilter && openDocument({ documentId: docFilter })}
         onClearDocument={() => setDocFilter(null)}
         history={history}
+        webSearch={webAvailable ? { on: webSearch, onChange: setWebSearch } : null}
       />
     </div>
   );

@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from "react";
-import { ArrowUp, ListFilter, Square, X } from "lucide-react";
+import { ArrowUp, Globe, ListFilter, Square, X } from "lucide-react";
 import type { Collection } from "@/api";
 import { FileTypeIcon } from "@/components/common";
 import { nextHistoryIndex } from "@/lib/promptHistory";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -14,6 +15,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Textarea } from "@/components/ui/textarea";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 function CollectionFilter({ collections, selected, onChange }: { collections: Collection[]; selected: string[]; onChange: (ids: string[]) => void }) {
   const selectedSet = new Set(selected);
@@ -70,6 +72,30 @@ function DocumentFilterChip({ title, filename, onOpen, onClear }: { title?: stri
   );
 }
 
+/** Activa la búsqueda en internet para las próximas preguntas. Solo se envía la pregunta, nunca los documentos. */
+function WebSearchToggle({ on, onChange }: { on: boolean; onChange: (on: boolean) => void }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          aria-pressed={on}
+          onClick={() => onChange(!on)}
+          className={cn("h-8 gap-1.5 text-xs", on ? "bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary" : "text-muted-foreground")}
+        >
+          <Globe className="size-3.5" /> Internet
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-xs">
+        {on ? "Buscando también en internet. " : "Buscar también en internet. "}
+        Solo se envía tu pregunta al buscador, nunca tus documentos. Las fuentes de internet se marcan aparte.
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 /** Caja de texto del chat con filtros (colecciones / documento) y enviar / detener. */
 export function Composer(props: {
   textareaRef: RefObject<HTMLTextAreaElement | null>;
@@ -86,6 +112,8 @@ export function Composer(props: {
   onClearDocument: () => void;
   /** Preguntas anteriores, de la más antigua a la más reciente, para recuperarlas con ↑ y ↓. */
   history: string[];
+  /** Interruptor «Buscar también en internet»; null si el plan no lo permite o no hay buscador en el servidor. */
+  webSearch: { on: boolean; onChange: (on: boolean) => void } | null;
 }) {
   // Posición en el historial (null = escribiendo un texto propio) y el borrador que se tenía antes de pulsar ↑.
   const [histIndex, setHistIndex] = useState<number | null>(null);
@@ -148,11 +176,12 @@ export function Composer(props: {
             className="field-sizing-content max-h-[200px] min-h-[52px] resize-none border-0 bg-transparent px-4 py-3.5 text-[15px] shadow-none focus-visible:ring-0 dark:bg-transparent"
           />
           <div className="flex items-center justify-between gap-2 px-2 pb-2">
-            {props.collections.length > 1 ? (
-              <CollectionFilter collections={props.collections} selected={props.selectedCollections} onChange={props.onSelectedCollections} />
-            ) : (
-              <span />
-            )}
+            <div className="flex min-w-0 items-center gap-1">
+              {props.collections.length > 1 && (
+                <CollectionFilter collections={props.collections} selected={props.selectedCollections} onChange={props.onSelectedCollections} />
+              )}
+              {props.webSearch && <WebSearchToggle {...props.webSearch} />}
+            </div>
             {props.busy ? (
               <Button size="icon" variant="secondary" className="size-8 rounded-full" onClick={props.onStop} aria-label="Detener">
                 <Square className="size-3.5 fill-current" />

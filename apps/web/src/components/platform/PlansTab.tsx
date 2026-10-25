@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -30,6 +31,7 @@ interface PlanForm {
   maxUsers: string;
   maxDocuments: string;
   userDailyQuestionLimit: string;
+  webSearch: boolean;
 }
 
 const toForm = (p?: Plan): PlanForm => ({
@@ -40,6 +42,7 @@ const toForm = (p?: Plan): PlanForm => ({
   maxUsers: p?.maxUsers?.toString() ?? "",
   maxDocuments: p?.maxDocuments?.toString() ?? "",
   userDailyQuestionLimit: p?.userDailyQuestionLimit?.toString() ?? "",
+  webSearch: p?.webSearch ?? false,
 });
 
 /** Crear o editar un plan. `plan` = null crea uno nuevo; `undefined` mantiene el diálogo cerrado. */
@@ -69,6 +72,7 @@ export function PlanDialog({ plan, open, onOpenChange, onSaved }: {
       maxUsers: form.maxUsers.trim() === "" ? null : Number(form.maxUsers),
       maxDocuments: form.maxDocuments.trim() === "" ? null : Number(form.maxDocuments),
       userDailyQuestionLimit: form.userDailyQuestionLimit.trim() === "" ? null : Number(form.userDailyQuestionLimit),
+      webSearch: form.webSearch,
     };
     try {
       if (plan) await api.put(`/platform/plans/${plan.id}`, payload);
@@ -133,6 +137,19 @@ export function PlanDialog({ plan, open, onOpenChange, onSaved }: {
             <div className="space-y-2">
               <Label htmlFor="p-docs">Documentos máximos</Label>
               <Input id="p-docs" type="number" min={1} value={form.maxDocuments} onChange={(e) => setForm({ ...form, maxDocuments: e.target.value })} placeholder="Sin tope" />
+            </div>
+            <div className="flex items-center gap-2 sm:col-span-2">
+              <Checkbox id="p-web" checked={form.webSearch} onCheckedChange={(v) => setForm({ ...form, webSearch: v === true })} />
+              <Label htmlFor="p-web" className="font-normal">
+                Permitir la búsqueda en internet en el chat
+              </Label>
+              <InfoHint title="Búsqueda en internet">
+                <p>
+                  Los usuarios de este plan verán el interruptor «Internet» en el chat y podrán activarlo pregunta a pregunta. Solo se envía la pregunta al
+                  buscador, nunca los documentos, y las fuentes de internet se muestran aparte.
+                </p>
+                <p>Además hay que configurar un buscador en el servidor (WEB_SEARCH_PROVIDER); sin él, el interruptor no aparece.</p>
+              </InfoHint>
             </div>
           </div>
           <DialogFooter>
@@ -208,6 +225,7 @@ export function PlansTab({ onEdit }: { onEdit: (p: Plan) => void }) {
                 <p className="flex items-center gap-2 font-medium">
                   {p.name}
                   {p.isDefault && <Badge variant="secondary">Por defecto</Badge>}
+                  {p.webSearch && <Badge variant="outline" className="font-normal">Internet</Badge>}
                 </p>
                 {p.description && <p className="text-xs text-muted-foreground">{p.description}</p>}
               </TableCell>

@@ -7,7 +7,6 @@ Lo que está en curso o decidido. Lo que se termina se tacha y baja a «Hecho».
 | # | Qué | Tipo |
 |---|---|---|
 | 46 | Revisar los PR de Dependabot cuando vuelva a abrirlos (se borraron sus ramas el 23/10) | Tú |
-| 48 | **Búsqueda en internet (modo híbrido: documentos + web).** Diseño recomendado: buscador propio (Tavily, Brave Search API o SearXNG) en vez de la búsqueda de cada proveedor, para que funcione igual con cualquier modelo; **desactivado por defecto**, con un interruptor «Buscar también en internet» en el chat y un permiso por plan; fuentes siempre diferenciadas («Documento» frente a «Web», con enlace). Cuidados: enviar solo la pregunta (nunca fragmentos de los documentos) y avisarlo; tratar el texto de las páginas como no confiable (inyección de instrucciones); que la respuesta diga cuándo la web contradice a los documentos; cupo y costo del servicio de búsqueda | Hacer |
 
 ## Hecho
 
@@ -33,6 +32,7 @@ Lo que está en curso o decidido. Lo que se termina se tacha y baja a «Hecho».
 - ~~40 Barra lateral con 2FA obligatorio~~ (se corrigió que los avisos en vivo recibían 403)
 - ~~41 Despliegue real con dominio~~ (en producción con túnel de Cloudflare)
 - ~~42 Banner de cuota~~ (se ve bien al 80 % y al agotarse el límite)
+- ~~48 Búsqueda en internet (modo híbrido)~~ (Tavily, Brave o SearXNG; permiso por plan; botón «Internet» en el chat; solo se envía la pregunta)
 - ~~4 Subir una carpeta o un ZIP~~ (los ZIP se abren en el navegador; tandas de 20 archivos y 90 MB)
 - ~~5 Descargar varios documentos en un ZIP~~ (barra de selección; ZIP en streaming)
 - ~~33 Exportar todos los datos de un cliente~~ (Organizaciones → ⋮ → Exportar datos; sin secretos)

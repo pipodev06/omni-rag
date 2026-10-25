@@ -13,6 +13,8 @@ export interface TenantPlan {
   dailyQuestionLimit: number;
   maxUsers: number | null;
   maxDocuments: number | null;
+  /** El plan permite la búsqueda en internet (además hace falta un buscador configurado en el servidor). */
+  webSearch: boolean;
   /** Preguntas por día de cada usuario; null = sin tope por usuario. */
   userDailyQuestionLimit: number | null;
 }
@@ -21,7 +23,7 @@ export async function getTenantPlan(tenantId: string): Promise<TenantPlan> {
   const [row] = await sqlOwner<(Omit<TenantPlan, "dailyQuestionLimit"> & { planLimit: number; override: number | null })[]>`
     SELECT p.id, p.name, p.llm_models AS "llmModels", p.daily_question_limit AS "planLimit",
            p.max_users AS "maxUsers", p.max_documents AS "maxDocuments",
-           p.user_daily_question_limit AS "userDailyQuestionLimit", t.daily_question_limit AS override
+           p.user_daily_question_limit AS "userDailyQuestionLimit", p.web_search AS "webSearch", t.daily_question_limit AS override
       FROM tenants t
       JOIN plans p ON p.id = coalesce(t.plan_id, (SELECT id FROM plans WHERE is_default))
      WHERE t.id = ${tenantId}`;

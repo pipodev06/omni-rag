@@ -9,6 +9,8 @@ export interface Quota {
   warnPercent: number;
   /** Cuota personal del usuario; null si el plan no la define. */
   user: { used: number; limit: number; level: "ok" | "warn" | "full" | "unlimited" } | null;
+  /** Se puede activar «Buscar también en internet» (el plan lo permite y hay buscador en el servidor). */
+  webSearch?: boolean;
 }
 
 /** Cuota diaria de preguntas de la organización (para avisar antes de llegar al tope). */
