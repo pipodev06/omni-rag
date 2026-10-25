@@ -2,6 +2,9 @@ packages:
   - "apps/*"
 onlyBuiltDependencies:
   - esbuild
-# Corrige una vulnerabilidad moderada (CPU) de una dependencia de @tailwindcss/typography.
+# Correcciones de seguridad en dependencias indirectas (las exige `pnpm audit --audit-level=high` del CI):
+# - postcss-selector-parser (moderada, CPU), de @tailwindcss/typography.
+# - lodash-es (alta, GHSA-r5fr-rjxr-66jc, inyección de código en _.template), de mermaid → langium → chevrotain.
 overrides:
   "postcss-selector-parser@<7.1.6": ">=7.1.6"
+  "lodash-es@<4.18.0": ">=4.18.0"
