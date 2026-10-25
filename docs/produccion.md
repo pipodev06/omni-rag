@@ -228,6 +228,8 @@ Por qué cada línea importa:
 | `client_max_body_size` | Las subidas grandes dan `413`. |
 | `Strict-Transport-Security` | Solo Caddy lo añade solo; con tu nginx hay que ponerlo tú. |
 
+**La IP real del usuario (`TRUSTED_PROXY_HOPS`).** La API la saca de `X-Forwarded-For` contando desde el final: cada proxy de confianza añade una dirección. Indica cuántos proxies tienes delante del contenedor `web`: `1` con Caddy o con un nginx como el de arriba (por defecto), `2` con un **túnel de Cloudflare + Nginx Proxy Manager**, `0` si se entra directo. Si el valor es menor que la realidad, todos los usuarios aparecen con la IP del último proxy en Auditoría y en las sesiones, y **comparten** el límite de peticiones por IP (`IP_RATE_LIMIT_PER_MIN`), así que varios usuarios entrando a la vez podrían recibir «Demasiadas peticiones». Para comprobarlo: entra desde dos redes distintas (por ejemplo, el móvil sin wifi) y mira *Mi cuenta → Sesiones*; deben salir IP distintas y públicas, no `172.x` ni `10.x`.
+
 No añadas `Content-Security-Policy` ni `X-Frame-Options` en tu nginx: ya las envía la web y se duplicarían. Si tu nginx sirve otras aplicaciones, no toques nada de ellas: el dominio nuevo es un `server` aparte.
 
 ## Actualizar a una nueva versión

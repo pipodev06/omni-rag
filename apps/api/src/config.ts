@@ -29,6 +29,8 @@ const schema = z.object({
   REQUIRE_ADMIN_2FA: z.enum(["true", "false"]).default("false"),
   /** Peticiones por minuto y por IP a la API sin sesión válida (0 = sin límite). */
   IP_RATE_LIMIT_PER_MIN: z.coerce.number().int().min(0).default(120),
+  /** Proxies delante del nginx de la web (Caddy o un nginx = 1; túnel de Cloudflare + Nginx Proxy Manager = 2; acceso directo = 0). */
+  TRUSTED_PROXY_HOPS: z.coerce.number().int().min(0).max(5).default(1),
   /** Formato de los registros: `json` (una línea por evento, para buscar y filtrar) o `text`. */
   LOG_FORMAT: z.enum(["json", "text"]).default("json"),
 
