@@ -240,6 +240,23 @@ curl -s localhost:8000/api/search -H "authorization: Bearer $TOKEN" -H 'content-
 | `CHUNK_SIZE_CHARS` | `1200` | Tamaño de los fragmentos. El modelo E5 lee como máximo 512 tokens (unos 1.800 caracteres en español), así que no conviene superar ~1.500. |
 | `FTS_LANGUAGE` | `spanish` | Idioma de la búsqueda por palabras (raíces, palabras vacías). Cambiarlo requiere una migración nueva. |
 
+## Búsqueda en internet (modo híbrido)
+
+Además de los documentos, el chat puede consultar internet. Está **desactivada por defecto** y hacen falta tres cosas:
+
+1. **Un buscador en el servidor:** en el `.env`, `WEB_SEARCH_PROVIDER=tavily` o `brave` con su `WEB_SEARCH_API_KEY`, o `searxng` con `WEB_SEARCH_URL` (tu propio SearXNG, con el formato `json` activado en su `settings.yml`). Aplica con `docker compose up -d`; `GET /api/health` muestra el buscador en `webSearch`.
+2. **Que el plan lo permita:** *Organizaciones → Planes → editar → «Permitir la búsqueda en internet en el chat»*. Los planes que lo permiten llevan la etiqueta «Internet».
+3. **Que el usuario lo active:** en el chat aparece el botón **Internet** junto al filtro de colecciones; se activa pregunta a pregunta y vuelve a apagarse al recargar.
+
+Cómo funciona:
+- **Solo se envía la pregunta** al buscador (con la anterior si es una pregunta de seguimiento corta), **nunca fragmentos de los documentos**.
+- El modelo recibe los resultados en un bloque aparte, numerados después de los documentos, con reglas propias: prioriza los documentos, usa internet solo para completar, dice qué viene de internet y avisa si contradice a los documentos. El texto de las páginas se trata como datos no confiables (no puede dar órdenes) y se neutralizan las etiquetas con las que intentara salirse de su bloque.
+- Las fuentes de internet se ven con un globo, su dominio y «Abrir página» (en otra pestaña), separadas de las de los documentos. En la exportación a Markdown salen como «Internet: título — enlace».
+- Si no hay fragmentos relevantes pero sí resultados de internet, responde con internet; si no hay ni lo uno ni lo otro, no llama al modelo.
+- Las respuestas con internet **no usan ni llenan la caché** (los resultados cambian con el tiempo). Cuentan como una pregunta más para el límite diario.
+- Si el buscador falla, la respuesta usa solo los documentos y el usuario ve el aviso «No se pudo buscar en internet».
+- Cada búsqueda gasta cupo del servicio de búsqueda (aparte de los modelos): revisa sus límites y precios.
+
 ## Mayúsculas y minúsculas
 
 Iniciar sesión, la caché de respuestas, la búsqueda por palabras y la búsqueda de conversaciones ignoran las mayúsculas. La búsqueda **semántica** (embeddings y re-ranker) sí las distingue: una pregunta en MAYÚSCULAS encontraba otros fragmentos que la misma en minúsculas (medido: en una prueba solo coincidían 3 de 6, y a veces aparecía uno sin relación). Por eso una pregunta escrita casi toda en mayúsculas (70 % de sus letras o más) se busca en minúsculas. Un texto normal, con siglas o nombres propios («¿Qué dice el contrato con la SUNAT?»), no se toca, y el modelo de lenguaje siempre recibe la pregunta tal como se escribió.

@@ -10,7 +10,7 @@ Base: `http://localhost:8000/api` (a través de nginx) o `http://localhost:3001/
 
 | Método | Ruta | Acceso | Descripción |
 |---|---|---|---|
-| GET | `/quota` | cualquier usuario | `{ used, limit, level, warnPercent, user }`: preguntas de hoy de la organización frente al límite de su plan; `user` = `{ used, limit, level }` con la cuota personal si el plan la define, o `null`. `level`: `ok`, `warn` (desde `QUOTA_WARN_PERCENT` %), `full` o `unlimited` |
+| GET | `/quota` | cualquier usuario | `{ used, limit, level, warnPercent, user, webSearch }`: `webSearch` dice si el plan permite la búsqueda en internet y hay buscador configurado (muestra el botón «Internet» del chat); preguntas de hoy de la organización frente al límite de su plan; `user` = `{ used, limit, level }` con la cuota personal si el plan la define, o `null`. `level`: `ok`, `warn` (desde `QUOTA_WARN_PERCENT` %), `full` o `unlimited` |
 | GET | `/health` | público | Estado de `database`, `embeddings`, `reranker` (o `desactivado`) y si `openrouter` está configurado. `llm` lista los proveedores de LLM configurados (vacío = el chat no puede responder). `antivirus` es `ok`, `desactivado` o el motivo del fallo. `docling` aparece como «aislado»: vive en una red interna que solo alcanza el worker, y su estado se ve con `docker compose ps`. `503` si la base de datos no responde. |
 
 ## Sesión — `/auth`
@@ -37,7 +37,7 @@ Base: `http://localhost:8000/api` (a través de nginx) o `http://localhost:3001/
 
 | Método | Ruta | Acceso | Descripción |
 |---|---|---|---|
-| POST | `/chat` | todos | Pregunta con respuesta en streaming (ver abajo) |
+| POST | `/chat` | todos | Pregunta con respuesta en streaming (ver abajo). Con `webSearch: true` (y si el plan lo permite) busca también en internet: las fuentes de internet llevan `kind: "web"` y `url`, y `meta` incluye `web: { used, failed }` |
 | POST | `/search` | todos | `{ query, collectionIds?, topK? }` → `{ results: SearchHit[] }`. **No usa el LLM.** |
 | GET | `/conversations?q=` | todos | Las 200 conversaciones más recientes del usuario. Con `q` filtra por el título o el texto de los mensajes (sin distinguir mayúsculas; `%` y `_` se buscan literalmente) |
 | PATCH | `/conversations/:id` | dueño | `{ title }`: renombra la conversación (1-120 caracteres) |

@@ -51,6 +51,11 @@ const schema = z.object({
   INVITE_EXPIRES_HOURS: z.coerce.number().positive().default(72),
   RESET_EXPIRES_MINUTES: z.coerce.number().positive().default(60),
   AUDIT_RETENTION_DAYS: z.coerce.number().int().positive().default(365),
+  // Búsqueda en internet (modo híbrido). Vacío = desactivada. Ver lib/webSearch.ts.
+  WEB_SEARCH_PROVIDER: z.enum(["", "tavily", "brave", "searxng"]).default(""),
+  WEB_SEARCH_API_KEY: z.string().default(""),
+  WEB_SEARCH_URL: z.string().trim().default(""),
+  WEB_SEARCH_MAX_RESULTS: z.coerce.number().int().min(1).max(10).default(5),
   /** Días que un documento borrado permanece en la papelera antes de eliminarse del todo (0 = se borra al instante). */
   TRASH_RETENTION_DAYS: z.coerce.number().int().min(0).max(365).default(30),
 

@@ -67,6 +67,15 @@ Para probarlo: `docker compose exec api node dist/scripts/test-email.js tu@corre
 
 Para ver qué modelos funcionan con tus claves: `docker compose exec -T api node dist/scripts/models.js groq google --ok` (más opciones en [operacion.md](operacion.md#proveedores-de-llm-openrouter-groq-google-openai-deepseek-servidor-propio)).
 
+## Búsqueda en internet (modo híbrido)
+
+| Variable | Por defecto | Qué hace | Aplica |
+|---|---|---|---|
+| `WEB_SEARCH_PROVIDER` | vacío | Buscador para el modo híbrido: `tavily`, `brave` o `searxng`. Vacío = desactivada. Además, cada plan debe permitirla (*Organizaciones → Planes*) | up |
+| `WEB_SEARCH_API_KEY` | vacío | Clave de Tavily o de Brave Search API (no hace falta con SearXNG) | up |
+| `WEB_SEARCH_URL` | vacío | Dirección de tu SearXNG (p. ej. `http://searxng:8080`), con el formato `json` activado | up |
+| `WEB_SEARCH_MAX_RESULTS` | `5` | Resultados de internet que recibe el modelo en cada pregunta (1-10) | up |
+
 ## Documentos, embeddings y búsqueda
 
 | Variable | Por defecto | Qué hace | Aplica |
