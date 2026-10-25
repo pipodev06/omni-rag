@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo, useState } from "react";
+import { createContext, isValidElement, lazy, Suspense, useContext, useMemo, useState, type ComponentProps, type ReactNode } from "react";
 import type { Components } from "react-markdown";
 import { Check, ChevronDown, Copy, Download, ExternalLink, Eye, FileText, Globe } from "lucide-react";
 import { toast } from "sonner";
@@ -7,6 +7,8 @@ import { pagesLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { AnswerTable, ScrollTable } from "./AnswerTable";
+import { ChartBlock } from "./ChartBlock";
+import { DiagramBlock } from "./DiagramBlock";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 // Las librerías de Markdown se descargan al mostrar el primer texto con formato, no en la primera pantalla.
@@ -60,13 +62,43 @@ function CitationChip({ n, source, onClick }: { n: number; source?: Source; onCl
   );
 }
 
+/** Bloque de código: ```chart y ```mermaid se dibujan; el resto se muestra como código. */
+// Por contexto y no como prop: un `pre` nuevo en cada render volvería a montar (y redibujar) cada gráfico.
+const StreamingContext = createContext(false);
+
+function CodeBlock({ children, node: _node, ...rest }: ComponentProps<"pre"> & { node?: unknown }) {
+  const streaming = useContext(StreamingContext);
+  const child = isValidElement<{ className?: string; children?: ReactNode }>(children) ? children : null;
+  const lang = /language-(\w+)/.exec(child?.props.className ?? "")?.[1];
+  const source = typeof child?.props.children === "string" ? child.props.children.trim() : "";
+  if (lang === "chart" && source) return <ChartBlock source={source} streaming={streaming} />;
+  if (lang === "mermaid" && source) return <DiagramBlock source={source} streaming={streaming} />;
+  return <pre {...rest}>{children}</pre>;
+}
+
 /** Texto Markdown de la respuesta con las citas convertidas en chips. */
-export function AnswerMarkdown({ content, sources, onCite }: { content: string; sources: Source[]; onCite: (n: number) => void }) {
+export function AnswerMarkdown({ content, sources, onCite, streaming }: {
+  content: string;
+  sources: Source[];
+  onCite: (n: number) => void;
+  /** La respuesta aún está llegando: los gráficos y diagramas esperan a que termine su bloque. */
+  streaming?: boolean;
+}) {
+  // Las citas [n] se convierten en enlaces, salvo dentro de los bloques de código: `"data":[12]` es JSON de un gráfico.
   const prepared = useMemo(
-    () => content.replace(/\[(\d{1,2})\](?!\()/g, (m, d: string) => (sources.some((s) => s.n === Number(d)) ? `[${d}](#cite-${d})` : m)),
+    () =>
+      content
+        .split(/(```[\s\S]*?(?:```|$))/)
+        .map((part) =>
+          part.startsWith("```")
+            ? part
+            : part.replace(/\[(\d{1,2})\](?!\()/g, (m, d: string) => (sources.some((s) => s.n === Number(d)) ? `[${d}](#cite-${d})` : m)),
+        )
+        .join(""),
     [content, sources],
   );
   return (
+    <StreamingContext.Provider value={!!streaming}>
     <div className="prose prose-zinc max-w-none text-[15px] leading-7 dark:prose-invert prose-p:my-3 prose-pre:bg-muted prose-pre:text-foreground prose-table:text-sm prose-th:px-3 prose-td:px-3">
       <Markdown
         text={prepared}
@@ -88,9 +120,11 @@ export function AnswerMarkdown({ content, sources, onCite }: { content: string; 
           },
           img: NoImage,
           table: AnswerTable,
+          pre: CodeBlock,
         }}
       />
     </div>
+    </StreamingContext.Provider>
   );
 }
 

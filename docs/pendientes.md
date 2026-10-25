@@ -39,5 +39,6 @@ Lo que está en curso o decidido. Lo que se termina se tacha y baja a «Hecho».
 - ~~23 Organización «Plataforma»~~ (el superadmin vive en una organización interna, excluida de totales y facturación; todas las organizaciones de clientes se pueden borrar; `move-superadmin.js` para instalaciones anteriores)
 - ~~43 Copia fuera del servidor~~ (cifrada, a Backblaze B2)
 - ~~47 Subir los commits pendientes~~
+- ~~Gráficos y diagramas en las respuestas~~ (bloques ```chart, dibujados en SVG propio y validados, y ```mermaid, cargado solo al primer diagrama y en modo `strict`)
 
 También se hicieron, sin estar en la lista: capa de proveedores de LLM (OpenRouter, Groq, Google, OpenAI, DeepSeek, servidor propio), planes por organización, inicio de sesión con usuario o correo, 2FA opcional (TOTP), papelera de documentos, copias de seguridad a hora fija e incrementales de los archivos, script para probar el SMTP (`test-email.js`), script para listar y probar modelos (`models.js`) y renombrar el proyecto a Omni RAG.

@@ -19,7 +19,6 @@ Ideas que **pueden o no agregarse**. No son pendientes: se hacen solo si algún 
 | — | `max_tokens` por plan, en vez del valor global `LLM_MAX_TOKENS` (útil solo si se quiere diferenciar planes por largo de respuesta) | bajo |
 | — | Claude directo (Anthropic): hoy solo vía OpenRouter; requiere un adaptador propio | medio |
 | — | Filtrar el razonamiento (`<thought>`) de los modelos Gemma de Google, si algún día se usan | bajo |
-| — | Gráficos en las respuestas (barras, líneas, tortas) cuando hay cifras en los documentos: el modelo devuelve los datos en un bloque con formato y la pantalla los dibuja, con la librería cargada solo al primer gráfico. Exige validar el bloque y reforzar la regla de no inventar cifras | medio || — | Diagramas (flujos, organigramas) con Mermaid, que el modelo escribe como texto y la pantalla convierte en dibujo | medio |
 
 ## Planes y negocio
 | # | Idea | Esfuerzo |

@@ -64,7 +64,7 @@ export function AssistantMessage({
         <Sparkles className="size-4" />
       </div>
       <div className="min-w-0 flex-1 space-y-4">
-        {m.content && <AnswerMarkdown content={m.content} sources={m.sources} onCite={onCite} />}
+        {m.content && <AnswerMarkdown content={m.content} sources={m.sources} onCite={onCite} streaming={streaming} />}
         {!m.content && !m.error && <Pending hasSources={m.sources.length > 0} />}
         {m.error && (
           <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
