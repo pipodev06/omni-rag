@@ -10,6 +10,9 @@ export interface ExportSource {
   pageStart: number | null;
   pageEnd: number | null;
   cited?: boolean;
+  /** Resultado de internet (modo híbrido). */
+  kind?: "web";
+  url?: string;
 }
 
 export interface ExportMessage {
@@ -30,6 +33,7 @@ function listedSources(sources: ExportSource[]): ExportSource[] {
 }
 
 function sourceLine(s: ExportSource): string {
+  if (s.kind === "web") return `- [${s.n}] Internet: ${s.documentTitle}${s.url ? ` — <${s.url}>` : ""}`;
   const detail = [formatPages(s.pageStart, s.pageEnd), s.heading && `sección «${s.heading}»`].filter(Boolean).join(", ");
   return `- [${s.n}] ${s.documentTitle}${detail ? ` (${detail})` : ""}`;
 }

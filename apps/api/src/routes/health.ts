@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { config } from "../config.js";
+import { webSearchEnabled } from "../lib/webSearch.js";
 import { sqlOwner } from "../db/client.js";
 import { antivirusEnabled, pingAntivirus } from "../lib/antivirus.js";
 import { configuredProviders } from "../lib/llmProviders.js";
@@ -37,6 +38,8 @@ healthRoutes.get("/", async (c) => {
     antivirus: antivirusEnabled() ? await pingAntivirus() : "desactivado",
     // Proveedores de LLM con clave (o dirección) configurada. Vacío = el chat no puede responder.
     llm: configuredProviders().map((p) => p.id),
+    // Buscador para el modo híbrido: el nombre del proveedor, o «desactivado».
+    webSearch: webSearchEnabled() ? config.WEB_SEARCH_PROVIDER : "desactivado",
   };
   const ok = database === "ok";
   return c.json({ ok, services }, ok ? 200 : 503);

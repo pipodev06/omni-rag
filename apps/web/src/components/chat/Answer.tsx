@@ -1,6 +1,6 @@
 import { lazy, Suspense, useMemo, useState } from "react";
 import type { Components } from "react-markdown";
-import { Check, ChevronDown, Copy, Download, Eye, FileText } from "lucide-react";
+import { Check, ChevronDown, Copy, Download, ExternalLink, Eye, FileText, Globe } from "lucide-react";
 import { toast } from "sonner";
 import type { Source } from "@/api";
 import { pagesLabel } from "@/lib/format";
@@ -52,8 +52,9 @@ function CitationChip({ n, source, onClick }: { n: number; source?: Source; onCl
     <Tooltip>
       <TooltipTrigger asChild>{chip}</TooltipTrigger>
       <TooltipContent>
+        {source.kind === "web" && "Internet · "}
         {source.documentTitle}
-        {pagesLabel(source) && ` · ${pagesLabel(source)}`}
+        {source.kind === "web" ? ` · ${source.heading}` : pagesLabel(source) && ` · ${pagesLabel(source)}`}
       </TooltipContent>
     </Tooltip>
   );
@@ -136,9 +137,13 @@ export function SourcesList({ sources, active, onToggle, onOpen }: {
             )}
           >
             <span className="grid size-4.5 shrink-0 place-items-center rounded bg-primary/10 text-[0.65rem] font-semibold text-primary">{s.n}</span>
-            <FileText className="size-3.5 shrink-0 text-muted-foreground" />
+            {s.kind === "web" ? <Globe className="size-3.5 shrink-0 text-muted-foreground" /> : <FileText className="size-3.5 shrink-0 text-muted-foreground" />}
             <span className="truncate font-medium">{s.documentTitle}</span>
-            {pagesLabel(s) && <span className="shrink-0 text-muted-foreground">{pagesLabel(s)}</span>}
+            {s.kind === "web" ? (
+              <span className="shrink-0 text-muted-foreground">{s.heading}</span>
+            ) : (
+              pagesLabel(s) && <span className="shrink-0 text-muted-foreground">{pagesLabel(s)}</span>
+            )}
             <ChevronDown className={cn("size-3.5 shrink-0 text-muted-foreground transition-transform", active === s.n && "rotate-180")} />
           </button>
         ))}
@@ -148,20 +153,31 @@ export function SourcesList({ sources, active, onToggle, onOpen }: {
           <div className="mb-2 flex items-start justify-between gap-2">
             <div className="min-w-0 text-xs">
               <p className="truncate font-medium">{current.documentTitle}</p>
-              <p className="truncate text-muted-foreground">{[pagesLabel(current), current.heading].filter(Boolean).join(" · ")}</p>
+              <p className="truncate text-muted-foreground">
+                {current.kind === "web" ? `Internet · ${current.heading}` : [pagesLabel(current), current.heading].filter(Boolean).join(" · ")}
+              </p>
             </div>
-            <div className="flex shrink-0 gap-1">
-              {onOpen && (
-                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => onOpen(current)}>
-                  <Eye /> Ver en el documento
-                </Button>
-              )}
-              <Button variant="ghost" size="sm" className="h-7 text-xs" asChild>
-                <a href={`/api/documents/${current.documentId}/file`}>
-                  <Download /> Original
+            {current.kind === "web" ? (
+              // Resultado de internet: se abre en otra pestaña y sin enviar de dónde viene (noreferrer).
+              <Button variant="outline" size="sm" className="h-7 shrink-0 text-xs" asChild>
+                <a href={current.url} target="_blank" rel="noreferrer noopener" title={current.url}>
+                  <ExternalLink /> Abrir página
                 </a>
               </Button>
-            </div>
+            ) : (
+              <div className="flex shrink-0 gap-1">
+                {onOpen && (
+                  <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => onOpen(current)}>
+                    <Eye /> Ver en el documento
+                  </Button>
+                )}
+                <Button variant="ghost" size="sm" className="h-7 text-xs" asChild>
+                  <a href={`/api/documents/${current.documentId}/file`}>
+                    <Download /> Original
+                  </a>
+                </Button>
+              </div>
+            )}
           </div>
           <ExcerptMarkdown text={current.excerpt} className="max-h-64 overflow-y-auto" />
         </div>

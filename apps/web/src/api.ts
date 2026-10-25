@@ -68,6 +68,9 @@ export interface Source {
   pageEnd: number | null;
   excerpt: string;
   cited: boolean;
+  /** Resultado de internet (modo híbrido): `heading` lleva el dominio y `url` el enlace. */
+  kind?: "web";
+  url?: string;
 }
 
 export interface Message {
@@ -147,7 +150,7 @@ export const api = {
 };
 
 export interface ChatHandlers {
-  onMeta: (meta: { conversationId: string; sources: Source[] }) => void;
+  onMeta: (meta: { conversationId: string; sources: Source[]; web?: { used: boolean; failed: boolean } }) => void;
   onToken: (text: string) => void;
   onDone: (done: { messageId: string; model: string | null; sources: Source[]; fromCache?: boolean }) => void;
   onError: (message: string) => void;
@@ -155,7 +158,7 @@ export interface ChatHandlers {
 
 /** Envía una pregunta y procesa la respuesta en streaming (Server-Sent Events). */
 export async function streamChat(
-  body: { question: string; conversationId?: string; collectionIds?: string[]; documentIds?: string[] },
+  body: { question: string; conversationId?: string; collectionIds?: string[]; documentIds?: string[]; webSearch?: boolean },
   handlers: ChatHandlers,
   signal: AbortSignal,
 ): Promise<void> {
@@ -284,6 +287,8 @@ export interface Plan {
   maxDocuments: number | null;
   /** Preguntas por día de cada usuario; null = sin tope por usuario. */
   userDailyQuestionLimit: number | null;
+  /** Permite la búsqueda en internet en el chat (modo híbrido). */
+  webSearch: boolean;
   isDefault: boolean;
   tenants: number;
 }

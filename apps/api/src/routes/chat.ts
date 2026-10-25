@@ -9,6 +9,7 @@ import { findCachedAnswer, markCacheHit, storeCachedAnswer } from "../rag/cache.
 import { streamChat } from "../rag/llm.js";
 import { conversationToMarkdown, exportFilename, type ExportMessage } from "../rag/export.js";
 import { buildMessages, citedSources, foldShouting, NO_CONTEXT_ANSWER, retrievalQuery, type ChatMessage } from "../rag/prompt.js";
+import { searchWeb, webSearchEnabled, type WebResult } from "../lib/webSearch.js";
 import { resolveScope, retrieve, type RankedHit } from "../rag/retrieve.js";
 import { HttpError, notFound } from "../lib/errors.js";
 import { userRateLimit } from "../lib/limits.js";
@@ -29,6 +30,9 @@ export interface Source {
   pageEnd: number | null;
   excerpt: string;
   cited: boolean;
+  /** Solo en resultados de internet (modo híbrido): `documentId` va vacío y `heading` lleva el dominio. */
+  kind?: "web";
+  url?: string;
 }
 
 const toSources = (hits: RankedHit[]): Source[] =>
@@ -41,6 +45,20 @@ const toSources = (hits: RankedHit[]): Source[] =>
     pageEnd: h.pageEnd,
     excerpt: h.content.length > 600 ? `${h.content.slice(0, 600)}…` : h.content,
     cited: false,
+  }));
+
+const toWebSources = (results: WebResult[], offset: number): Source[] =>
+  results.map((r, i) => ({
+    n: offset + i + 1,
+    documentId: "",
+    documentTitle: r.title,
+    heading: new URL(r.url).hostname.replace(/^www\./, ""),
+    pageStart: null,
+    pageEnd: null,
+    excerpt: r.snippet,
+    cited: false,
+    kind: "web",
+    url: r.url,
   }));
 
 /**
@@ -79,6 +97,8 @@ chatRoutes.get("/quota", async (c) => {
     warnPercent: config.QUOTA_WARN_PERCENT,
     // Cuota personal: solo si el plan la define.
     user: own === null ? null : { used: ownUsed, limit: own, level: quotaLevel(ownUsed, own, config.QUOTA_WARN_PERCENT) },
+    // El interruptor «Buscar también en internet» del chat: el plan lo permite y hay un buscador configurado.
+    webSearch: plan.webSearch && webSearchEnabled(),
   });
 });
 
@@ -107,6 +127,8 @@ const ChatBody = z.object({
   conversationId: z.string().regex(UUID_RE).optional(),
   collectionIds: z.array(z.string().regex(UUID_RE)).max(100).optional(),
   documentIds: z.array(z.string().regex(UUID_RE)).max(50).optional(),
+  /** Buscar también en internet (modo híbrido). Solo si el plan lo permite y hay buscador configurado. */
+  webSearch: z.boolean().optional(),
 });
 
 /**
@@ -140,7 +162,9 @@ chatRoutes.post("/chat", userRateLimit(20, 60_000, "preguntas"), async (c) => {
   // 2. Embedding de la búsqueda y colecciones consultables.
   const query = retrievalQuery(body.question, history);
   const [vector, scope] = await Promise.all([embedQuery(query, signal), resolveScope(ctx, body.collectionIds, body.documentIds)]);
-  const cacheable = config.CACHE_ENABLED && history.length === 0;
+  // Con internet la respuesta depende de resultados que cambian: no se busca ni se guarda en la caché.
+  const wantsWeb = body.webSearch === true && webSearchEnabled();
+  const cacheable = config.CACHE_ENABLED && history.length === 0 && !wantsWeb;
 
   // 3. ¿Ya se respondió esta misma pregunta con los mismos documentos?
   const cached = cacheable
@@ -200,13 +224,25 @@ chatRoutes.post("/chat", userRateLimit(20, 60_000, "preguntas"), async (c) => {
 
   // 6b. Recuperación: búsqueda híbrida + re-ranking, respetando permisos.
   const hits = await retrieve(ctx, { queryText: query, queryVector: vector, scope, signal });
-  const sources = toSources(hits);
+  // 6c. Internet (modo híbrido): solo se envía la pregunta, nunca fragmentos de los documentos. Si el buscador falla, se
+  // responde solo con los documentos y se avisa.
+  const useWeb = wantsWeb && plan?.webSearch === true;
+  let webFailed = false;
+  const web = useWeb
+    ? await searchWeb(query, signal).catch((err) => {
+        webFailed = true;
+        console.warn("[web] la búsqueda falló:", err instanceof Error ? err.message : err);
+        return [];
+      })
+    : [];
+  const sources = [...toSources(hits), ...toWebSources(web, hits.length)];
 
   // 7. Respuesta en streaming.
   return streamSSE(c, async (stream) => {
-    await stream.writeSSE({ event: "meta", data: JSON.stringify({ conversationId, sources }) });
+    // `web`: si se buscó en internet y si el buscador falló (la interfaz lo avisa; se responde solo con los documentos).
+    await stream.writeSSE({ event: "meta", data: JSON.stringify({ conversationId, sources, web: { used: useWeb, failed: webFailed } }) });
 
-    if (hits.length === 0) {
+    if (hits.length === 0 && web.length === 0) {
       // Sin contexto no se llama al LLM: ahorra cupo y evita respuestas inventadas.
       await stream.writeSSE({ event: "token", data: JSON.stringify(NO_CONTEXT_ANSWER) });
       const messageId = await saveAnswer(NO_CONTEXT_ANSWER, { model: null, sources: [] });
@@ -216,7 +252,7 @@ chatRoutes.post("/chat", userRateLimit(20, 60_000, "preguntas"), async (c) => {
 
     let answer = "";
     try {
-      for await (const ev of streamChat(buildMessages(body.question, hits, history), plan?.llmModels ?? [], signal)) {
+      for await (const ev of streamChat(buildMessages(body.question, hits, history, web), plan?.llmModels ?? [], signal)) {
         if (ev.type === "token") {
           answer += ev.text;
           await stream.writeSSE({ event: "token", data: JSON.stringify(ev.text) });
