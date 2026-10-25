@@ -1,12 +1,13 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Building2, EllipsisVertical, Gauge, Layers, LifeBuoy, Loader2, Pencil, Plus, Power, Trash2 } from "lucide-react";
+import { Building2, Download, EllipsisVertical, Gauge, Layers, LifeBuoy, Loader2, Pencil, Plus, Power, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, dailyLimitLabel, errorMessage, timeAgo, type LinkResult, type Plan } from "@/api";
 import { LinkResultDialog } from "@/components/LinkResultDialog";
 import { AccessModeTabs, type AccessMode } from "@/components/AccessModeTabs";
 import { PlanDialog, PlansTab, usePlans } from "@/components/platform/PlansTab";
 import { switchOrganization, useCurrentUser } from "@/hooks/useSession";
+import { startDownload } from "@/lib/download";
 import { cn } from "@/lib/utils";
 import { EmptyState, Page, PageHeader, TableCard } from "@/components/common";
 import { useConfirm } from "@/components/ConfirmProvider";
@@ -537,6 +538,14 @@ export function PlatformPage() {
                         </DropdownMenuItem>
                         <DropdownMenuItem onSelect={() => setLimitTenant(t)}>
                           <Gauge /> Límite diario
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onSelect={() => {
+                            toast.info(`Exportando «${t.name}»`, { description: "Incluye todos sus documentos: según el tamaño, la descarga puede tardar." });
+                            startDownload(`/api/platform/tenants/${t.id}/export`);
+                          }}
+                        >
+                          <Download /> Exportar datos
                         </DropdownMenuItem>
                         {t.slug !== myTenant.slug && (
                           <>

@@ -12,6 +12,8 @@ import { removeStored } from "../storage/local.js";
 import { createUserLink, emailLink } from "../lib/tokens.js";
 import { badRequest, HttpError, notFound } from "../lib/errors.js";
 import { OptionalEmailSchema, parse, UsernameSchema, UUID_RE } from "../lib/validate.js";
+import { tenantExportEntries } from "../lib/tenantExport.js";
+import { zipHeaders, zipStream } from "../lib/zipStream.js";
 
 // ---------------------------------------------------------------------------
 // Consumo de la organización (administradores)
@@ -330,6 +332,22 @@ platformRoutes.delete("/tenants/:id", async (c) => {
   await removeStored(id).catch((err) => console.error(`[plataforma] no se pudieron borrar los archivos de ${id}:`, err));
   await audit(c, "tenant.deleted", { targetType: "tenant", targetId: id, details: { name: t.name, slug: t.slug, users: t.users, documents: t.documents } });
   return c.json({ ok: true });
+});
+
+/**
+ * Exporta todos los datos de una organización en un ZIP (portabilidad): JSON con organización, usuarios, colecciones,
+ * documentos, conversaciones, valoraciones, uso y auditoría, más los archivos originales. Sin contraseñas ni secretos.
+ * Es un GET para que el navegador lo guarde directamente en disco; el ZIP se arma en streaming.
+ */
+platformRoutes.get("/tenants/:id/export", async (c) => {
+  const id = c.req.param("id");
+  if (!UUID_RE.test(id)) throw notFound();
+  await assertNotPlatform(id, "exportar");
+  const [t] = await sqlOwner<{ name: string; slug: string }[]>`SELECT name, slug FROM tenants WHERE id = ${id}`;
+  if (!t) throw notFound("Organización no encontrada");
+  await audit(c, "tenant.exported", { targetType: "tenant", targetId: id, details: { name: t.name, slug: t.slug } });
+  await auditTenant(id, "tenant.exported", { por: "Plataforma" });
+  return new Response(zipStream(tenantExportEntries(id)), { headers: zipHeaders(`${t.slug}-exportacion-${new Date().toISOString().slice(0, 10)}.zip`) });
 });
 
 /**

@@ -1,12 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { useDropzone } from "react-dropzone";
-import { CloudUpload, FolderInput, FolderOpen, FolderPlus, Loader2, RotateCw, Search, Trash2, X } from "lucide-react";
+import { CloudUpload, Download, FolderInput, FolderOpen, FolderPlus, Loader2, RotateCw, Search, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
-import { errorMessage, uploadDocuments, type DocumentInfo } from "@/api";
+import { errorMessage, uploadDocuments, type DocumentInfo, type UploadResult } from "@/api";
+import { batches, expandUploads } from "@/lib/uploadPrep";
 import { useCollectionDocuments, useDocumentActions } from "@/hooks/useDocuments";
 import { useCurrentUser } from "@/hooks/useSession";
 import { applyView, availableTypes, DEFAULT_VIEW, FIRST_DIR, isFiltered, type DocumentView, type SortKey } from "@/lib/documentView";
+import { startDownload } from "@/lib/download";
 import { cn } from "@/lib/utils";
 import { EmptyState, Page, PageHeader } from "@/components/common";
 import { CollectionFormDialog, MembersDialog } from "@/components/documents/CollectionDialogs";
@@ -20,29 +22,49 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 function UploadZone({ collectionId, extensions, onUploaded }: { collectionId: string; extensions: string[]; onUploaded: () => void }) {
   const [progress, setProgress] = useState<number | null>(null);
+  const [preparing, setPreparing] = useState(false);
+  const folderInput = useRef<HTMLInputElement>(null);
 
-  const upload = async (files: File[]) => {
-    if (files.length === 0) return;
+  // Archivos sueltos, carpetas o ZIP: se abren los ZIP aquí y se sube en tandas pequeñas; al final, un solo aviso con el resumen.
+  const upload = async (picked: File[]) => {
+    if (picked.length === 0) return;
     setProgress(0);
+    setPreparing(true);
     try {
-      const { results } = await uploadDocuments(collectionId, files, setProgress);
-      const queued = results.filter((r) => r.status === "queued").length;
-      if (queued) toast.success(`${queued} archivo${queued > 1 ? "s" : ""} en cola para procesar`);
-      for (const r of results.filter((x) => x.status !== "queued")) {
-        toast.warning(`${r.filename}: ${r.reason}`);
+      const { files, skipped } = await expandUploads(picked, extensions);
+      setPreparing(false);
+      const results: UploadResult[] = [];
+      const total = files.reduce((sum, f) => sum + f.size, 0) || 1;
+      let sent = 0;
+      for (const batch of batches(files)) {
+        const size = batch.reduce((sum, f) => sum + f.size, 0);
+        const r = await uploadDocuments(collectionId, batch, (f) => setProgress((sent + f * size) / total));
+        sent += size;
+        results.push(...r.results);
       }
+      const queued = results.filter((r) => r.status === "queued").length;
+      const problems = [...results.filter((r) => r.status !== "queued").map((r) => `${r.filename}: ${r.reason}`), ...skipped];
+      if (queued) toast.success(`${queued} archivo${queued > 1 ? "s" : ""} en cola para procesar`);
+      if (problems.length) {
+        toast.warning(`${problems.length} archivo${problems.length > 1 ? "s" : ""} no se subieron`, {
+          description: problems.slice(0, 5).join(" · ") + (problems.length > 5 ? ` · y ${problems.length - 5} más` : ""),
+          duration: 10_000,
+        });
+      }
+      if (!queued && !problems.length) toast.warning("No había documentos para subir");
       onUploaded();
     } catch (err) {
       toast.error(errorMessage(err));
     } finally {
       setProgress(null);
+      setPreparing(false);
     }
   };
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop: (files) => void upload(files),
     disabled: progress !== null,
-    // Sin filtro aquí: el servidor valida y explica por qué rechaza cada archivo.
+    // Sin filtro aquí: se descartan los formatos no admitidos al preparar y el servidor valida el resto.
   });
 
   return (
@@ -55,19 +77,41 @@ function UploadZone({ collectionId, extensions, onUploaded }: { collectionId: st
       )}
     >
       <input {...getInputProps()} />
+      {/* Elegir una carpeta entera (el arrastre ya admite carpetas); webkitdirectory no está en los tipos de React. */}
+      <input
+        ref={folderInput}
+        type="file"
+        multiple
+        hidden
+        {...{ webkitdirectory: "" }}
+        onChange={(e) => {
+          void upload([...(e.target.files ?? [])]);
+          e.target.value = "";
+        }}
+      />
       {progress === null ? (
         <>
           <div className="grid size-10 place-items-center rounded-full bg-primary/10 text-primary">
             <CloudUpload className="size-5" />
           </div>
-          <p className="text-sm font-medium">{isDragActive ? "Suelta los archivos aquí" : "Arrastra archivos o haz clic para elegirlos"}</p>
+          <p className="text-sm font-medium">{isDragActive ? "Suelta los archivos aquí" : "Arrastra archivos, carpetas o un ZIP, o haz clic para elegirlos"}</p>
           <p className="text-xs text-muted-foreground" title={extensions.join(" ")}>
-            PDF, Word, PowerPoint, Excel, CSV, HTML, imágenes y texto
+            PDF, Word, PowerPoint, Excel, CSV, HTML, imágenes y texto ·{" "}
+            <button
+              type="button"
+              className="font-medium text-primary hover:underline"
+              onClick={(e) => {
+                e.stopPropagation();
+                folderInput.current?.click();
+              }}
+            >
+              elegir una carpeta
+            </button>
           </p>
         </>
       ) : (
         <div className="w-full max-w-xs space-y-2">
-          <p className="text-sm font-medium">Subiendo… {Math.round(progress * 100)}%</p>
+          <p className="text-sm font-medium">{preparing ? "Preparando archivos…" : `Subiendo… ${Math.round(progress * 100)}%`}</p>
           <div className="h-1.5 overflow-hidden rounded-full bg-muted">
             <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${progress * 100}%` }} />
           </div>
@@ -169,6 +213,14 @@ export function DocumentsPage() {
   const reprocessSelected = async () => {
     if (await reprocessDocuments(selectedDocs)) setSelected(new Set());
   };
+  // Los originales en un ZIP. Los topes son los de la API (100 documentos, 1 GB): se comprueban aquí para avisar sin esperar.
+  const downloadSelected = () => {
+    if (selectedDocs.length > 100) return toast.warning("Se pueden descargar como máximo 100 documentos a la vez");
+    if (selectedDocs.reduce((sum, d) => sum + d.sizeBytes, 0) > 1024 ** 3) {
+      return toast.warning("Los documentos elegidos pasan de 1 GB: descárgalos en varias tandas");
+    }
+    startDownload(`/api/documents/download?ids=${selectedDocs.map((d) => d.id).join(",")}`);
+  };
 
   if (loadingCollections) {
     return (
@@ -234,6 +286,9 @@ export function DocumentsPage() {
               <div className="ml-auto flex flex-wrap items-center gap-2">
                 <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
                   <X /> Quitar selección
+                </Button>
+                <Button size="sm" variant="outline" onClick={downloadSelected}>
+                  <Download /> Descargar
                 </Button>
                 <Button size="sm" variant="outline" onClick={() => setMoveDocs(selectedDocs)}>
                   <FolderInput /> Mover
