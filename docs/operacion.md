@@ -270,6 +270,12 @@ Cuando la respuesta compara elementos o lista datos con varios atributos (fechas
 
 Al exportar se quitan los números de cita y los dominios que se muestran junto a los enlaces. Como el contenido de una tabla puede venir de un documento ajeno, las celdas que Excel interpretaría como fórmula (empiezan por `=`, `+`, `-` o `@`, y no son un número) llevan una comilla simple delante. Si un modelo pequeño no usa tablas cuando convendría, se nota en la calidad del modelo, no es un ajuste de la pantalla; un plan con un modelo mejor lo corrige.
 
+## Gráficos y diagramas en las respuestas
+
+- **Gráficos:** si se pide un gráfico, o la respuesta compara cifras de varios periodos o categorías, el modelo añade un bloque ` ```chart ` con los datos en JSON (`type` bar/line/pie, `labels`, `series`). La pantalla lo dibuja en SVG propio (sin librería de gráficos), con tooltip al pasar el ratón, leyenda si hay varias series y los botones «Ver datos» (tabla) y «Descargar CSV». El bloque se valida a fondo (`apps/web/src/lib/chartSpec.ts`): hasta 8 series y 40 etiquetas, un valor por etiqueta, solo números (un «1,200» se rechaza por ambiguo) y, en los circulares, una serie de hasta 8 partes positivas. Si no pasa, se muestra el texto con el motivo en vez del gráfico.
+- **Diagramas:** para procesos con pasos o decisiones el modelo puede escribir un bloque ` ```mermaid ` (`flowchart TD`, hasta 15 nodos). Mermaid se descarga solo al mostrar el primer diagrama y se ejecuta en modo `strict` (sin scripts, enlaces ni clics), porque el texto puede venir de un documento ajeno. Botones «Ver código» y «Descargar SVG». Un diagrama inválido muestra el código.
+- Mientras llega la respuesta se ve «Preparando el gráfico…» o «Preparando el diagrama…»; se dibuja al terminar. Las citas van en el texto, no dentro del bloque. La regla de no inventar datos sigue valiendo: sin cifras en los fragmentos no hay gráfico. Los modelos pequeños a veces no los generan o los escriben mal; ahí se ve el texto.
+
 ## Re-ranking
 
 El servicio `reranker` reordena los candidatos de la búsqueda con un modelo *cross-encoder* (lee pregunta y fragmento juntos). Es la mejora de calidad más importante, pero usa ~1,9 GB de RAM y ~0,6 s por pregunta en CPU.
