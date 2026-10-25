@@ -91,6 +91,15 @@ describe("IP del cliente detrás de proxies", () => {
     expect(clientIp(ctx({ "x-forwarded-for": "198.51.100.7, 172.18.0.1" }))).toBe("198.51.100.7");
     expect(clientIp(ctx({ "x-forwarded-for": "6.6.6.6, 198.51.100.7, 172.18.0.1" }))).toBe("198.51.100.7");
   });
+  it("con dos proxies (túnel de Cloudflare + Nginx Proxy Manager) hay que contar dos saltos", () => {
+    // Visto en producción: «cliente, cloudflared, npm». Con 1 salto todos salían con la IP de cloudflared.
+    const chain = "6.6.6.6, 198.51.100.7, 172.18.0.3, 172.18.0.4";
+    expect(clientIp(ctx({ "x-forwarded-for": chain }), 1)).toBe("172.18.0.3");
+    expect(clientIp(ctx({ "x-forwarded-for": chain }), 2)).toBe("198.51.100.7");
+  });
+  it("sin proxy delante (0 saltos) usa la que añade nuestro nginx", () => {
+    expect(clientIp(ctx({ "x-forwarded-for": "6.6.6.6, 198.51.100.7" }), 0)).toBe("198.51.100.7");
+  });
 });
 
 describe("cookie de sesión segura", () => {
