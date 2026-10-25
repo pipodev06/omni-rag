@@ -1,9 +1,10 @@
 /**
  * Formatos de archivo admitidos.
  * - "text": se leen directamente como UTF-8 (rápido, sin Docling).
+ * - "csv": se convierten a tablas Markdown aquí mismo (`csv.ts`); Docling falla con filas de distinto ancho.
  * - "docling": se convierten a Markdown con Docling (PDF, Office, HTML, imágenes con OCR…).
  */
-export const FORMATS: Record<string, { mime: string; via: "text" | "docling"; paged?: boolean }> = {
+export const FORMATS: Record<string, { mime: string; via: "text" | "csv" | "docling"; paged?: boolean }> = {
   ".txt": { mime: "text/plain", via: "text" },
   ".md": { mime: "text/markdown", via: "text" },
   ".markdown": { mime: "text/markdown", via: "text" },
@@ -13,7 +14,7 @@ export const FORMATS: Record<string, { mime: string; via: "text" | "docling"; pa
   ".docx": { mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", via: "docling" },
   ".pptx": { mime: "application/vnd.openxmlformats-officedocument.presentationml.presentation", via: "docling", paged: true },
   ".xlsx": { mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", via: "docling" },
-  ".csv": { mime: "text/csv", via: "docling" },
+  ".csv": { mime: "text/csv", via: "csv" },
   ".html": { mime: "text/html", via: "docling" },
   ".htm": { mime: "text/html", via: "docling" },
   ".xhtml": { mime: "application/xhtml+xml", via: "docling" },
