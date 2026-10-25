@@ -74,6 +74,8 @@ Para ver qué modelos funcionan con tus claves: `docker compose exec -T api node
 | `CHUNK_SIZE_CHARS`, `CHUNK_OVERLAP_CHARS` | `1200`, `200` | Tamaño de los fragmentos y solape entre ellos | reproc. |
 | `DOCLING_TIMEOUT_SECONDS` | `900` | Tiempo máximo para procesar un documento | up |
 | `DOCLING_OCR_LANGS` | `es,en` | Idiomas del OCR de documentos escaneados | up |
+| `DOCLING_DO_OCR` | `true` | OCR de imágenes y escaneos. Con `false` los PDF digitales se procesan más rápido, pero los escaneados salen sin texto | reproc. |
+| `DOCLING_TABLE_MODE` | `accurate` | Detección de tablas: `accurate` (fiel) o `fast` (más rápida, menos precisa en tablas complejas) | reproc. |
 | `DOCLING_WORKERS` | `1` | Hilos de Docling | up |
 | `WORKER_CONCURRENCY` | `2` | Documentos que el worker procesa a la vez | up |
 | `EMBEDDING_MODEL`, `EMBEDDING_DIM` | `intfloat/multilingual-e5-base`, `768` | Modelo de embeddings y su dimensión | reproc. y recrear los fragmentos ([operacion.md](operacion.md#cambiar-el-modelo-de-embeddings)) |

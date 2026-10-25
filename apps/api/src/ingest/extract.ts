@@ -65,12 +65,12 @@ async function convertWithDocling(
   const form = new FormData();
   form.append("files", new Blob([data as Uint8Array<ArrayBuffer>], { type: mime }), filename);
   form.append("to_formats", "md");
-  form.append("do_ocr", "true");
+  form.append("do_ocr", config.DOCLING_DO_OCR);
   for (const lang of config.DOCLING_OCR_LANGS.split(",").map((l) => l.trim()).filter(Boolean)) {
     form.append("ocr_lang", lang);
   }
   form.append("image_export_mode", "placeholder");
-  form.append("table_mode", "accurate");
+  form.append("table_mode", config.DOCLING_TABLE_MODE);
   form.append("md_page_break_placeholder", PAGE_BREAK);
   form.append("document_timeout", String(config.DOCLING_TIMEOUT_SECONDS));
 
