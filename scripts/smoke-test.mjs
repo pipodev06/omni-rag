@@ -248,7 +248,7 @@ if (!skipChat && files.length) {
 }
 
 // ---------------------------------------------------------------------------
-// Fase 4: invitaciones, restablecimiento de contraseña y auditoría
+// Invitaciones, restablecimiento de contraseña y auditoría
 // ---------------------------------------------------------------------------
 {
   const inviteEmail = `invitado-${stamp}@smoke.test`;
