@@ -5,12 +5,12 @@
 | Recurso | Mínimo | Recomendado |
 |---|---|---|
 | Docker + Docker Compose v2 | Docker 24+ | la última versión |
-| RAM para Docker | 6 GB (sin re-ranker) | **8 GB** (configuración por defecto) |
+| RAM para Docker | 6 GB (perfil Pequeño, sin re-ranker) | **8 GB** (perfil Mediano, por defecto) |
 | Disco | 20 GB | 40 GB + 2–3 veces el tamaño de tus documentos |
-| CPU | 4 núcleos x86-64 | 4–8 núcleos |
+| CPU | 2 núcleos x86-64 (4 para el perfil Mediano) | 4–8 núcleos |
 | Internet | Para descargar imágenes y modelos la primera vez, y para OpenRouter | |
 
-Medido con todo en marcha: ≈ 5,2 GB en reposo y ≈ 6,9 GB de pico (procesando un PDF de 30 páginas mientras se pregunta). Detalle por servicio, perfiles para 6/8/16 GB y recomendaciones de VPS en **[requisitos.md](requisitos.md)**.
+Medido con todo en marcha: ≈ 5,2 GB en reposo y ≈ 6,9 GB de pico (procesando un PDF de 30 páginas mientras se pregunta). Detalle por servicio, perfiles Pequeño / Mediano / Grande (`bash deploy/perfil.sh mediano`) y recomendaciones de VPS en **[requisitos.md](requisitos.md)**.
 
 ### Windows
 

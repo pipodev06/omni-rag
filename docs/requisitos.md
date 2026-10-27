@@ -16,11 +16,28 @@ Las cifras de este documento están **medidas** con el sistema completo en march
 
 Tiempos de referencia con 4 núcleos: PDF de 30 páginas con tablas, ~65 s; imagen escaneada (OCR), ~6 s; re-ranking, ~0,6 s por pregunta. La respuesta del LLM depende de OpenRouter (normalmente 2–10 s).
 
-## Tu equipo: 16 GB de RAM, 8 GB para Docker
+## Perfiles de tamaño
 
-La configuración por defecto **cabe en 8 GB** (pico medido de 6,9 GB). En Windows, Docker Desktop usa WSL 2: limita su memoria y añade una pequeña reserva de *swap* para picos puntuales.
+Tres perfiles ya calculados en `deploy/perfiles/`. Se aplican al `.env` con `bash deploy/perfil.sh <nombre>` (escribe un bloque entre las marcas `# >>> perfil` y `# <<< perfil`; `quitar` lo borra) y después `docker compose up -d`.
 
-Crea o edita `C:\Users\<tu-usuario>\.wslconfig`:
+| Perfil | vCPU / RAM | Para qué | Qué cambia respecto a los valores por defecto |
+|---|---|---|---|
+| **Pequeño** | 2 / 6 GB | 1–2 organizaciones, pocos usuarios, subidas ocasionales | Sin re-ranker (`RERANKER_URL=`, `RERANKER_REPLICAS=0`), `WORKER_CONCURRENCY=1`, embeddings y Docling limitados a 2 CPU. Pico estimado ≈ 5,2 GB |
+| **Mediano** (recomendado) | 4 / 8 GB | 2–4 organizaciones, decenas de usuarios | Valores por defecto, con la CPU de los modelos limitada a 4. Pico medido ≈ 6,9 GB |
+| **Grande** | 6 / 16 GB | ~4 organizaciones, ~20 usuarios activos a la vez | `DOCLING_WORKERS=2` (2 documentos a la vez), `WORKER_CONCURRENCY=4`; embeddings y re-ranker a 4 CPU, Docling a 6. Pico estimado ≈ 9,5 GB |
+
+Notas para elegir:
+- **Pequeño es el mínimo viable.** Con 2 vCPU el OCR y los PDF largos tardan varios minutos, y con 6 GB conviene añadir 2–4 GB de *swap* en el servidor.
+- **Los usuarios activos casi no pesan en el servidor.** Mientras el LLM responde (por API) no se gasta CPU local; lo que cuesta es la búsqueda (embedding y re-ranking, ~1 s de CPU por pregunta) y, sobre todo, **procesar documentos**. Si subes mucho contenido a la vez, sube de perfil antes que por el número de usuarios.
+- **El otro tope es el proveedor del LLM:** con modelos gratuitos de OpenRouter son 50 peticiones al día (1.000 con créditos). Ajusta los límites por plan y organización (ver [operacion.md](operacion.md#límite-de-preguntas-por-organización)).
+- Las cifras de **pico** del perfil Mediano son medidas (tabla de arriba); las de Pequeño y Grande son **estimadas** a partir de ellas, no medidas. Para comprobar el tuyo, usa `deploy/loadtest.mjs` (ver [operacion.md](operacion.md)) y `docker stats --no-stream`.
+- **16 GB o más:** opcionalmente `EMBEDDING_MODEL=intfloat/multilingual-e5-large` y `EMBEDDING_DIM=1024` (ver [operacion.md](operacion.md#cambiar-el-modelo-de-embeddings)) para la máxima calidad.
+- Los perfiles se pueden retocar a mano en el `.env`; `deploy/perfil.sh` solo sustituye su propio bloque.
+- Si el servidor **es compartido** con otros servicios, `deploy/autotune.sh` hace algo parecido midiendo el hardware y descontando lo que usan los demás contenedores (ver [operacion.md](operacion.md#autoajuste-de-recursos)). No uses los dos a la vez: gana el bloque que quede más abajo en el `.env`.
+
+### Docker Desktop en Windows
+
+Docker Desktop usa WSL 2: limita su memoria. Crea o edita `C:\Users\<tu-usuario>\.wslconfig` según el perfil (aquí, el mediano):
 
 ```ini
 [wsl2]
@@ -31,28 +48,9 @@ processors=4
 
 Después, en PowerShell: `wsl --shutdown` y vuelve a abrir Docker Desktop.
 
-Valores en `.env` para 8 GB (son los de por defecto):
-
-```
-DOCLING_WORKERS=1
-WORKER_CONCURRENCY=2
-RERANKER_REPLICAS=1
-```
-
-### Perfiles según la memoria disponible
-
-| Memoria para Docker | Configuración en `.env` | Calidad |
-|---|---|---|
-| **6 GB** | `RERANKER_URL=` y `RERANKER_REPLICAS=0` (sin re-ranker; pico estimado ≈ 5,2 GB) | Buena (búsqueda híbrida) |
-| **8 GB** (recomendado local) | Por defecto | Muy buena (con re-ranking) |
-| **12–16 GB** | `DOCLING_WORKERS=2` (2 documentos a la vez; pico estimado ≈ 9,5 GB) | Muy buena, ingesta más rápida |
-| **16 GB o más** | Opcional: `EMBEDDING_MODEL=intfloat/multilingual-e5-large`, `EMBEDDING_DIM=1024` (ver [operacion.md](operacion.md#cambiar-el-modelo-de-embeddings)) | Máxima |
-
-Los perfiles se cambian **solo en `.env`**, sin tocar código: `docker compose up -d`.
-
 ## La memoria depende de los hilos (medido)
 
-Los modelos de búsqueda reservan memoria por hilo de CPU: unos **0,2 GB por hilo**. Medido en un i7-8700T (6 núcleos, 12 hilos) con todo en marcha: embeddings 4,1 GB y re-ranker 3,5 GB, frente a 2,4 y 1,7 GB con 4 núcleos. Si no se limita, en una máquina con muchos hilos los modelos ocupan más de lo necesario y sin ir más rápido. `deploy/autotune.sh` calcula los límites según tu hardware y los demás contenedores del servidor (ver [operacion.md](operacion.md#autoajuste-de-recursos)); con `--simular=ram=8,hilos=4` ves qué haría en otro servidor antes de migrar.
+Los modelos de búsqueda reservan memoria por hilo de CPU: unos **0,2 GB por hilo**. Medido en una CPU de 6 núcleos y 12 hilos con todo en marcha: embeddings 4,1 GB y re-ranker 3,5 GB, frente a 2,4 y 1,7 GB con 4 núcleos. Si no se limita, en una máquina con muchos hilos los modelos ocupan más de lo necesario y sin ir más rápido. `deploy/autotune.sh` calcula los límites según tu hardware y los demás contenedores del servidor (ver [operacion.md](operacion.md#autoajuste-de-recursos)); con `--simular=ram=8,hilos=4` ves qué haría en otro servidor antes de migrar.
 
 Fórmulas usadas (re-ranker y embeddings, por CPU asignada): `re-ranker ≈ 950 + 205·CPU MB` · `embeddings ≈ 1550 + 215·CPU MB`.
 
@@ -76,11 +74,7 @@ Fórmulas usadas (re-ranker y embeddings, por CPU asignada): `re-ranker ≈ 950 
 
 ## ¿Qué VPS contratar cuando lo publiques?
 
-| Plan | vCPU | RAM | Disco | Para qué |
-|---|---|---|---|---|
-| **Mínimo** | 4 | 8 GB | 80 GB SSD | Pocas organizaciones, decenas de usuarios, subidas ocasionales. Usa el perfil de 8 GB y añade 2–4 GB de *swap* en el servidor. |
-| **Recomendado** | 4–8 | 16 GB | 160 GB SSD | Varias organizaciones y miles de documentos. Permite `DOCLING_WORKERS=2` y deja margen al sistema. |
-| **Holgado** | 8 | 32 GB | 240 GB+ SSD | Muchos usuarios simultáneos, subidas masivas o modelos de embeddings más grandes. |
+Los mismos tres perfiles, con disco: **Pequeño** 2 vCPU · 6 GB · 60 GB SSD; **Mediano** 4 vCPU · 8 GB · 80 GB SSD; **Grande** 6 vCPU · 16 GB · 160 GB SSD (240 GB o más con muchos documentos o subidas masivas).
 
 Recomendaciones:
 - **x86-64**, no ARM (ver arriba). Mejor vCPU **dedicadas** que compartidas: el OCR y los embeddings usan CPU de forma intensiva.
