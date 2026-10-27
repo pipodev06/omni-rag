@@ -503,7 +503,7 @@ Página **Auditoría** (administradores): inicios de sesión (también los falli
 
 ## Autoajuste de recursos
 
-`deploy/autotune.sh` detecta el hardware (RAM, hilos, núcleos, swap) y los **demás contenedores del servidor**, y calcula cuánta CPU y memoria puede usar Omni RAG sin ahogarlos. Úsalo al instalar, al cambiar de máquina (por ejemplo, de un servidor de 16 GB a un VPS de 8 GB) o cuando añadas o quites otros servicios.
+`deploy/autotune.sh` detecta el hardware (RAM, hilos, núcleos, swap) y los **demás contenedores del servidor**, y calcula cuánta CPU y memoria puede usar Omni RAG sin ahogarlos. **Es opcional:** está pensado para servidores compartidos con otros servicios. Si Omni RAG va solo en su máquina, basta con un perfil fijo (`bash deploy/perfil.sh mediano`, ver [requisitos.md](requisitos.md#perfiles-de-tamaño)). Úsalo al instalar en un servidor compartido, al cambiar de máquina o cuando añadas o quites otros servicios.
 
 ```bash
 bash deploy/autotune.sh                            # solo muestra la propuesta; no cambia nada
@@ -568,7 +568,7 @@ Ejecuta **un escenario a la vez** y no lo apuntes a producción en horas de uso:
 
 ### Medición en un servidor compartido, antes y después del autoajuste
 
-Servidor real: Intel i7-8700T (6 núcleos, 12 hilos), 14 GB de RAM, NVMe, con otros 16 contenedores (Nextcloud, Rocket.Chat, Immich, Jellyfin…). Escenario `busqueda`, 4 usuarios, 20 s por prueba, 0 errores en todas.
+Servidor compartido: CPU de 6 núcleos y 12 hilos, 14 GB de RAM, NVMe, con otros 16 contenedores de otras aplicaciones. Escenario `busqueda`, 4 usuarios, 20 s por prueba, 0 errores en todas.
 
 | Búsquedas a la vez | Sin límites (12 hilos por modelo) | Con `deploy/autotune.sh` (4 CPU por modelo) | Cambio |
 |---|---|---|---|

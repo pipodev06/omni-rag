@@ -1,6 +1,7 @@
 {
   "name": "omni-rag",
   "private": true,
+  "license": "AGPL-3.0-only",
   "version": "0.1.0",
   "description": "RAG multi-cliente con TypeScript, PostgreSQL + pgvector, Docling, embeddings locales y LLMs gratuitos de OpenRouter",
   "packageManager": "pnpm@10.28.0",
