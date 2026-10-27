@@ -3,7 +3,7 @@
   "private": true,
   "license": "AGPL-3.0-only",
   "version": "0.1.0",
-  "description": "RAG multi-cliente con TypeScript, PostgreSQL + pgvector, Docling, embeddings locales y LLMs gratuitos de OpenRouter",
+  "description": "Plataforma RAG multiusuario y autoalojada: pregunta a tus documentos (PDF, Office, imágenes con OCR) y recibe respuestas con citas. Multi-organización con aislamiento por Row Level Security, búsqueda híbrida con re-ranking local y LLM a elegir (OpenRouter, Groq, Google, OpenAI, DeepSeek o propio). AGPL-3.0.",
   "packageManager": "pnpm@10.28.0",
   "engines": { "node": ">=22" },
   "scripts": {
