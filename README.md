@@ -1,6 +1,8 @@
 # Omni RAG
 
-**Omni RAG** es un sistema **RAG (Retrieval-Augmented Generation)** multi-cliente para hacer preguntas en lenguaje natural sobre tus documentos y obtener respuestas **con las fuentes citadas**.
+**Omni RAG** es un sistema **RAG (Retrieval-Augmented Generation)** multi-cliente para hacer preguntas en lenguaje natural sobre tus documentos y obtener respuestas **con las fuentes citadas**. Software libre bajo [AGPL-3.0](LICENSE).
+
+> *English:* Omni RAG is a self-hosted, multi-tenant RAG platform (Hono API + worker + React/Vite, PostgreSQL + pgvector, Docling, local embeddings and re-ranking, pluggable LLM providers). The interface and documentation are in Spanish. Quick start below; sizing profiles in [docs/requisitos.md](docs/requisitos.md).
 
 - 📄 **Todo tipo de documentos:** PDF (también escaneados, con OCR), Word, PowerPoint, Excel, CSV, HTML, Markdown, texto e imágenes.
 - 🏢 **Multi-cliente con permisos:** cada organización está aislada a nivel de base de datos (Row Level Security de PostgreSQL), con roles *administrador / editor / lector* y colecciones con acceso por usuario.
@@ -27,14 +29,16 @@ Pregunta ─▶ embedding local ─▶ búsqueda híbrida (solo en lo que el usu
 
 ## Inicio rápido
 
-Requisitos: **Docker** con Docker Compose v2, **8 GB de RAM** para Docker (pico medido ≈ 6,9 GB; ver [requisitos](docs/requisitos.md)), CPU x86-64 de 4 núcleos y una clave gratuita de [OpenRouter](https://openrouter.ai/keys).
+Requisitos: **Docker** con Docker Compose v2, CPU x86-64, una clave gratuita de [OpenRouter](https://openrouter.ai/keys) y, según el tamaño que necesites, entre 6 y 16 GB de RAM (ver [Elige el tamaño](#elige-el-tamaño-de-tu-servidor)).
 
 ```bash
-git clone <este-repositorio> omni-rag && cd omni-rag
+git clone https://github.com/pipodev06/omni-rag.git && cd omni-rag
 cp .env.example .env
 #   Edita .env: contraseñas, JWT_SECRET, SEED_ADMIN_USERNAME/PASSWORD y la clave de un proveedor de LLM (p. ej. OPENROUTER_API_KEY)
 docker compose up -d --build
 ```
+
+Opcional, antes del `up`: aplica un perfil de tamaño con `bash deploy/perfil.sh mediano` (ver abajo).
 
 Abre **http://localhost:8000** e inicia sesión con `SEED_ADMIN_USERNAME` / `SEED_ADMIN_PASSWORD`.
 
@@ -44,6 +48,20 @@ Abre **http://localhost:8000** e inicia sesión con `SEED_ADMIN_USERNAME` / `SEE
 Guía completa paso a paso: **[docs/instalacion.md](docs/instalacion.md)**.
 
 **¿Publicarlo con tu dominio?** No hay que tocar código: pon `DOMAIN=rag.tuempresa.com`, `COMPOSE_PROFILES=https` y `WEB_BIND=127.0.0.1` en `.env` y vuelve a arrancar. Caddy obtiene el certificado HTTPS solo. Ver **[docs/produccion.md](docs/produccion.md)**.
+
+---
+
+## Elige el tamaño de tu servidor
+
+Tres perfiles ya calculados. Se aplican con un comando y se pueden cambiar cuando quieras:
+
+| Perfil | vCPU | RAM | Para qué | Aplicarlo |
+|---|---|---|---|---|
+| **Pequeño** | 2 | 6 GB | 1–2 organizaciones, pocos usuarios. Sin re-ranker; los PDF largos tardan varios minutos | `bash deploy/perfil.sh pequeno` |
+| **Mediano** (recomendado) | 4 | 8 GB | 2–4 organizaciones, decenas de usuarios | `bash deploy/perfil.sh mediano` |
+| **Grande** | 6 | 16 GB | ~4 organizaciones, ~20 usuarios activos a la vez, ingesta más rápida | `bash deploy/perfil.sh grande` |
+
+Después, `docker compose up -d`. Detalle por servicio, qué cambia cada perfil, disco y VPS recomendados: **[docs/requisitos.md](docs/requisitos.md)**. Si compartes el servidor con otros servicios, [`deploy/autotune.sh`](docs/operacion.md#autoajuste-de-recursos) calcula los límites descontando lo que ellos usan.
 
 ---
 
@@ -186,6 +204,10 @@ omni-rag/
 - **Privacidad:** algunos proveedores gratuitos pueden registrar o usar los textos enviados. En cada pregunta se envían **fragmentos de los documentos** al LLM. Revisa la configuración de privacidad de tu cuenta de OpenRouter antes de usar documentos confidenciales ([docs/instalacion.md](docs/instalacion.md#3-clave-y-privacidad-en-openrouter)).
 - Los **embeddings** y la **lectura de documentos** son 100 % locales: esos datos nunca salen de tu servidor.
 
+## Contribuir y seguridad
+
+Guía en [CONTRIBUTING.md](CONTRIBUTING.md). Las vulnerabilidades se reportan en privado: [SECURITY.md](SECURITY.md).
+
 ## Licencia
 
-Uso privado del propietario del repositorio.
+[GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0). Puedes usar, modificar y desplegar Omni RAG libremente; si lo ofreces a otros como servicio por red, debes poner a su disposición el código fuente de tu versión modificada bajo la misma licencia.
