@@ -73,6 +73,13 @@ export interface Source {
   url?: string;
 }
 
+/** «¿Te refieres a…?»: códigos de los documentos parecidos a un término de la pregunta (API: rag/suggest.ts). */
+export interface CodeSuggestion {
+  term: string;
+  options: { code: string; question: string }[];
+  more: number;
+}
+
 export interface Message {
   id?: string;
   /** Identificador local (mensajes creados en esta pantalla), estable mientras llega la respuesta. */
@@ -86,6 +93,8 @@ export interface Message {
   fromCache?: boolean;
   /** Valoración del usuario: 1 = 👍, -1 = 👎. */
   feedback?: 1 | -1 | null;
+  /** Solo en la pantalla donde se hizo la pregunta; no se guardan con el mensaje. */
+  suggestions?: CodeSuggestion[];
 }
 
 export interface Conversation {
@@ -150,7 +159,7 @@ export const api = {
 };
 
 export interface ChatHandlers {
-  onMeta: (meta: { conversationId: string; sources: Source[]; web?: { used: boolean; failed: boolean } }) => void;
+  onMeta: (meta: { conversationId: string; sources: Source[]; suggestions?: CodeSuggestion[]; web?: { used: boolean; failed: boolean } }) => void;
   onToken: (text: string) => void;
   onDone: (done: { messageId: string; model: string | null; sources: Source[]; fromCache?: boolean }) => void;
   onError: (message: string) => void;
