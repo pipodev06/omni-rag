@@ -3,16 +3,12 @@ import { config } from "../config.js";
 import { isRealDomain } from "./secrets.js";
 
 /**
- * IP del cliente según X-Forwarded-For. Los primeros valores los puede escribir el propio cliente, así que se cuenta
- * desde el final: el último lo añade nuestro nginx interno (la dirección del proxy que tiene delante) y cada proxy de
- * confianza añade uno más. Con `TRUSTED_PROXY_HOPS` proxies delante (1 = Caddy o un nginx; 2 = túnel de Cloudflare +
- * Nginx Proxy Manager) el cliente real está en la posición `longitud - 1 - hops`. Si se pone de menos, todos los
- * usuarios aparecen con la IP del último proxy (y comparten el límite por IP); si se pone de más, se puede falsificar.
+ * IP del cliente. La calcula el nginx de la web (módulo realip: salta los proxies de redes privadas que haya delante y
+ * se queda con la primera IP pública) y la envía en X-Real-IP, reescribiendo lo que mande el cliente. La API no publica
+ * puerto, así que solo le llegan peticiones de ese nginx y la cabecera es de fiar.
  */
-export function clientIp(c: Context, hops = config.TRUSTED_PROXY_HOPS): string {
-  const ips = (c.req.header("x-forwarded-for") ?? "").split(",").map((s) => s.trim()).filter(Boolean);
-  const i = ips.length - 1 - hops;
-  return (i >= 0 ? ips[i] : ips[0]) || "local";
+export function clientIp(c: Context): string {
+  return c.req.header("x-real-ip")?.trim() || "local";
 }
 
 /** ¿La petición llegó por HTTPS? (directamente o a través del proxy). */

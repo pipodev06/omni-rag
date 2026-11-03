@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { secureHeaders } from "hono/secure-headers";
 import { HTTPException } from "hono/http-exception";
 import type { AppEnv } from "./auth/middleware.js";
@@ -23,6 +24,13 @@ export function createApp() {
 
   const api = new Hono<AppEnv>();
   api.use("*", ipRateLimit());
+  // Ninguna petición JSON necesita más de 1 MB; sin este tope un cuerpo enorme (incluso sin sesión) se lee entero en
+  // memoria. La subida de documentos (POST /api/documents) tiene su propio límite en su ruta.
+  const jsonLimit = bodyLimit({
+    maxSize: 1024 * 1024,
+    onError: (c) => c.json({ error: "La petición es demasiado grande" }, 413),
+  });
+  api.use("*", (c, next) => (c.req.method === "POST" && c.req.path === "/api/documents" ? next() : jsonLimit(c, next)));
   api.route("/health", healthRoutes);
   api.route("/auth", authRoutes);
   api.route("/users", userRoutes);
