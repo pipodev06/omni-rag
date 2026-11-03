@@ -11,6 +11,7 @@ import { conversationToMarkdown, exportFilename, type ExportMessage } from "../r
 import { buildMessages, citedSources, foldShouting, NO_CONTEXT_ANSWER, retrievalQuery, type ChatMessage } from "../rag/prompt.js";
 import { searchWeb, webSearchEnabled, type WebResult } from "../lib/webSearch.js";
 import { resolveScope, retrieve, type RankedHit } from "../rag/retrieve.js";
+import { codeSuggestions } from "../rag/suggest.js";
 import { HttpError, notFound } from "../lib/errors.js";
 import { userRateLimit } from "../lib/limits.js";
 import { notifyQuota } from "../lib/quotaNotice.js";
@@ -133,7 +134,7 @@ const ChatBody = z.object({
 
 /**
  * Pregunta al RAG. Responde con Server-Sent Events:
- *   event: meta    → { conversationId, sources }
+ *   event: meta    → { conversationId, sources, suggestions }  (suggestions: «¿Te refieres a…?», ver rag/suggest.ts)
  *   event: token   → fragmento de texto de la respuesta
  *   event: done    → { messageId, model, sources, fromCache }  (sources con `cited` marcado)
  *   event: error   → { message }
@@ -210,20 +211,27 @@ chatRoutes.post("/chat", userRateLimit(20, 60_000, "preguntas"), async (c) => {
       return msg!.id;
     });
 
+  // «¿Te refieres a…?»: códigos de los documentos parecidos a lo escrito. Sin modelo; si falla, se responde sin ellas.
+  const suggestionsPromise = codeSuggestions(ctx, body.question, scope).catch((err) => {
+    console.warn("[chat] sugerencias de códigos:", err instanceof Error ? err.message : err);
+    return [];
+  });
+
   // 6a. Respuesta desde la caché: no se llama al LLM ni consume cupo.
   if (cached) {
     const sources = cached.sources as Source[];
     await withTenant(ctx, (tx) => markCacheHit(tx, cached.id));
     const messageId = await saveAnswer(cached.answer, { model: cached.model, sources, cacheId: cached.id, usage: "cache_hit" });
+    const suggestions = await suggestionsPromise;
     return streamSSE(c, async (stream) => {
-      await stream.writeSSE({ event: "meta", data: JSON.stringify({ conversationId, sources }) });
+      await stream.writeSSE({ event: "meta", data: JSON.stringify({ conversationId, sources, suggestions }) });
       await stream.writeSSE({ event: "token", data: JSON.stringify(cached.answer) });
       await stream.writeSSE({ event: "done", data: JSON.stringify({ messageId, model: cached.model, sources, fromCache: true }) });
     });
   }
 
   // 6b. Recuperación: búsqueda híbrida + re-ranking, respetando permisos.
-  const hits = await retrieve(ctx, { queryText: query, queryVector: vector, scope, signal });
+  const [hits, suggestions] = await Promise.all([retrieve(ctx, { queryText: query, queryVector: vector, scope, signal }), suggestionsPromise]);
   // 6c. Internet (modo híbrido): solo se envía la pregunta, nunca fragmentos de los documentos. Si el buscador falla, se
   // responde solo con los documentos y se avisa.
   const useWeb = wantsWeb && plan?.webSearch === true;
@@ -240,7 +248,7 @@ chatRoutes.post("/chat", userRateLimit(20, 60_000, "preguntas"), async (c) => {
   // 7. Respuesta en streaming.
   return streamSSE(c, async (stream) => {
     // `web`: si se buscó en internet y si el buscador falló (la interfaz lo avisa; se responde solo con los documentos).
-    await stream.writeSSE({ event: "meta", data: JSON.stringify({ conversationId, sources, web: { used: useWeb, failed: webFailed } }) });
+    await stream.writeSSE({ event: "meta", data: JSON.stringify({ conversationId, sources, suggestions, web: { used: useWeb, failed: webFailed } }) });
 
     if (hits.length === 0 && web.length === 0) {
       // Sin contexto no se llama al LLM: ahorra cupo y evita respuestas inventadas.

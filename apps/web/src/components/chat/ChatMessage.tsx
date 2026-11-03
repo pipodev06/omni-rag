@@ -1,6 +1,7 @@
 import { Loader2, Sparkles, TriangleAlert, Zap } from "lucide-react";
 import type { Message, Source } from "@/api";
 import { AnswerMarkdown, CopyButton, SourcesList } from "@/components/chat/Answer";
+import { CodeSuggestions } from "@/components/chat/CodeSuggestions";
 import { FeedbackButtons } from "@/components/chat/Feedback";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -48,6 +49,7 @@ export function AssistantMessage({
   onCite,
   onOpenSource,
   onFeedback,
+  onAsk,
 }: {
   message: Message;
   domId: string;
@@ -56,6 +58,7 @@ export function AssistantMessage({
   onCite: (n: number) => void;
   onOpenSource: (s: Source) => void;
   onFeedback: (v: 1 | -1 | null) => void;
+  onAsk: (question: string) => void;
 }) {
   const showActions = !!m.content && !streaming;
   return (
@@ -72,6 +75,7 @@ export function AssistantMessage({
             {m.error}
           </div>
         )}
+        {!streaming && m.suggestions && m.suggestions.length > 0 && <CodeSuggestions suggestions={m.suggestions} onAsk={onAsk} />}
         <SourcesList sources={m.sources} active={activeSource} onToggle={onCite} onOpen={onOpenSource} />
         {showActions && (
           <div className="flex flex-wrap items-center gap-0.5 text-xs text-muted-foreground">

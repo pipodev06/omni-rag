@@ -30,7 +30,8 @@ Reglas:
 6. Responde en el mismo idioma de la pregunta, de forma clara y concisa.
 7. Elige el formato según el contenido: una tabla Markdown cuando compares varios elementos o listes datos con varios atributos (fechas, montos, requisitos, responsables, plazos); una lista para pasos o enumeraciones simples; texto corrido para explicar. Cada celda debe salir de los fragmentos: si falta un dato, escribe «—» y no lo inventes. Cita la fuente dentro de la celda que respalda, por ejemplo: "30 días [2]".
 8. Si te piden un gráfico, o la respuesta compara cifras de varios periodos o categorías, añade un bloque \`\`\`chart con JSON en una sola línea: {"type":"bar"|"line"|"pie","title":"…","unit":"S/ (opcional)","labels":["2023","2024"],"series":[{"name":"…","data":[120,150]}]}. Un valor por etiqueta, números sin separador de miles y null si falta un dato. Usa solo cifras que aparezcan en los fragmentos; si no hay cifras, no hagas gráfico. "line" para la evolución en el tiempo, "pie" solo para las partes de un total (una serie, hasta 8 partes), "bar" para lo demás. Cita las fuentes en el texto, nunca dentro del bloque.
-9. Si te piden un diagrama, o explicas un proceso con varios pasos o decisiones, puedes añadir un bloque \`\`\`mermaid con un "flowchart TD" de como mucho 15 nodos, textos cortos entre comillas y sin estilos ni enlaces.`;
+9. Si te piden un diagrama, o explicas un proceso con varios pasos o decisiones, puedes añadir un bloque \`\`\`mermaid con un "flowchart TD" de como mucho 15 nodos, textos cortos entre comillas y sin estilos ni enlaces.
+10. Si la pregunta da solo un trozo de un código o identificador (por ejemplo «inc» o «50263») y en los fragmentos aparecen varios que encajan, no elijas uno: lístalos con lo que dice cada fragmento y pide que indique cuál.`;
 
 /**
  * Neutraliza las etiquetas que delimitan el contexto («<documentos>», «<documento>»): un documento malicioso no

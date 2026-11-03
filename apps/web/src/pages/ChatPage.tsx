@@ -169,7 +169,7 @@ export function ChatPage() {
               createdHereRef.current = meta.conversationId;
               navigate(`/chat/${meta.conversationId}`, { replace: true });
             }
-            updateLast((m) => ({ ...m, sources: meta.sources }));
+            updateLast((m) => ({ ...m, sources: meta.sources, suggestions: meta.suggestions }));
             if (meta.web?.failed) toast.warning("No se pudo buscar en internet", { description: "La respuesta usa solo tus documentos." });
           },
           onToken: (t) => updateLast((m) => ({ ...m, content: m.content + t })),
@@ -235,6 +235,7 @@ export function ChatPage() {
                     activeSource={activeSource[key] ?? null}
                     onCite={(n) => cite(key, n)}
                     onOpenSource={(s) => openDocument({ documentId: s.documentId, page: s.pageStart, highlight: s.excerpt })}
+                    onAsk={(q) => void send(q)}
                     onFeedback={(v) => setMessages((prev) => prev.map((x) => (x === m ? { ...x, feedback: v } : x)))}
                   />
                 );
