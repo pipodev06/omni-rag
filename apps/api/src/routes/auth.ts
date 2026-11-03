@@ -392,17 +392,19 @@ authRoutes.post("/link", async (c) => {
       UPDATE users SET password_hash = ${hash}, sessions_valid_after = date_trunc('second', now()),
              name = CASE WHEN ${valid.kind} = 'invite' THEN coalesce(${body.name ?? null}, name) ELSE name END
        WHERE id = ${valid.userId}
-      RETURNING id, tenant_id, name, username, email, role, is_superadmin`;
+      RETURNING id, tenant_id, name, username, email, role, is_superadmin, (totp_enabled_at IS NOT NULL) AS totp`;
     // Anular cualquier otro enlace pendiente de este usuario.
     await tx`UPDATE user_tokens SET used_at = now() WHERE user_id = ${valid.userId} AND used_at IS NULL`;
-    return u!;
+    return u! as SessionUser & { totp: boolean };
   });
 
-  const session = await startSession(c, user);
   await auditLog(
     { tenantId: user.tenant_id, userId: user.id, username: user.username, ip: clientIp(c) },
     "auth.link_used",
     { details: { kind: valid.kind } },
   );
-  return c.json(session);
+  // Con 2FA el enlace solo cambia la contraseña: quien controle el correo no debe entrar sin el código.
+  // La sesión se abre en /login, que pide el TOTP.
+  if (user.totp) return c.json({ requiresLogin: true });
+  return c.json(await startSession(c, user));
 });

@@ -15,7 +15,7 @@ function appWith(max: number) {
   app.get("/api/health", (c) => c.text("ok"));
   return app;
 }
-const from = (ip: string, headers: Record<string, string> = {}) => ({ headers: { "x-forwarded-for": `${ip}, 10.0.0.1`, ...headers } });
+const from = (ip: string, headers: Record<string, string> = {}) => ({ headers: { "x-real-ip": ip, ...headers } });
 
 describe("límite global por IP", () => {
   it("corta a una IP sin sesión al superar el tope y no afecta a otra", async () => {

@@ -81,24 +81,11 @@ describe("prompt injection: delimitadores", () => {
 const ctx = (headers: Record<string, string>, url = "http://localhost/api/x") =>
   ({ req: { header: (n: string) => headers[n.toLowerCase()], url } }) as unknown as Parameters<typeof clientIp>[0];
 
-describe("IP del cliente detrás de proxies", () => {
-  it("sin proxy usa la única dirección que hay", () => {
-    expect(clientIp(ctx({ "x-forwarded-for": "172.18.0.1" }))).toBe("172.18.0.1");
+describe("IP del cliente", () => {
+  it("usa la X-Real-IP que fija nuestro nginx e ignora X-Forwarded-For", () => {
+    expect(clientIp(ctx({ "x-real-ip": "198.51.100.7", "x-forwarded-for": "6.6.6.6" }))).toBe("198.51.100.7");
+    expect(clientIp(ctx({ "x-forwarded-for": "6.6.6.6" }))).toBe("local");
     expect(clientIp(ctx({}))).toBe("local");
-  });
-  it("con proxy externo toma la que vio ese proxy, no la que escribió el cliente", () => {
-    // Caddy sobrescribe: «cliente, proxy». Un nginx que añade: «falsa, cliente, proxy».
-    expect(clientIp(ctx({ "x-forwarded-for": "198.51.100.7, 172.18.0.1" }))).toBe("198.51.100.7");
-    expect(clientIp(ctx({ "x-forwarded-for": "6.6.6.6, 198.51.100.7, 172.18.0.1" }))).toBe("198.51.100.7");
-  });
-  it("con dos proxies (túnel de Cloudflare + Nginx Proxy Manager) hay que contar dos saltos", () => {
-    // Visto en producción: «cliente, cloudflared, npm». Con 1 salto todos salían con la IP de cloudflared.
-    const chain = "6.6.6.6, 198.51.100.7, 172.18.0.3, 172.18.0.4";
-    expect(clientIp(ctx({ "x-forwarded-for": chain }), 1)).toBe("172.18.0.3");
-    expect(clientIp(ctx({ "x-forwarded-for": chain }), 2)).toBe("198.51.100.7");
-  });
-  it("sin proxy delante (0 saltos) usa la que añade nuestro nginx", () => {
-    expect(clientIp(ctx({ "x-forwarded-for": "6.6.6.6, 198.51.100.7" }), 0)).toBe("198.51.100.7");
   });
 });
 

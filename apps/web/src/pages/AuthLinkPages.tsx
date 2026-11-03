@@ -102,6 +102,7 @@ export function LinkPage() {
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     if (!token) {
@@ -123,7 +124,9 @@ export function LinkPage() {
     setBusy(true);
     setError("");
     try {
-      await api.post("/auth/link", { token, password, name: info?.kind === "invite" ? name : undefined });
+      const res = await api.post<{ requiresLogin?: boolean }>("/auth/link", { token, password, name: info?.kind === "invite" ? name : undefined });
+      // Con verificación en dos pasos el enlace no abre sesión: hay que entrar con el código.
+      if (res.requiresLogin) return setSaved(true);
       await qc.invalidateQueries({ queryKey: ["session"] });
       navigate("/chat", { replace: true });
     } catch (err) {
@@ -143,6 +146,14 @@ export function LinkPage() {
         <p className="text-sm text-muted-foreground">
           Los enlaces caducan y solo se pueden usar una vez. Pide uno nuevo a tu administrador o desde «¿Olvidaste la contraseña?».
         </p>
+        <BackToLogin />
+      </AuthShell>
+    );
+  }
+
+  if (saved) {
+    return (
+      <AuthShell title="Contraseña guardada" description="Tu cuenta tiene verificación en dos pasos: inicia sesión con la nueva contraseña y el código de tu app autenticadora.">
         <BackToLogin />
       </AuthShell>
     );
