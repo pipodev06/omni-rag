@@ -44,7 +44,7 @@ function CitationChip({ n, source, onClick }: { n: number; source?: Source; onCl
       type="button"
       data-export-skip
       onClick={onClick}
-      className="relative -top-px mx-0.5 inline-flex h-[1.15rem] min-w-[1.15rem] items-center justify-center rounded-md bg-primary/10 px-1 align-middle text-[0.7rem] leading-none font-semibold text-primary no-underline transition-colors hover:bg-primary hover:text-primary-foreground"
+      className="relative -top-px mx-0.5 inline-flex h-[1.15rem] min-w-[1.15rem] items-center justify-center rounded-md bg-primary/10 px-1 align-middle text-[0.7rem] leading-none font-semibold text-primary no-underline transition-colors hover:bg-highlight hover:text-[oklch(0.22_0.03_255)] focus-visible:bg-highlight focus-visible:text-[oklch(0.22_0.03_255)]"
     >
       {n}
     </button>
