@@ -197,7 +197,7 @@ export function AuditPage() {
                 const Icon = cat?.icon ?? ScrollText;
                 return (
                   <TableRow key={it.id}>
-                    <TableCell className="pl-4 text-sm whitespace-nowrap text-muted-foreground tabular-nums">{formatDate(it.createdAt)}</TableCell>
+                    <TableCell className="pl-4 text-sm whitespace-nowrap text-muted-foreground tabular-nums font-mono text-xs">{formatDate(it.createdAt)}</TableCell>
                     <TableCell className="text-sm">{it.userLabel ?? "Sistema"}</TableCell>
                     <TableCell>
                       <span className="flex items-center gap-2 text-sm">
