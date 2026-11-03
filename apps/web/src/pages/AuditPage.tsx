@@ -126,8 +126,10 @@ function Details({ details }: { details: Record<string, unknown> }) {
   return (
     <div className="flex max-w-md flex-wrap gap-1">
       {entries.map(([k, v]) => (
-        <Badge key={k} variant="outline" className="font-normal">
-          <span className="text-muted-foreground">{DETAIL_LABELS[k] ?? k}:</span> {formatValue(v)}
+        // Los valores largos (lista de archivos) se cortan con «…»; el texto completo sale al pasar el ratón.
+        <Badge key={k} variant="outline" className="max-w-full justify-start font-normal" title={formatValue(v)}>
+          <span className="shrink-0 text-muted-foreground">{DETAIL_LABELS[k] ?? k}:</span>
+          <span className="min-w-0 truncate">{formatValue(v)}</span>
         </Badge>
       ))}
     </div>
