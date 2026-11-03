@@ -262,7 +262,7 @@ function DocumentSheet({ state, onTab, onClose }: { state: (OpenOptions & { tab:
                       La vista previa está disponible para PDF e imágenes. Para este formato se muestra el texto extraído; descarga el original para verlo completo.
                     </p>
                     {highlight && (
-                      <div className="rounded-lg border-2 border-yellow-300/70 bg-yellow-100/40 p-3 dark:bg-yellow-300/10">
+                      <div className="rounded-lg border-2 border-highlight/70 bg-highlight/15 p-3 dark:bg-highlight/10">
                         <p className="mb-1 text-xs font-medium text-muted-foreground">Fragmento citado</p>
                         <ExcerptMarkdown text={highlight} />
                       </div>

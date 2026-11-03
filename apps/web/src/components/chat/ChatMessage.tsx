@@ -18,7 +18,7 @@ function CachedBadge() {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px]">
+        <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs">
           <Zap className="size-3" /> Respuesta guardada
         </span>
       </TooltipTrigger>

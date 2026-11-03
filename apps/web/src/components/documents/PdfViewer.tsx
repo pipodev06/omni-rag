@@ -140,7 +140,7 @@ export default function PdfViewer({ url, initialPage = 1, highlight }: { url: st
           <span className="hidden text-xs text-muted-foreground sm:inline">
             {matches > 0 ? (
               <span className="inline-flex items-center gap-1.5">
-                <span className="inline-block size-2.5 rounded-sm bg-yellow-300/80" /> Texto citado resaltado
+                <span className="inline-block size-2.5 rounded-sm bg-highlight/80" /> Texto citado resaltado
               </span>
             ) : (
               "El texto citado no está en esta página"

@@ -99,7 +99,7 @@ export function AnswerMarkdown({ content, sources, onCite, streaming }: {
   );
   return (
     <StreamingContext.Provider value={!!streaming}>
-    <div className="prose prose-zinc max-w-none text-[15px] leading-7 dark:prose-invert prose-p:my-3 prose-pre:bg-muted prose-pre:text-foreground prose-table:text-sm prose-th:px-3 prose-td:px-3">
+    <div className="prose prose-tokens max-w-none text-[15px] leading-7 dark:prose-invert prose-p:my-3 prose-pre:bg-muted prose-pre:text-foreground prose-table:text-sm prose-th:px-3 prose-td:px-3">
       <Markdown
         text={prepared}
         components={{
@@ -133,7 +133,7 @@ export function ExcerptMarkdown({ text, className }: { text: string; className?:
   return (
     <div
       className={cn(
-        "prose prose-sm prose-zinc max-w-none text-muted-foreground dark:prose-invert prose-headings:my-2 prose-headings:text-sm prose-headings:font-semibold prose-headings:text-foreground prose-p:my-2 prose-table:my-2 prose-table:text-xs prose-th:px-2 prose-th:py-1 prose-td:px-2 prose-td:py-1",
+        "prose prose-sm prose-tokens-muted max-w-none text-muted-foreground dark:prose-invert prose-headings:my-2 prose-headings:text-sm prose-headings:font-semibold prose-headings:text-foreground prose-p:my-2 prose-table:my-2 prose-table:text-xs prose-th:px-2 prose-th:py-1 prose-td:px-2 prose-td:py-1",
         className,
       )}
     >

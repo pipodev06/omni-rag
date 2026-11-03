@@ -25,11 +25,12 @@
   --muted-foreground: oklch(0.552 0.016 285.938);
   --accent: oklch(0.962 0.018 272.314);
   --accent-foreground: oklch(0.359 0.144 278.697);
-  --destructive: oklch(0.577 0.245 27.325);
-  --success: oklch(0.596 0.145 163.225);
-  --warning: oklch(0.666 0.179 58.318);
+  --destructive: oklch(0.53 0.21 27);
+  --success: oklch(0.5 0.12 155);
+  --warning: oklch(0.53 0.13 65);
   --border: oklch(0.92 0.004 286.32);
-  --input: oklch(0.92 0.004 286.32);
+  --input: oklch(0.87 0.006 286.32);
+  --highlight: oklch(0.905 0.182 98.111);
   --ring: oklch(0.511 0.262 276.966);
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.141 0.005 285.823);
@@ -58,6 +59,7 @@
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.673 0.182 276.935);
+  --highlight: oklch(0.905 0.182 98.111);
   --sidebar: oklch(0.17 0.005 285.823);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
@@ -90,6 +92,7 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-highlight: var(--highlight);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-border: var(--sidebar-border);
@@ -98,7 +101,7 @@
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border outline-ring/80;
   }
   html,
   body,
@@ -150,9 +153,20 @@
   background: color-mix(in oklch, var(--primary) 30%, transparent);
 }
 .pdf-page .textLayer .rag-highlight {
-  background: rgb(253 224 71 / 0.55);
+  background: color-mix(in oklch, var(--highlight) 55%, transparent);
   border-radius: 2px;
-  box-shadow: 0 0 0 2px rgb(253 224 71 / 0.55);
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--highlight) 55%, transparent);
+}
+
+/* Cuerpo de las respuestas con los tokens del tema (sin esto, prose lo pinta en zinc-700/zinc-300). Fuera de las capas
+ * de Tailwind para ganar a prose-invert. */
+.prose-tokens {
+  --tw-prose-body: var(--foreground);
+  --tw-prose-invert-body: var(--foreground);
+}
+.prose-tokens-muted {
+  --tw-prose-body: var(--muted-foreground);
+  --tw-prose-invert-body: var(--muted-foreground);
 }
 
 /* ---------------------------------------------------------------------------

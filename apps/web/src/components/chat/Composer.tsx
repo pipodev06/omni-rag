@@ -194,7 +194,7 @@ export function Composer(props: {
             )}
           </div>
         </div>
-        <p className="mt-2 text-center text-[11px] text-muted-foreground">
+        <p className="mt-2 text-center text-xs text-muted-foreground">
           Las respuestas pueden contener errores. Comprueba las fuentes citadas. · Enter para enviar, Shift+Enter para nueva línea
         </p>
       </div>
