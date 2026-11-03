@@ -93,7 +93,7 @@ export function ConversationList({ activeId, onSelect }: { activeId?: string; on
                 title={c.title}
               >
                 <p className="truncate">{c.title}</p>
-                <p className="text-[11px] text-muted-foreground">{timeAgo(c.updatedAt)}</p>
+                <p className="text-xs text-muted-foreground">{timeAgo(c.updatedAt)}</p>
               </button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>

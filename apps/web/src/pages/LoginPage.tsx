@@ -107,7 +107,7 @@ export function LoginPage() {
         </div>
       </div>
 
-      <div className="relative hidden overflow-hidden bg-zinc-950 p-10 text-zinc-50 lg:flex lg:flex-col lg:justify-center">
+      <div className="relative hidden overflow-hidden bg-zinc-950 p-10 text-white lg:flex lg:flex-col lg:justify-center">
         <div className="pointer-events-none absolute -top-32 -right-32 size-96 rounded-full bg-indigo-600/30 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-40 -left-20 size-96 rounded-full bg-violet-600/20 blur-3xl" />
         <div className="relative mx-auto max-w-md space-y-8">
@@ -120,7 +120,7 @@ export function LoginPage() {
                 </div>
                 <div>
                   <p className="font-medium">{f.title}</p>
-                  <p className="text-sm text-zinc-400">{f.text}</p>
+                  <p className="text-sm text-white/70">{f.text}</p>
                 </div>
               </li>
             ))}

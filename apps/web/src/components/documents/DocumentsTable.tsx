@@ -116,9 +116,9 @@ function DocumentRow({ doc: d, checked, onCheck, ...actions }: RowActions & { do
       <TableCell>
         <DocumentStatus doc={d} />
       </TableCell>
-      <TableCell className="hidden text-muted-foreground md:table-cell">{formatBytes(d.sizeBytes)}</TableCell>
-      <TableCell className="hidden text-muted-foreground md:table-cell">{d.pageCount ?? "—"}</TableCell>
-      <TableCell className="hidden text-muted-foreground lg:table-cell">{d.chunkCount}</TableCell>
+      <TableCell className="hidden text-muted-foreground tabular-nums md:table-cell">{formatBytes(d.sizeBytes)}</TableCell>
+      <TableCell className="hidden text-muted-foreground tabular-nums md:table-cell">{d.pageCount ?? "—"}</TableCell>
+      <TableCell className="hidden text-muted-foreground tabular-nums lg:table-cell">{d.chunkCount}</TableCell>
       <TableCell className="hidden sm:table-cell">
         <p className="text-sm">{timeAgo(d.createdAt)}</p>
         {d.createdBy && <p className="text-xs text-muted-foreground">{d.createdBy}</p>}
