@@ -145,7 +145,7 @@ export function BackupsTab() {
   const busy = run.isPending || requests.pending;
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto">
+    <div className="relative min-h-0 flex-1 overflow-y-auto">
       <OpenAlerts alerts={data.alerts} />
       <div className="mb-4 flex shrink-0 flex-wrap items-center gap-2">
         <Button size="sm" onClick={() => run.mutate()} disabled={busy}>
