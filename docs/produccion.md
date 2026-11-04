@@ -169,7 +169,7 @@ BACKUP_AT=03:00     # copia diaria a las 03:00
 B2_AT=04:00         # subida diaria a las 04:00, después de la copia
 ```
 
-`BACKUP_TZ` (por defecto `<-05>5`, Lima) cambia la zona; usa ese formato POSIX, por ejemplo `<-03>3` para Argentina. Con hora fija no se hace copia al arrancar el contenedor; para una inmediata: `docker compose exec backup sh /backup.sh --once`. Aplica con `docker compose up -d`; en los registros aparece `próxima copia a las 03:00 … dentro de N min`. Las marcas de tiempo de los registros y los nombres de archivo siguen en UTC.
+`BACKUP_TZ` (por defecto `<-05>5`, Lima) cambia la zona; usa ese formato POSIX, por ejemplo `<-03>3` para Argentina. Con hora fija, al arrancar el contenedor solo se hace copia si la última tiene más de 24 h (el servidor estaba apagado o parado a esa hora), y `backup-b2` sube a los 5 minutos las copias que aún no estén en B2. Para una copia inmediata: `docker compose exec backup sh /backup.sh --once`. Aplica con `docker compose up -d`; en los registros aparece `próxima copia a las 03:00 … dentro de N min`. Las marcas de tiempo de los registros y los nombres de archivo siguen en UTC.
 
 Solo se suben archivos `.enc`: sin la frase de cifrado no sale nada del servidor. Para restaurar, baja los dos archivos del bucket (web de Backblaze o `rclone copy`), descífralos con el comando de arriba y sigue [operacion.md](operacion.md#restaurar-una-copia). Si el bucket tiene versiones o reglas de ciclo de vida propias, déjalas en «mantener solo la última versión»: el servicio ya borra definitivamente lo antiguo.
 
