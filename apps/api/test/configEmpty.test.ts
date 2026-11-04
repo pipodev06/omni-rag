@@ -59,6 +59,25 @@ describe("variables vacías en el entorno (withoutInvalidEmpty)", () => {
     expect(config.APP_NAME).toBe("");
   });
 
+  it("una variable con solo espacios cuenta como vacía, igual que \"\"", async () => {
+    const { config, DEFAULTS } = await load({ ALERT_BACKUP_HOURS: "   ", HISTORY_MESSAGES: "	 ", CACHE_ENABLED: " ", LLM_DEFAULT_PROVIDER: "  ", TRASH_RETENTION_DAYS: " " });
+    expect(config.ALERT_BACKUP_HOURS).toBe(DEFAULTS.ALERT_BACKUP_HOURS);
+    expect(config.HISTORY_MESSAGES).toBe(DEFAULTS.HISTORY_MESSAGES);
+    expect(config.CACHE_ENABLED).toBe(DEFAULTS.CACHE_ENABLED);
+    expect(config.LLM_DEFAULT_PROVIDER).toBe("openrouter");
+    expect(config.TRASH_RETENTION_DAYS).toBe(DEFAULTS.TRASH_RETENTION_DAYS);
+  });
+
+  it("donde \"\" vale, los espacios también dan vacío (RERANKER_URL, APP_NAME)", async () => {
+    const { config } = await load({ RERANKER_URL: "   ", APP_NAME: "  " });
+    expect(config.RERANKER_URL).toBe("");
+    expect(config.APP_NAME).toBe("");
+  });
+
+  it("DATABASE_URL con solo espacios sigue siendo un error", async () => {
+    await expect(load({ DATABASE_URL: "   " })).rejects.toThrow(/DATABASE_URL/);
+  });
+
   it("un valor inválido no vacío sigue siendo un error", async () => {
     await expect(load({ ALERT_BACKUP_HOURS: "abc" })).rejects.toThrow(/Configuración inválida/);
     await expect(load({ ALERT_BACKUP_HOURS: "0" })).rejects.toThrow(/Configuración inválida/);

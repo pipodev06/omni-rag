@@ -36,6 +36,21 @@ describe("secretBox", () => {
     expect(() => open("settings-secret", "")).toThrow();
   });
 
+  it("con AAD: solo se abre con el mismo AAD (el secreto queda atado a su clave)", () => {
+    const sealed = seal("settings-secret", "clave", "GROQ_API_KEY");
+    expect(open("settings-secret", sealed, "GROQ_API_KEY")).toBe("clave");
+    expect(() => open("settings-secret", sealed, "OPENAI_API_KEY")).toThrow();
+    expect(() => open("settings-secret", sealed)).toThrow();
+    expect(() => open("settings-secret", seal("settings-secret", "clave"), "GROQ_API_KEY")).toThrow();
+  });
+
+  it("la etiqueta GCM mide 16 bytes y una más corta se rechaza", () => {
+    const [iv, tag, data] = seal("settings-secret", "clave").split(".") as [string, string, string];
+    expect(Buffer.from(tag, "base64")).toHaveLength(16);
+    const short = Buffer.from(tag, "base64").subarray(0, 4).toString("base64");
+    expect(() => open("settings-secret", [iv, short, data].join("."))).toThrow();
+  });
+
   it("totp: lo guardado antes de crear secretBox (formato original) se sigue abriendo", () => {
     // Misma construcción que tenía lib/totp.ts antes del cambio: clave HKDF con info totp-secret.
     const key = Buffer.from(hkdfSync("sha256", config.JWT_SECRET, "rag", "totp-secret", 32));

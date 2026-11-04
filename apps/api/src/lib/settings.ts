@@ -85,14 +85,14 @@ export const GROUPS: Group[] = [
     title: "Límites y retención",
     description: "Cuánto tiempo se conservan los datos y qué topes se aplican a las peticiones.",
     fields: [
-      { key: "TRASH_RETENTION_DAYS", label: "Retención de la papelera", help: "Días que un documento borrado permanece en la papelera. Con 0 se elimina al instante.", type: "number", min: 0, max: 365, step: 1, int: true, unit: "días" },
-      { key: "AUDIT_RETENTION_DAYS", label: "Retención de la auditoría", help: "Días que se conservan el registro de auditoría y el historial de alertas.", type: "number", min: 1, max: 3650, step: 1, int: true, unit: "días" },
-      { key: "METRICS_RETENTION_DAYS", label: "Retención de las métricas", help: "Días que se conservan las muestras de consumo de los contenedores.", type: "number", min: 1, max: 90, step: 1, int: true, unit: "días" },
+      { key: "TRASH_RETENTION_DAYS", label: "Retención de la papelera", help: "Días que un documento borrado permanece en la papelera (mínimo 1).", type: "number", min: 1, max: 365, step: 1, int: true, unit: "días" },
+      { key: "AUDIT_RETENTION_DAYS", label: "Retención de la auditoría", help: "Días que se conservan el registro de auditoría y el historial de alertas (mínimo 30).", type: "number", min: 30, max: 3650, step: 1, int: true, unit: "días" },
+      { key: "METRICS_RETENTION_DAYS", label: "Retención de las métricas", help: "Días que se conservan las muestras de consumo de los contenedores (mínimo 1).", type: "number", min: 1, max: 90, step: 1, int: true, unit: "días" },
       { key: "QUOTA_WARN_PERCENT", label: "Aviso de cuota", help: "Porcentaje del límite diario a partir del cual se avisa en el chat y por correo.", type: "number", min: 1, max: 100, step: 1, int: true, unit: "%" },
       { key: "TENANT_DAILY_QUESTION_LIMIT", label: "Preguntas por día de los planes iniciales", help: "Límite con el que se crearon los planes de una instalación nueva.", type: "number", min: 0, max: 100000, step: 1, int: true, unit: "preguntas", restartNote: "Solo se usa al crear la instalación. Los límites vigentes se editan en Planes." },
       { key: "IP_RATE_LIMIT_PER_MIN", label: "Peticiones por minuto sin sesión", help: "Tope por dirección IP para las peticiones sin sesión iniciada. Con 0 no hay límite.", type: "number", min: 0, max: 100000, step: 1, int: true, unit: "por minuto" },
-      { key: "INVITE_EXPIRES_HOURS", label: "Caducidad de las invitaciones", help: "Horas de validez del enlace de invitación.", type: "number", min: 1, max: 8760, step: 1, unit: "h" },
-      { key: "RESET_EXPIRES_MINUTES", label: "Caducidad de la recuperación de contraseña", help: "Minutos de validez del enlace para restablecer la contraseña.", type: "number", min: 1, max: 10080, step: 1, unit: "min" },
+      { key: "INVITE_EXPIRES_HOURS", label: "Caducidad de las invitaciones", help: "Horas de validez del enlace de invitación (máximo 336, dos semanas).", type: "number", min: 1, max: 336, step: 1, unit: "h" },
+      { key: "RESET_EXPIRES_MINUTES", label: "Caducidad de la recuperación de contraseña", help: "Minutos de validez del enlace para restablecer la contraseña (máximo 120).", type: "number", min: 1, max: 120, step: 1, unit: "min" },
     ],
   },
   {
@@ -145,7 +145,7 @@ export const GROUPS: Group[] = [
     fields: [
       { key: "BACKUP_AT", label: "Hora fija", help: "Formato HH:MM (24 h). Vacío: una copia cada N horas.", type: "time", fallback: "", restartNote: COPIES_NOTE },
       { key: "BACKUP_INTERVAL_HOURS", label: "Intervalo entre copias", help: "Horas entre copias cuando no hay hora fija.", type: "number", min: 1, max: 720, step: 1, int: true, unit: "h", fallback: 24, restartNote: COPIES_NOTE },
-      { key: "BACKUP_KEEP_DAYS", label: "Retención", help: "Días que se conservan las copias.", type: "number", min: 1, max: 3650, step: 1, int: true, unit: "días", fallback: 7, restartNote: COPIES_NOTE },
+      { key: "BACKUP_KEEP_DAYS", label: "Retención", help: "Días que se conservan las copias (mínimo 3).", type: "number", min: 3, max: 3650, step: 1, int: true, unit: "días", fallback: 7, restartNote: COPIES_NOTE },
       { key: "BACKUP_TZ", label: "Zona horaria", help: "Zona de la hora fija, en formato POSIX (por ejemplo <-05>5).", type: "string", pattern: /^[A-Za-z0-9_/+:<>,.\-]{0,64}$/, fallback: "<-05>5", restartNote: COPIES_NOTE },
       { key: "BACKUP_UPLOADS_TGZ", label: "Comprimir los archivos subidos", help: "Incluye los documentos subidos como un archivo comprimido en cada copia.", type: "boolean", fallback: true, restartNote: COPIES_NOTE },
       { key: "BACKUP_OFFSITE", label: "Copia externa", help: "Duplica cada copia cifrada en la carpeta externa.", type: "boolean", fallback: false, restartNote: COPIES_NOTE },
@@ -158,7 +158,7 @@ export const GROUPS: Group[] = [
     fields: [
       { key: "B2_AT", label: "Hora fija", help: "Formato HH:MM (24 h). Vacío: una subida cada N horas.", type: "time", fallback: "", restartNote: COPIES_NOTE },
       { key: "B2_INTERVAL_HOURS", label: "Intervalo entre subidas", help: "Horas entre subidas cuando no hay hora fija.", type: "number", min: 1, max: 720, step: 1, int: true, unit: "h", fallback: 6, restartNote: COPIES_NOTE },
-      { key: "B2_KEEP_DAYS", label: "Retención", help: "Días que se conservan las copias en B2.", type: "number", min: 1, max: 3650, step: 1, int: true, unit: "días", fallback: 30, restartNote: COPIES_NOTE },
+      { key: "B2_KEEP_DAYS", label: "Retención", help: "Días que se conservan las copias en B2 (mínimo 7).", type: "number", min: 7, max: 3650, step: 1, int: true, unit: "días", fallback: 30, restartNote: COPIES_NOTE },
       { key: "B2_SYNC_UPLOADS", label: "Subir también los archivos", help: "Sincroniza los documentos subidos, de forma incremental.", type: "boolean", fallback: false, restartNote: COPIES_NOTE },
       { key: "B2_BUCKET", label: "Bucket", help: "Nombre del bucket de B2.", type: "string", pattern: /^[A-Za-z0-9.\-]{0,63}$/, fallback: "", restartNote: COPIES_NOTE },
       { key: "B2_PATH", label: "Carpeta dentro del bucket", help: "Ruta dentro del bucket donde se guardan las copias.", type: "string", pattern: /^(?!.*\.\.)[A-Za-z0-9 _.\-/]{0,200}$/, fallback: "omni-rag", restartNote: COPIES_NOTE },
@@ -217,6 +217,9 @@ function effective(def: Def): unknown {
 /** Valor efectivo de un ajuste (variable de entorno, ajuste guardado o valor por defecto). Síncrono: lee la memoria. */
 export const setting = <K extends SettingKey>(key: K): Config[K] => effective(DEFS.get(key)!) as Config[K];
 
+/** ¿Tienen valor efectivo (entorno o ajuste guardado) el bucket y las dos claves de B2? Sin ellas no hay nada que subir. */
+export const b2Configured = (): boolean => ["B2_BUCKET", "B2_KEY_ID", "B2_APPLICATION_KEY"].every((k) => present(effective(DEFS.get(k)!)));
+
 /** Carpeta externa vigente de las copias: ruta relativa dentro de /targets, o vacío para la carpeta clásica. */
 export function backupDestination(): string {
   return envRaw(DESTINATION_KEY) ?? (typeof stored.get(DESTINATION_KEY) === "string" ? (stored.get(DESTINATION_KEY) as string) : "");
@@ -226,20 +229,46 @@ export function backupDestination(): string {
 
 const SECRET_INFO = "settings-secret";
 
+/** Secretos guardados que no se pueden descifrar (cambió JWT_SECRET). Se avisan una sola vez, no en cada lectura. */
+let undecryptable = new Set<string>();
+const warned = new Set<string>();
+
+/** Abre un secreto atado a su clave. Los guardados antes de usar AAD se abren sin él y se reescriben con él. */
+function openSecret(key: string, secret: string): { value: string; legacy: boolean } {
+  try {
+    return { value: open(SECRET_INFO, secret, key), legacy: false };
+  } catch {
+    return { value: open(SECRET_INFO, secret), legacy: true };
+  }
+}
+
 export async function refreshSettings(): Promise<void> {
   const rows = await sqlOwner<{ key: string; value: unknown; secret: string | null }[]>`SELECT key, value, secret FROM settings`;
   const next = new Map<string, unknown>();
+  const broken = new Set<string>();
   for (const r of rows) {
     if (r.secret !== null) {
       try {
-        next.set(r.key, open(SECRET_INFO, r.secret));
+        const { value, legacy } = openSecret(r.key, r.secret);
+        next.set(r.key, value);
+        if (legacy) {
+          // Mejora al vuelo: se vuelve a guardar atado a su clave. Si falla, se reintenta en la próxima lectura.
+          const sealed = seal(SECRET_INFO, value, r.key);
+          await sqlOwner`UPDATE settings SET secret = ${sealed} WHERE key = ${r.key} AND secret = ${r.secret}`.catch(() => {});
+        }
       } catch {
-        console.error(`[ajustes] no se pudo descifrar ${r.key} (¿cambió JWT_SECRET?); se ignora`);
+        broken.add(r.key);
+        if (!warned.has(r.key)) {
+          warned.add(r.key);
+          console.error(`[ajustes] no se pudo descifrar ${r.key} (¿cambió JWT_SECRET?); se ignora hasta que se vuelva a escribir`);
+        }
       }
     } else if (r.value !== null) {
       next.set(r.key, r.value);
     }
   }
+  for (const k of warned) if (!broken.has(k)) warned.delete(k);
+  undecryptable = broken;
   stored = next;
 }
 
@@ -271,6 +300,7 @@ function toField(def: Def) {
     default: secret ? null : defaultOf(def),
     lockedByEnv: envRaw(def.key) !== undefined,
     configured: present(value),
+    ...(secret && undecryptable.has(def.key) && envRaw(def.key) === undefined && { undecryptable: true }),
     ...(def.restartNote && { restartNote: def.restartNote }),
   };
 }
@@ -317,10 +347,30 @@ export class SettingsError extends Error {}
 export type SettingsInput = Record<string, unknown>;
 
 /**
- * Aplica un cambio de ajustes: `null` vuelve al valor por defecto (borra la fila); en un secreto, texto = valor nuevo.
- * Todo o nada: si una clave no es válida no se guarda ninguna. Devuelve las claves tocadas (nunca valores).
+ * Secretos que dejan de valer si cambia el servicio al que pertenecen: si se edita alguno de estos ajustes sin enviar el
+ * secreto en el mismo cambio, el secreto guardado se borra (así una clave no viaja a un servidor que no es el que se guardó).
  */
-export async function applySettings(values: SettingsInput, by: string): Promise<string[]> {
+const SECRET_BOUND_TO: Record<string, string> = {
+  SMTP_HOST: "SMTP_PASSWORD",
+  SMTP_PORT: "SMTP_PASSWORD",
+  LLM_CUSTOM_BASE_URL: "LLM_CUSTOM_API_KEY",
+  WEB_SEARCH_URL: "WEB_SEARCH_API_KEY",
+  WEB_SEARCH_PROVIDER: "WEB_SEARCH_API_KEY",
+};
+
+export interface SettingsResult {
+  /** Claves pedidas (nunca valores). */
+  keys: string[];
+  /** Secretos borrados porque cambió el servidor al que pertenecían. */
+  cleared: string[];
+}
+
+/**
+ * Aplica un cambio de ajustes: `null` vuelve al valor por defecto (borra la fila); en un secreto, texto = valor nuevo.
+ * Todo o nada: si una clave no es válida no se guarda ninguna. `beforeWrite` se ejecuta tras validar y justo antes de
+ * guardar (la reconfirmación de identidad: un código no se gasta con un cambio que ni siquiera es válido).
+ */
+export async function applySettings(values: SettingsInput, by: string, beforeWrite?: () => Promise<void>): Promise<SettingsResult> {
   const ops: { def: Def; value: unknown }[] = [];
   for (const [key, value] of Object.entries(values)) {
     const def = DEFS.get(key);
@@ -330,15 +380,26 @@ export async function applySettings(values: SettingsInput, by: string): Promise<
     if (value !== null && !validator(def).safeParse(value).success) throw new SettingsError(`Valor no válido para «${def.label}».`);
     ops.push({ def, value });
   }
-  if (ops.length === 0) return [];
+  if (ops.length === 0) return { keys: [], cleared: [] };
 
+  // Secretos a borrar: el ajuste cambia de valor de verdad, el secreto no viene en el mismo cambio y no está fijado en el entorno.
+  const cleared: string[] = [];
+  for (const { def, value } of ops) {
+    const secretKey = SECRET_BOUND_TO[def.key];
+    if (!secretKey || Object.hasOwn(values, secretKey) || envRaw(secretKey) !== undefined || cleared.includes(secretKey)) continue;
+    const next = value === null ? defaultOf(def) : value;
+    if (JSON.stringify(next) === JSON.stringify(effective(def))) continue;
+    if (stored.has(secretKey) || undecryptable.has(secretKey)) cleared.push(secretKey);
+  }
+
+  await beforeWrite?.();
   await sqlOwner.begin(async (tx) => {
     for (const { def, value } of ops) {
       if (value === null) {
         await tx`DELETE FROM settings WHERE key = ${def.key}`;
       } else if (def.type === "secret") {
         await tx`
-          INSERT INTO settings (key, value, secret, updated_at, updated_by) VALUES (${def.key}, NULL, ${seal(SECRET_INFO, value as string)}, now(), ${by})
+          INSERT INTO settings (key, value, secret, updated_at, updated_by) VALUES (${def.key}, NULL, ${seal(SECRET_INFO, value as string, def.key)}, now(), ${by})
           ON CONFLICT (key) DO UPDATE SET value = NULL, secret = EXCLUDED.secret, updated_at = now(), updated_by = EXCLUDED.updated_by`;
       } else {
         await tx`
@@ -346,9 +407,10 @@ export async function applySettings(values: SettingsInput, by: string): Promise<
           ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, secret = NULL, updated_at = now(), updated_by = EXCLUDED.updated_by`;
       }
     }
+    for (const key of cleared) await tx`DELETE FROM settings WHERE key = ${key}`;
   });
   await refreshSettings();
-  return ops.map((o) => o.def.key);
+  return { keys: ops.map((o) => o.def.key), cleared };
 }
 
 // --- Archivo para los scripts de copia ---------------------------------------------------------------

@@ -166,10 +166,12 @@ export const DEFAULTS: Config = schema.parse({ DATABASE_URL: "-", APP_DATABASE_U
  * Una variable escrita vacía en el .env (`ALERT_BACKUP_HOURS=`) cuenta como no escrita cuando "" no es un texto válido
  * para ella (números, booleanos, enums: "" daría error o se convertiría en 0/false): así vaciarla para editarla en la
  * pantalla no impide arrancar ni cambia su valor. Donde "" sí vale (p. ej. RERANKER_URL= desactiva el re-ranker) se respeta.
+ * Una variable con solo espacios recibe el mismo trato que una vacía.
  */
 function withoutInvalidEmpty(env: NodeJS.ProcessEnv): Record<string, string | undefined> {
   const out: Record<string, string | undefined> = { ...env };
   for (const [key, field] of Object.entries(schema.shape)) {
+    if (out[key]?.trim() === "") out[key] = "";
     if (out[key] !== "" || !field.safeParse(undefined).success) continue;
     const asEmpty = field.safeParse("");
     if (!asEmpty.success || asEmpty.data !== "") delete out[key];

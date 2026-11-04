@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { api, errorMessage } from "@/api";
 import { InfoHint } from "@/components/common";
 import { useConfirm } from "@/components/ConfirmProvider";
+import { ReauthDialog, type Confirm } from "@/components/system/ReauthDialog";
 import { Tag } from "@/components/system/shared";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -30,6 +31,8 @@ export interface SettingField {
   default: Scalar | null;
   lockedByEnv: boolean;
   configured: boolean;
+  /** Secreto guardado que ya no se puede descifrar (cambió JWT_SECRET). */
+  undecryptable?: boolean;
   restartNote?: string;
 }
 
@@ -40,27 +43,51 @@ export interface SettingsGroup {
   fields: SettingField[];
 }
 
+interface SettingsResponse {
+  groups: SettingsGroup[];
+  /** El usuario tiene 2FA: la reconfirmación pide también el código. */
+  reauth?: { totp: boolean };
+}
+
 const KEY = ["system", "settings"] as const;
+// Ajustes numéricos de retención: junto al mínimo permitido se avisa de que se conservará muy poco.
+const RETENTION_KEYS = new Set(["BACKUP_KEEP_DAYS", "B2_KEEP_DAYS", "AUDIT_RETENTION_DAYS", "TRASH_RETENTION_DAYS", "METRICS_RETENTION_DAYS"]);
 const LOCKED_TEXT = "Fijado en el .env del servidor; quítalo de ahí para editarlo aquí";
 // Un SelectItem no admite valor vacío: la opción «sin valor» se representa con este centinela.
 const NONE = "__none__";
 
 /** Los grupos de la API cuyos ids se piden, en el orden pedido. */
 export function useSettingsGroups(ids: string[]) {
-  const query = useQuery({ queryKey: KEY, queryFn: () => api.get<{ groups: SettingsGroup[] }>("/system/settings") });
+  const query = useQuery({ queryKey: KEY, queryFn: () => api.get<SettingsResponse>("/system/settings") });
   const groups = query.data ? ids.map((id) => query.data.groups.find((g) => g.id === id)).filter((g): g is SettingsGroup => g !== undefined) : [];
-  return { ...query, groups };
+  return { ...query, groups, totp: query.data?.reauth?.totp ?? false };
 }
 
-/** PUT /system/settings: guarda las claves indicadas (null = valor por defecto o quitar el secreto) y refresca la lista. */
+/** ¿Pide la reconfirmación el código de dos pasos? (el usuario lo tiene activo). */
+export function useReauthTotp(): boolean {
+  return useQuery({ queryKey: KEY, queryFn: () => api.get<SettingsResponse>("/system/settings") }).data?.reauth?.totp ?? false;
+}
+
+/** PUT /system/settings con la reconfirmación: guarda las claves indicadas (null = valor por defecto o quitar el secreto) y refresca la lista. */
 function useSaveSettings() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (values: Record<string, Scalar | null>) => api.put<{ groups: SettingsGroup[] }>("/system/settings", { values }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
-    onError: (err) => toast.error(errorMessage(err)),
+    mutationFn: ({ values, confirm }: { values: Record<string, Scalar | null>; confirm: Confirm }) =>
+      api.put<SettingsResponse & { cleared?: string[] }>("/system/settings", { values, confirm }),
+    onSuccess: (res) => {
+      // Cambiar el servidor o el proveedor borra el secreto que iba con él: se dice cuál.
+      const fields = qc.getQueryData<SettingsResponse>(KEY)?.groups.flatMap((g) => g.fields) ?? [];
+      for (const key of res.cleared ?? []) {
+        const label = fields.find((f) => f.key === key)?.label ?? key;
+        toast.warning(`Se quitó «${label}» porque cambiaste el servidor o el proveedor; vuelve a escribirla.`);
+      }
+      return qc.invalidateQueries({ queryKey: KEY });
+    },
   });
 }
+
+/** Pide guardar `values`; abre la reconfirmación y, al salir bien, ejecuta `done`. */
+type Ask = (values: Record<string, Scalar | null>, done: () => void) => void;
 
 const effective = (f: SettingField): Scalar => f.value ?? f.default ?? (f.type === "boolean" ? false : "");
 const asDraft = (f: SettingField): string | boolean => {
@@ -77,20 +104,22 @@ function toApi(f: SettingField, v: string | boolean): Scalar | null {
 }
 
 /** Cambiar el valor de un secreto: se escribe aquí y nunca se vuelve a mostrar. */
-function SecretDialog({ field, onClose }: { field: SettingField | null; onClose: () => void }) {
+function SecretDialog({ field, onClose, ask }: { field: SettingField | null; onClose: () => void; ask: Ask }) {
   return (
     <Dialog open={field !== null} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-sm">{field && <SecretForm field={field} onClose={onClose} />}</DialogContent>
+      <DialogContent className="sm:max-w-sm">{field && <SecretForm field={field} onClose={onClose} ask={ask} />}</DialogContent>
     </Dialog>
   );
 }
 
-function SecretForm({ field, onClose }: { field: SettingField; onClose: () => void }) {
+function SecretForm({ field, onClose, ask }: { field: SettingField; onClose: () => void; ask: Ask }) {
   const [value, setValue] = useState("");
-  const save = useSaveSettings();
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    save.mutate({ [field.key]: value }, { onSuccess: () => { toast.success("Guardado"); onClose(); } });
+    ask({ [field.key]: value }, () => {
+      toast.success("Guardado");
+      onClose();
+    });
   };
   return (
     <form onSubmit={submit} className="space-y-4">
@@ -103,8 +132,8 @@ function SecretForm({ field, onClose }: { field: SettingField; onClose: () => vo
         <Button type="button" variant="outline" onClick={onClose}>
           Cancelar
         </Button>
-        <Button type="submit" disabled={value === "" || save.isPending}>
-          {save.isPending && <Loader2 className="animate-spin" />} Guardar
+        <Button type="submit" disabled={value === ""}>
+          Guardar
         </Button>
       </DialogFooter>
     </form>
@@ -127,18 +156,21 @@ function FieldLabel({ field }: { field: SettingField }) {
   );
 }
 
-function SecretField({ field, onChange }: { field: SettingField; onChange: () => void }) {
-  const save = useSaveSettings();
+function SecretField({ field, onChange, ask, busy }: { field: SettingField; onChange: () => void; ask: Ask; busy: boolean }) {
   const confirm = useConfirm();
   const remove = async () => {
     if (!(await confirm({ title: `¿Quitar «${field.label}»?`, description: "Se borrará el valor guardado.", confirmText: "Quitar", destructive: true }))) return;
-    save.mutate({ [field.key]: null }, { onSuccess: () => toast.success("Quitado") });
+    ask({ [field.key]: null }, () => toast.success("Quitado"));
   };
   return (
     <div className="space-y-1.5">
       <FieldLabel field={field} />
       <div className="flex flex-wrap items-center gap-2">
-        <Tag tone={field.configured ? "ok" : "muted"}>{field.configured ? "Configurada" : "Sin configurar"}</Tag>
+        {field.undecryptable ? (
+          <Tag tone="warn">No se puede leer (cambió JWT_SECRET): vuelve a escribirla</Tag>
+        ) : (
+          <Tag tone={field.configured ? "ok" : "muted"}>{field.configured ? "Configurada" : "Sin configurar"}</Tag>
+        )}
         {field.lockedByEnv ? (
           <LockedNote />
         ) : (
@@ -147,7 +179,7 @@ function SecretField({ field, onChange }: { field: SettingField; onChange: () =>
               <KeyRound /> Cambiar
             </Button>
             {field.configured && (
-              <Button type="button" variant="ghost" size="sm" onClick={remove} disabled={save.isPending}>
+              <Button type="button" variant="ghost" size="sm" onClick={remove} disabled={busy}>
                 Quitar
               </Button>
             )}
@@ -195,6 +227,13 @@ function ScalarField({ field, draft, onDraft, onReset, busy }: { field: SettingF
   }
 
   const text = String(draft);
+  const num = text.trim() === "" ? null : Number(text);
+  const warning =
+    field.key === "IP_RATE_LIMIT_PER_MIN" && num === 0
+      ? "Sin freno por IP para peticiones sin sesión."
+      : RETENTION_KEYS.has(field.key) && num !== null && field.min !== undefined && num === field.min
+        ? "Valor mínimo permitido: se conservará muy poco tiempo."
+        : null;
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between gap-1">
@@ -232,54 +271,67 @@ function ScalarField({ field, draft, onDraft, onReset, busy }: { field: SettingF
         </div>
       )}
       {locked && <LockedNote />}
+      {warning && <p className="text-xs text-warning">{warning}</p>}
     </div>
   );
 }
 
 const APPLY_NOTE: Record<string, string> = { backup: "Guardado. El servicio de copias lo aplica en unos minutos.", b2: "Guardado. El servicio de B2 lo aplica en unos minutos." };
 
-function GroupForm({ group, extra }: { group: SettingsGroup; extra?: React.ReactNode }) {
+function GroupForm({ group, totp, extra }: { group: SettingsGroup; totp: boolean; extra?: React.ReactNode }) {
   const [edited, setEdited] = useState<Record<string, string | boolean>>({});
   const [secret, setSecret] = useState<SettingField | null>(null);
+  // Guardado a la espera de la reconfirmación de identidad.
+  const [request, setRequest] = useState<{ values: Record<string, Scalar | null>; done: () => void } | null>(null);
   const save = useSaveSettings();
   const dirty = group.fields.filter((f) => f.type !== "secret" && !f.lockedByEnv && f.key in edited && edited[f.key] !== asDraft(f));
+
+  const ask: Ask = (values, done) => setRequest({ values, done });
+  const confirmSave = async (confirm: Confirm) => {
+    if (!request) return;
+    await save.mutateAsync({ values: request.values, confirm });
+    request.done();
+    setRequest(null);
+  };
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
     const values = Object.fromEntries(dirty.map((f) => [f.key, toApi(f, edited[f.key]!)]));
-    save.mutate(values, {
-      onSuccess: () => {
-        setEdited({});
-        toast.success(APPLY_NOTE[group.id] ?? "Guardado");
-      },
+    ask(values, () => {
+      setEdited({});
+      toast.success(APPLY_NOTE[group.id] ?? "Guardado");
     });
   };
-  const reset = (f: SettingField) =>
-    save.mutate({ [f.key]: null }, { onSuccess: () => setEdited(({ [f.key]: _, ...rest }) => rest) });
+  const reset = (f: SettingField) => ask({ [f.key]: null }, () => setEdited(({ [f.key]: _, ...rest }) => rest));
+  const busy = request !== null;
 
   return (
-    <form onSubmit={submit} className="rounded-xl border bg-card p-4">
-      <div className="mb-4 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1">
-          <h2 className="text-sm font-semibold">{group.title}</h2>
-          {group.description && <InfoHint title={group.title}>{group.description}</InfoHint>}
+    <>
+      <form onSubmit={submit} className="rounded-xl border bg-card p-4">
+        <div className="mb-4 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1">
+            <h2 className="text-sm font-semibold">{group.title}</h2>
+            {group.description && <InfoHint title={group.title}>{group.description}</InfoHint>}
+          </div>
+          <Button type="submit" size="sm" disabled={dirty.length === 0 || busy}>
+            Guardar
+          </Button>
         </div>
-        <Button type="submit" size="sm" disabled={dirty.length === 0 || save.isPending}>
-          {save.isPending && <Loader2 className="animate-spin" />} Guardar
-        </Button>
-      </div>
-      <div className="grid items-start gap-x-4 gap-y-4 md:grid-cols-2 xl:grid-cols-3">
-        {group.fields.map((f) =>
-          f.type === "secret" ? (
-            <SecretField key={f.key} field={f} onChange={() => setSecret(f)} />
-          ) : (
-            <ScalarField key={f.key} field={f} draft={f.key in edited ? edited[f.key]! : asDraft(f)} onDraft={(v) => setEdited((s) => ({ ...s, [f.key]: v }))} onReset={() => reset(f)} busy={save.isPending} />
-          ),
-        )}
-      </div>
-      {extra && <div className="mt-4 flex flex-wrap items-center gap-2 border-t pt-4">{extra}</div>}
-      <SecretDialog field={secret} onClose={() => setSecret(null)} />
-    </form>
+        <div className="grid items-start gap-x-4 gap-y-4 md:grid-cols-2 xl:grid-cols-3">
+          {group.fields.map((f) =>
+            f.type === "secret" ? (
+              <SecretField key={f.key} field={f} onChange={() => setSecret(f)} ask={ask} busy={busy} />
+            ) : (
+              <ScalarField key={f.key} field={f} draft={f.key in edited ? edited[f.key]! : asDraft(f)} onDraft={(v) => setEdited((s) => ({ ...s, [f.key]: v }))} onReset={() => reset(f)} busy={busy} />
+            ),
+          )}
+        </div>
+        {extra && <div className="mt-4 flex flex-wrap items-center gap-2 border-t pt-4">{extra}</div>}
+      </form>
+      {/* Fuera del <form>: los eventos de React suben por los portales y un submit interno enviaría el formulario del grupo. */}
+      <SecretDialog field={secret} onClose={() => setSecret(null)} ask={ask} />
+      <ReauthDialog open={request !== null} onCancel={() => setRequest(null)} totp={totp} onConfirm={confirmSave} />
+    </>
   );
 }
 
@@ -332,13 +384,13 @@ function LlmTests({ group }: { group: SettingsGroup }) {
 
 /** Formularios de ajustes de los grupos indicados (pestañas Configuración y Copias). */
 export function SettingsGroups({ ids }: { ids: string[] }) {
-  const { groups, isLoading, isError, error } = useSettingsGroups(ids);
+  const { groups, totp, isLoading, isError, error } = useSettingsGroups(ids);
   if (isLoading) return <Skeleton className="h-48 w-full" />;
   if (isError) return <p className="text-sm text-destructive">{errorMessage(error)}</p>;
   return (
     <div className="space-y-4">
       {groups.map((g) => (
-        <GroupForm key={g.id} group={g} extra={g.id === "email" ? <EmailTest /> : g.id === "llm" ? <LlmTests group={g} /> : undefined} />
+        <GroupForm key={g.id} group={g} totp={totp} extra={g.id === "email" ? <EmailTest /> : g.id === "llm" ? <LlmTests group={g} /> : undefined} />
       ))}
     </div>
   );

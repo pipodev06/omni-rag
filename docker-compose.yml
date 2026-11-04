@@ -233,11 +233,14 @@ services:
       # Discos o carpetas entre los que se puede elegir el destino desde Sistema → Copias (BACKUP_TARGETS_DIR).
       # Sin definirla es una carpeta vacía del proyecto y la pantalla no ofrece cambiar de destino.
       - ${BACKUP_TARGETS_DIR:-./backups-targets}:/targets
-      # Solo para dar al worker permiso de escritura en la carpeta de ajustes (ver deploy/backup.sh).
-      - backup-config:/backup-config
     depends_on:
       db:
         condition: service_healthy
+    # Corre como root solo para leer /uploads y escribir en discos ajenos: sin el resto de privilegios de root.
+    # DAC_OVERRIDE = leer/escribir archivos de otros usuarios; FOWNER = ajustar fechas y permisos de lo copiado.
+    cap_drop: [ALL]
+    cap_add: [DAC_OVERRIDE, FOWNER]
+    security_opt: ["no-new-privileges:true"]
 
   # Sube las copias cifradas de la carpeta externa (BACKUP_OFFSITE_DIR o el destino elegido) a Backblaze B2. Solo con
   # COMPOSE_PROFILES=backblaze (y BACKUP_OFFSITE=true + BACKUP_ENCRYPTION_PASSPHRASE: sin cifrar no sube nada).
@@ -248,6 +251,9 @@ services:
     restart: unless-stopped
     dns: *dns
     entrypoint: ["sh", "/b2-sync.sh"]
+    # Después del worker: así el volumen backup-config nace con el dueño de la imagen de la API (node) y el worker puede escribir en él.
+    depends_on:
+      - worker
     environment:
       RCLONE_CONFIG_B2_TYPE: b2
       RCLONE_CONFIG_B2_ACCOUNT: ${B2_KEY_ID:-}

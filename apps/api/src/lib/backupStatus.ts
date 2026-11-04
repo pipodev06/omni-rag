@@ -1,7 +1,7 @@
-import { readdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { sqlOwner } from "../db/client.js";
-import { backupSettingsForScripts } from "./settings.js";
+import { b2Configured, backupSettingsForScripts } from "./settings.js";
 
 /**
  * Estado de las copias de seguridad para la pantalla Sistema → Copias. El worker llama a `collectBackupStatus()` cada
@@ -120,11 +120,17 @@ const shellQuote = (v: string) => `'${v.replaceAll("'", "'\\''")}'`;
 /**
  * Escribe `b2.env` con los ajustes de copias y B2 que no están fijados en el .env. Solo si la carpeta existe (sin el perfil
  * backblaze no está montada). Permisos 0600 y escritura atómica (archivo temporal + rename): lleva claves en claro.
+ * Solo se escribe si el bucket y las dos claves de B2 tienen valor; si no, se borra el archivo que hubiera para no dejar
+ * claves sueltas en disco sin motivo.
  */
 export async function writeBackupConfig(dir = BACKUP_CONFIG_DIR): Promise<void> {
   if (!(await stat(dir).catch(() => null))?.isDirectory()) return;
-  const text = backupSettingsForScripts().map(([k, v]) => `export ${k}=${shellQuote(v)}\n`).join("");
   const file = join(dir, "b2.env");
+  if (!b2Configured()) {
+    await rm(file, { force: true });
+    return;
+  }
+  const text = backupSettingsForScripts().map(([k, v]) => `export ${k}=${shellQuote(v)}\n`).join("");
   if ((await readFile(file, "utf8").catch(() => null)) === text) return;
   const tmp = `${file}.tmp`;
   await writeFile(tmp, text, { mode: 0o600 });

@@ -12,7 +12,8 @@ export const MAINTENANCE_QUEUE = "mantenimiento";
  *  - documentos en la papelera desde hace más de TRASH_RETENTION_DAYS días (se eliminan con su archivo);
  *  - sesiones caducadas o cerradas hace más de 7 días;
  *  - muestras de consumo de los contenedores más antiguas que METRICS_RETENTION_DAYS y alertas pasadas más antiguas
- *    que AUDIT_RETENTION_DAYS.
+ *    que AUDIT_RETENTION_DAYS;
+ *  - órdenes al servicio de copias terminadas hace más de 90 días.
  */
 export async function runMaintenance() {
   const audit = await sqlOwner`
@@ -31,6 +32,7 @@ export async function runMaintenance() {
   const samples = await sqlOwner`
     DELETE FROM container_samples WHERE at < now() - ${`${setting("METRICS_RETENTION_DAYS")} days`}::interval`;
   await sqlOwner`DELETE FROM alert_events WHERE at < now() - ${`${setting("AUDIT_RETENTION_DAYS")} days`}::interval`;
+  await sqlOwner`DELETE FROM backup_requests WHERE finished_at IS NOT NULL AND finished_at < now() - interval '90 days'`;
   await Promise.all(trash.map((d) => removeStored(`${d.tenant_id}/${d.id}`).catch(() => {})));
   return { auditDeleted: audit.length, tokensDeleted: tokens.length, cacheDeleted: cache.length, trashPurged: trash.length, sessionsDeleted: sessions.length, samplesDeleted: samples.count };
 }

@@ -6,7 +6,9 @@ import { sqlOwner } from "../db/client.js";
 import { audit } from "../lib/audit.js";
 import { HttpError, badRequest } from "../lib/errors.js";
 import { configuredProviders, getProvider, isConfigured, probeProvider } from "../lib/llmProviders.js";
-import { emailEnabled, sendEmail, verifyEmail } from "../lib/mailer.js";
+import { notifyChange } from "../lib/changeNotice.js";
+import { captureMailer, emailEnabled, sendEmail, smtpErrorMessage, verifyEmail } from "../lib/mailer.js";
+import { ConfirmSchema, hasTotp, reauthenticate, type Confirm } from "../lib/reauth.js";
 import { applySettings, backupDestination, SettingsError, setting, settingsView } from "../lib/settings.js";
 import { parse } from "../lib/validate.js";
 import type { HostInfo } from "../lib/containerMetrics.js";
@@ -152,26 +154,48 @@ systemRoutes.get("/backups", async (c) => {
 
 // --- Ajustes editables (Sistema → Configuración) ---------------------------------------------------------------
 
-systemRoutes.get("/settings", (c) => c.json(settingsView()));
+/** Vista de los ajustes más lo que necesita la pantalla para la reconfirmación (¿pide código de 2FA?). */
+const settingsResponse = async (c: Context<AppEnv>, extra: object = {}) => c.json({ ...settingsView(), reauth: { totp: await hasTotp(c.get("user").id) }, ...extra });
 
-const SettingsBody = z.object({ values: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])) });
+systemRoutes.get("/settings", (c) => settingsResponse(c));
+
+/** Reconfirma contraseña (y código de 2FA): los cambios de ajustes y de destino la exigen. Un fallo queda en la auditoría. */
+async function reconfirm(c: Context<AppEnv>, confirm: Confirm | undefined): Promise<void> {
+  const me = c.get("user");
+  try {
+    await reauthenticate(me.id, confirm);
+  } catch (err) {
+    if (err instanceof HttpError && err.code === "REAUTH_FAILED") await audit(c, "system.reauth_failed", { targetType: "user", targetId: me.id });
+    throw err;
+  }
+}
+
+const SettingsBody = z.object({
+  values: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])),
+  confirm: ConfirmSchema.optional(),
+});
 
 systemRoutes.put("/settings", async (c) => {
   const body = parse(SettingsBody, await c.req.json().catch(() => ({})));
-  let keys: string[];
+  // El aviso de cambio sale con el correo y los destinatarios de antes del cambio.
+  const send = captureMailer();
+  const previousRecipients = setting("ALERT_EMAIL");
+  let result: Awaited<ReturnType<typeof applySettings>>;
   try {
-    keys = await applySettings(body.values, c.get("user").username);
+    // La reconfirmación va tras validar los valores y antes de guardar.
+    result = await applySettings(body.values, c.get("user").username, () => reconfirm(c, body.confirm));
   } catch (err) {
     if (err instanceof SettingsError) throw badRequest(err.message);
     throw err;
   }
-  // Solo las claves: los valores (y menos los de los secretos) no van a la auditoría.
-  if (keys.length > 0) await audit(c, "settings.updated", { targetType: "settings", details: { keys } });
-  return c.json(settingsView());
+  const changed = [...result.keys, ...result.cleared.filter((k) => !result.keys.includes(k))];
+  // Solo las claves: los valores (y menos los de los secretos) no van a la auditoría ni al correo.
+  if (changed.length > 0) {
+    await audit(c, "settings.updated", { targetType: "settings", details: { keys: result.keys, cleared: result.cleared } });
+    void notifyChange({ send, previousRecipients, newRecipients: result.keys.includes("ALERT_EMAIL") ? setting("ALERT_EMAIL") : "", what: changed, by: c.get("user").username });
+  }
+  return settingsResponse(c, { cleared: result.cleared });
 });
-
-/** Texto corto del error de un servidor externo para el superadministrador; el detalle completo queda en el registro. */
-const reason = (err: unknown) => (err instanceof Error ? err.message : String(err)).replace(/\s+/g, " ").slice(0, 300);
 
 systemRoutes.post("/settings/test-email", async (c) => {
   const { to } = parse(z.object({ to: z.string().trim().email().max(254).optional() }), await c.req.json().catch(() => ({})));
@@ -181,8 +205,8 @@ systemRoutes.post("/settings/test-email", async (c) => {
   try {
     await verifyEmail();
   } catch (err) {
-    console.warn("[correo] la prueba de conexión falló:", err);
-    return c.json({ ok: false, message: `No se pudo conectar o iniciar sesión: ${reason(err)}` });
+    // Texto fijo según el tipo de fallo; el detalle ya quedó en el registro (mailer.ts).
+    return c.json({ ok: false, message: smtpErrorMessage(err) });
   }
   const sent = await sendEmail({
     to: target,
@@ -205,21 +229,34 @@ systemRoutes.post("/settings/test-llm", async (c) => {
 
 // --- Órdenes al servicio de copias ---------------------------------------------------------------
 
-/** Las órdenes sin terminar de hace más de 6 horas se ignoran: si el servicio de copias está caído no deben bloquear las nuevas. */
-const PENDING = sqlOwner`finished_at IS NULL AND created_at > now() - interval '6 hours'`;
+/** Una orden sin terminar tras tantas horas se da por caducada: si el servicio de copias está caído no debe bloquear las nuevas. */
+const STALE_HOURS = 6;
+/** Tiempo mínimo entre una copia manual terminada y la siguiente. */
+const MANUAL_COOLDOWN_MIN = 15;
 
-/** Crea una orden salvo que haya otra sin terminar (409). El INSERT con NOT EXISTS evita que dos clics creen dos. */
+/**
+ * Crea una orden salvo que haya otra sin terminar (409). Lo garantiza la base: un índice único parcial
+ * (`backup_requests_una_abierta`, migración 021) admite una sola fila con `finished_at IS NULL`, así que dos clics
+ * simultáneos no pueden crear dos.
+ */
 async function requestBackupOrder(c: Context<AppEnv>, kind: "backup" | "destination", payload: object): Promise<{ id: number }> {
+  await sqlOwner`
+    UPDATE backup_requests SET started_at = coalesce(started_at, now()), finished_at = now(), ok = false, message = 'caducada'
+     WHERE finished_at IS NULL AND created_at < now() - ${`${STALE_HOURS} hours`}::interval`;
   const [row] = await sqlOwner<{ id: number }[]>`
-    INSERT INTO backup_requests (kind, payload, requested_by)
-    SELECT ${kind}, ${sqlOwner.json(payload as never)}, ${c.get("user").username}
-     WHERE NOT EXISTS (SELECT 1 FROM backup_requests WHERE ${PENDING})
-    RETURNING id`;
+    INSERT INTO backup_requests (kind, payload, requested_by) VALUES (${kind}, ${sqlOwner.json(payload as never)}, ${c.get("user").username})
+    ON CONFLICT DO NOTHING RETURNING id`;
   if (!row) throw new HttpError(409, "Ya hay una orden de copias pendiente o en curso. Espera a que termine.");
   return { id: Number(row.id) };
 }
 
 systemRoutes.post("/backups/run", async (c) => {
+  const [recent] = await sqlOwner<{ wait: number }[]>`
+    SELECT ceil(extract(epoch FROM (finished_at + ${`${MANUAL_COOLDOWN_MIN} minutes`}::interval - now())) / 60)::int AS wait
+      FROM backup_requests
+     WHERE kind = 'backup' AND finished_at > now() - ${`${MANUAL_COOLDOWN_MIN} minutes`}::interval AND coalesce(message, '') NOT ILIKE '%caducada%'
+     ORDER BY finished_at DESC LIMIT 1`;
+  if (recent) throw new HttpError(429, `La última copia manual terminó hace menos de ${MANUAL_COOLDOWN_MIN} minutos. Vuelve a intentarlo en ${Math.max(1, recent.wait)} min.`);
   const order = await requestBackupOrder(c, "backup", {});
   await audit(c, "backup.run_requested", { targetType: "backup_request", targetId: String(order.id) });
   return c.json(order);
@@ -229,12 +266,17 @@ systemRoutes.post("/backups/run", async (c) => {
 const DestinationBody = z.object({
   path: z.string().regex(/^[A-Za-z0-9 _.\-/]{0,200}$/).refine((p) => !p.includes("..") && !p.startsWith("/") && !p.includes("//") && !/(^|\/)\.(\/|$)/.test(p)),
   moveExisting: z.boolean(),
+  confirm: ConfirmSchema.optional(),
 });
 
 systemRoutes.post("/backups/destination", async (c) => {
-  const body = parse(DestinationBody, await c.req.json().catch(() => ({})));
+  const { confirm, ...body } = parse(DestinationBody, await c.req.json().catch(() => ({})));
+  const send = captureMailer();
+  const previousRecipients = setting("ALERT_EMAIL");
+  await reconfirm(c, confirm);
   const order = await requestBackupOrder(c, "destination", body);
   await audit(c, "backup.destination_requested", { targetType: "backup_request", targetId: String(order.id), details: { path: body.path, moveExisting: body.moveExisting } });
+  void notifyChange({ send, previousRecipients, newRecipients: "", what: ["BACKUP_DESTINATION"], by: c.get("user").username });
   return c.json(order);
 });
 

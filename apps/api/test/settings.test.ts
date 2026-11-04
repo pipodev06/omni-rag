@@ -20,6 +20,11 @@ function makeDb() {
       rows.delete(vals[0] as string);
       return Promise.resolve([]);
     }
+    if (q.startsWith("UPDATE settings SET secret")) {
+      const row = rows.get(vals[1] as string);
+      if (row && row.secret === vals[2]) row.secret = vals[0] as string;
+      return Promise.resolve([]);
+    }
     if (q.startsWith("INSERT INTO settings")) {
       const key = vals[0] as string;
       if (q.includes("?::jsonb")) rows.set(key, { value: JSON.parse(vals[1] as string), secret: null });
@@ -37,7 +42,7 @@ function makeDb() {
   return { rows, calls, sql };
 }
 
-const TOUCHED = ["ALERT_BACKUP_HOURS", "ALERT_DISK_FREE_PERCENT", "BACKUP_KEEP_DAYS", "BACKUP_DESTINATION", "B2_BUCKET", "SMTP_HOST", "HISTORY_MESSAGES"];
+const TOUCHED = ["ALERT_BACKUP_HOURS", "ALERT_DISK_FREE_PERCENT", "BACKUP_KEEP_DAYS", "BACKUP_DESTINATION", "B2_BUCKET", "SMTP_HOST", "SMTP_PASSWORD", "HISTORY_MESSAGES", "B2_KEY_ID", "B2_APPLICATION_KEY"];
 const saved: Record<string, string | undefined> = {};
 
 beforeEach(() => {
@@ -141,7 +146,7 @@ describe("secretos", () => {
     expect(row.value).toBeNull();
     expect(row.secret).not.toContain("gsk_secreto");
     expect(row.secret!.split(".")).toHaveLength(3);
-    expect(s.box.open("settings-secret", row.secret!)).toBe("gsk_secreto-en-claro");
+    expect(s.box.open("settings-secret", row.secret!, "GROQ_API_KEY")).toBe("gsk_secreto-en-claro");
     expect(() => s.box.open("totp-secret", row.secret!)).toThrow();
     // El valor efectivo sí llega a los consumidores, la vista no.
     expect(s.setting("GROQ_API_KEY")).toBe("gsk_secreto-en-claro");
@@ -189,7 +194,8 @@ describe("applySettings: validación todo o nada", () => {
   it("guarda un valor válido, devuelve solo las claves y refresca la memoria", async () => {
     const s = await fresh();
     const keys = await s.applySettings({ ALERT_DISK_FREE_PERCENT: 15, CACHE_ENABLED: false }, "root");
-    expect(keys.sort()).toEqual(["ALERT_DISK_FREE_PERCENT", "CACHE_ENABLED"]);
+    expect(keys.keys.sort()).toEqual(["ALERT_DISK_FREE_PERCENT", "CACHE_ENABLED"]);
+    expect(keys.cleared).toEqual([]);
     expect(s.setting("ALERT_DISK_FREE_PERCENT")).toBe(15);
     expect(s.setting("CACHE_ENABLED")).toBe(false);
     expect(s.db.rows.get("ALERT_DISK_FREE_PERCENT")).toEqual({ value: 15, secret: null });
@@ -205,7 +211,7 @@ describe("applySettings: validación todo o nada", () => {
 
   it("un cuerpo vacío no abre transacción", async () => {
     const s = await fresh();
-    expect(await s.applySettings({}, "root")).toEqual([]);
+    expect(await s.applySettings({}, "root")).toEqual({ keys: [], cleared: [] });
     expect(s.db.calls.begin).toBe(0);
   });
 
@@ -243,14 +249,19 @@ describe("applySettings: validación todo o nada", () => {
     ["ALERT_DISK_FREE_PERCENT", [1, 90, 5.5], [0, 91, -1, "10"]],
     ["ALERT_CONTAINER_MEM_PERCENT", [50, 100], [49, 101]],
     ["HISTORY_MESSAGES", [0, 50], [-1, 51, 1.5]],
-    ["TRASH_RETENTION_DAYS", [0, 365], [-1, 366, 0.5]],
+    ["TRASH_RETENTION_DAYS", [1, 365], [0, -1, 366, 0.5]],
+    ["AUDIT_RETENTION_DAYS", [30, 3650], [29, 0, 3651]],
+    ["METRICS_RETENTION_DAYS", [1, 90], [0, 91]],
+    ["RESET_EXPIRES_MINUTES", [1, 120], [0, 121, 10080]],
+    ["INVITE_EXPIRES_HOURS", [1, 336], [0, 337, 8760]],
+    ["BACKUP_KEEP_DAYS", [3, 3650], [2, 1, 0, 3651]],
     ["QUOTA_WARN_PERCENT", [1, 100], [0, 101]],
     ["SMTP_PORT", [1, 65535], [0, 65536, 587.5]],
     ["LLM_TEMPERATURE", [0, 2, 0.7], [-0.1, 2.1]],
     ["RERANK_MIN_SCORE", [0, 1, 0.25], [1.01, -0.01]],
     ["WEB_SEARCH_MAX_RESULTS", [1, 10], [0, 11]],
     ["BACKUP_INTERVAL_HOURS", [1, 720], [0, 721]],
-    ["B2_KEEP_DAYS", [1, 3650], [0, 3651]],
+    ["B2_KEEP_DAYS", [7, 3650], [6, 1, 0, 3651]],
     ["SMTP_SECURE", [true, false], ["true", 1, 0]],
     ["LLM_DEFAULT_PROVIDER", ["groq", "custom"], ["otro", "", 5]],
     ["WEB_SEARCH_PROVIDER", ["", "tavily", "brave", "searxng"], ["bing"]],
@@ -267,7 +278,7 @@ describe("applySettings: validación todo o nada", () => {
   it.each(RANGES)("%s: acepta los bordes válidos y rechaza lo demás", async (key, good, bad) => {
     const s = await fresh();
     for (const v of good) {
-      await expect(s.applySettings({ [key]: v }, "root"), `${key}=${JSON.stringify(v)} debería valer`).resolves.toEqual([key]);
+      await expect(s.applySettings({ [key]: v }, "root"), `${key}=${JSON.stringify(v)} debería valer`).resolves.toMatchObject({ keys: [key] });
     }
     for (const v of bad) {
       await expect(s.applySettings({ [key]: v }, "root"), `${key}=${JSON.stringify(v)} debería fallar`).rejects.toBeInstanceOf(s.SettingsError);
@@ -279,7 +290,7 @@ describe("applySettings: validación todo o nada", () => {
     for (const g of s.settingsView().groups) {
       for (const f of g.fields) {
         if (f.type === "secret") continue;
-        await expect(s.applySettings({ [f.key]: f.default }, "root"), `${f.key} default=${JSON.stringify(f.default)}`).resolves.toEqual([f.key]);
+        await expect(s.applySettings({ [f.key]: f.default }, "root"), `${f.key} default=${JSON.stringify(f.default)}`).resolves.toMatchObject({ keys: [f.key] });
       }
     }
   });
@@ -295,5 +306,188 @@ describe("applySettings: validación todo o nada", () => {
         expect(f.help, f.key).toBeTruthy();
       }
     }
+  });
+});
+
+describe("secretos atados al servicio: cambiar el servidor borra la clave guardada", () => {
+  const BOUND: [string, unknown, unknown, string][] = [
+    ["SMTP_HOST", "a.example.com", "b.example.com", "SMTP_PASSWORD"],
+    ["SMTP_PORT", 587, 465, "SMTP_PASSWORD"],
+    ["LLM_CUSTOM_BASE_URL", "http://uno:11434/v1", "http://otro:11434/v1", "LLM_CUSTOM_API_KEY"],
+    ["WEB_SEARCH_URL", "http://uno:8080", "http://otro:8080", "WEB_SEARCH_API_KEY"],
+    ["WEB_SEARCH_PROVIDER", "tavily", "brave", "WEB_SEARCH_API_KEY"],
+  ];
+
+  it.each(BOUND)("%s: al cambiarlo sin enviar el secreto se borra %s y se avisa en cleared", async (key, first, second, secretKey) => {
+    const s = await fresh();
+    await s.applySettings({ [key]: first, [secretKey]: "clave-vieja" }, "root");
+    const res = await s.applySettings({ [key]: second }, "root");
+    expect(res).toEqual({ keys: [key], cleared: [secretKey] });
+    expect(s.db.rows.has(secretKey)).toBe(false);
+    expect(s.setting(secretKey as "SMTP_PASSWORD")).toBe("");
+    expect(field(s.settingsView(), secretKey).configured).toBe(false);
+  });
+
+  it("no borra nada si el valor no cambia de verdad (la pantalla puede reenviar el grupo entero)", async () => {
+    const s = await fresh();
+    await s.applySettings({ SMTP_HOST: "a.example.com", SMTP_PASSWORD: "clave" }, "root");
+    expect(await s.applySettings({ SMTP_HOST: "a.example.com" }, "root")).toEqual({ keys: ["SMTP_HOST"], cleared: [] });
+    expect(s.setting("SMTP_PASSWORD")).toBe("clave");
+  });
+
+  it("si el secreto viaja en el mismo cambio (valor nuevo o null) se respeta", async () => {
+    const s = await fresh();
+    await s.applySettings({ SMTP_HOST: "a.example.com", SMTP_PASSWORD: "vieja" }, "root");
+    expect((await s.applySettings({ SMTP_HOST: "b.example.com", SMTP_PASSWORD: "nueva" }, "root")).cleared).toEqual([]);
+    expect(s.setting("SMTP_PASSWORD")).toBe("nueva");
+    const quitar = await s.applySettings({ SMTP_HOST: "c.example.com", SMTP_PASSWORD: null }, "root");
+    expect(quitar.cleared).toEqual([]);
+    expect(s.setting("SMTP_PASSWORD")).toBe("");
+  });
+
+  it("volver al valor por defecto (null) también cuenta como cambio", async () => {
+    const s = await fresh();
+    await s.applySettings({ SMTP_HOST: "a.example.com", SMTP_PASSWORD: "clave" }, "root");
+    expect((await s.applySettings({ SMTP_HOST: null }, "root")).cleared).toEqual(["SMTP_PASSWORD"]);
+  });
+
+  it("sin secreto guardado no hay nada que borrar", async () => {
+    const s = await fresh();
+    await s.applySettings({ SMTP_HOST: "a.example.com" }, "root");
+    expect((await s.applySettings({ SMTP_HOST: "b.example.com" }, "root")).cleared).toEqual([]);
+  });
+
+  it("un secreto fijado en el entorno no se toca", async () => {
+    const s = await fresh({ SMTP_PASSWORD: "del-entorno" });
+    await s.applySettings({ SMTP_HOST: "a.example.com" }, "root");
+    const res = await s.applySettings({ SMTP_HOST: "b.example.com" }, "root");
+    expect(res.cleared).toEqual([]);
+    expect(s.setting("SMTP_PASSWORD")).toBe("del-entorno");
+  });
+
+  it("un secreto guardado que no se puede leer también se borra", async () => {
+    const s = await fresh();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await s.applySettings({ SMTP_HOST: "a.example.com" }, "root");
+    s.db.rows.set("SMTP_PASSWORD", { value: null, secret: "AAAA.BBBB.CCCC" });
+    await s.refreshSettings();
+    expect((await s.applySettings({ SMTP_HOST: "b.example.com" }, "root")).cleared).toEqual(["SMTP_PASSWORD"]);
+    expect(s.db.rows.has("SMTP_PASSWORD")).toBe(false);
+  });
+});
+
+describe("applySettings: gancho previo a guardar (reconfirmación)", () => {
+  it("se ejecuta tras validar y antes de guardar; si falla no se guarda nada", async () => {
+    const s = await fresh();
+    const order: string[] = [];
+    const hook = vi.fn(async () => {
+      order.push(`hook con ${s.db.rows.size} filas`);
+    });
+    await s.applySettings({ ALERT_DISK_FREE_PERCENT: 20 }, "root", hook);
+    expect(order).toEqual(["hook con 0 filas"]);
+    expect(s.db.rows.size).toBe(1);
+
+    await expect(s.applySettings({ HISTORY_MESSAGES: 999 }, "root", hook)).rejects.toBeInstanceOf(s.SettingsError);
+    expect(hook).toHaveBeenCalledTimes(1);
+
+    await expect(
+      s.applySettings({ HISTORY_MESSAGES: 5 }, "root", async () => {
+        throw new Error("reauth");
+      }),
+    ).rejects.toThrow("reauth");
+    expect(s.db.rows.has("HISTORY_MESSAGES")).toBe(false);
+    expect(s.db.calls.begin).toBe(1);
+  });
+
+  it("sin cambios no se llama al gancho", async () => {
+    const s = await fresh();
+    const hook = vi.fn(async () => {});
+    await s.applySettings({}, "root", hook);
+    expect(hook).not.toHaveBeenCalled();
+  });
+});
+
+describe("secretos: AAD con el nombre de la clave y secretos ilegibles", () => {
+  it("el secreto va atado a su clave: copiado a otra fila no se puede leer", async () => {
+    const s = await fresh();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await s.applySettings({ GROQ_API_KEY: "gsk_uno" }, "root");
+    const sealed = s.db.rows.get("GROQ_API_KEY")!.secret!;
+    expect(s.box.open("settings-secret", sealed, "GROQ_API_KEY")).toBe("gsk_uno");
+    expect(() => s.box.open("settings-secret", sealed, "OPENAI_API_KEY")).toThrow();
+    expect(() => s.box.open("settings-secret", sealed)).toThrow();
+    s.db.rows.set("OPENAI_API_KEY", { value: null, secret: sealed });
+    await s.refreshSettings();
+    expect(s.setting("OPENAI_API_KEY")).toBe("");
+    expect(s.setting("GROQ_API_KEY")).toBe("gsk_uno");
+    expect(field(s.settingsView(), "OPENAI_API_KEY")).toMatchObject({ configured: false, undecryptable: true });
+  });
+
+  it("un secreto guardado sin AAD (versión anterior) se sigue leyendo y se reescribe con AAD", async () => {
+    const s = await fresh();
+    const legacy = s.box.seal("settings-secret", "gsk_antigua");
+    s.db.rows.set("GROQ_API_KEY", { value: null, secret: legacy });
+    await s.refreshSettings();
+    expect(s.setting("GROQ_API_KEY")).toBe("gsk_antigua");
+    const now = s.db.rows.get("GROQ_API_KEY")!.secret!;
+    expect(now).not.toBe(legacy);
+    expect(s.box.open("settings-secret", now, "GROQ_API_KEY")).toBe("gsk_antigua");
+    expect(field(s.settingsView(), "GROQ_API_KEY")).not.toHaveProperty("undecryptable");
+  });
+
+  it("undecryptable solo aparece en secretos ilegibles y el registro avisa una sola vez, no en cada lectura", async () => {
+    const s = await fresh();
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    s.db.rows.set("GROQ_API_KEY", { value: null, secret: "AAAA.BBBB.CCCC" });
+    s.db.rows.set("GOOGLE_API_KEY", { value: null, secret: s.box.seal("settings-secret", "ok", "GOOGLE_API_KEY") });
+    for (let i = 0; i < 4; i++) await s.refreshSettings();
+    expect(err).toHaveBeenCalledOnce();
+    const view = s.settingsView();
+    expect(field(view, "GROQ_API_KEY")).toMatchObject({ configured: false, undecryptable: true, value: null });
+    expect(field(view, "GOOGLE_API_KEY")).toMatchObject({ configured: true });
+    expect(field(view, "GOOGLE_API_KEY")).not.toHaveProperty("undecryptable");
+    expect(field(view, "ALERT_EMAIL")).not.toHaveProperty("undecryptable");
+  });
+
+  it("al volver a escribir la clave deja de estar marcada, y si se rompe otra vez se vuelve a avisar", async () => {
+    const s = await fresh();
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    s.db.rows.set("GROQ_API_KEY", { value: null, secret: "AAAA.BBBB.CCCC" });
+    await s.refreshSettings();
+    await s.applySettings({ GROQ_API_KEY: "gsk_nueva" }, "root");
+    expect(field(s.settingsView(), "GROQ_API_KEY")).toMatchObject({ configured: true });
+    expect(field(s.settingsView(), "GROQ_API_KEY")).not.toHaveProperty("undecryptable");
+    s.db.rows.set("GROQ_API_KEY", { value: null, secret: "AAAA.BBBB.CCCC" });
+    await s.refreshSettings();
+    expect(err).toHaveBeenCalledTimes(2);
+  });
+
+  it("una clave fijada en el entorno no se marca como ilegible", async () => {
+    const s = await fresh({ SMTP_PASSWORD: "del-entorno" });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    s.db.rows.set("SMTP_PASSWORD", { value: null, secret: "AAAA.BBBB.CCCC" });
+    await s.refreshSettings();
+    expect(field(s.settingsView(), "SMTP_PASSWORD")).toMatchObject({ lockedByEnv: true, configured: true });
+    expect(field(s.settingsView(), "SMTP_PASSWORD")).not.toHaveProperty("undecryptable");
+  });
+});
+
+describe("b2Configured: bucket y las dos claves con valor efectivo", () => {
+  it("hacen falta las tres, vengan de la base o del entorno", async () => {
+    const s = await fresh();
+    await s.refreshSettings();
+    expect(s.b2Configured()).toBe(false);
+    await s.applySettings({ B2_BUCKET: "mi-bucket", B2_KEY_ID: "id" }, "root");
+    expect(s.b2Configured()).toBe(false);
+    await s.applySettings({ B2_APPLICATION_KEY: "clave" }, "root");
+    expect(s.b2Configured()).toBe(true);
+    await s.applySettings({ B2_BUCKET: null }, "root");
+    expect(s.b2Configured()).toBe(false);
+  });
+
+  it("cuenta lo fijado en el entorno", async () => {
+    const s = await fresh({ B2_BUCKET: "env-bucket", B2_KEY_ID: "id", B2_APPLICATION_KEY: "clave" });
+    await s.refreshSettings();
+    expect(s.b2Configured()).toBe(true);
   });
 });
