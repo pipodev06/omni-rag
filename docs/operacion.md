@@ -6,7 +6,8 @@
 docker compose ps                    # estado de los servicios
 docker compose logs -f api worker    # registros en vivo
 docker compose restart api worker    # reiniciar tras cambiar .env
-docker compose down                  # parar (los datos se conservan en volúmenes)
+docker compose stop                  # parar sin borrar los contenedores (recomendado)
+docker compose down                  # parar y borrar los contenedores (los datos se conservan en volúmenes)
 docker compose up -d --build         # actualizar tras un git pull
 curl localhost:8000/api/health       # estado de dependencias
 ```
@@ -18,6 +19,29 @@ Volúmenes con datos:
 | `rag_pgdata` | Base de datos (usuarios, documentos, vectores, conversaciones) | **Sí** |
 | `rag_uploads` | Archivos originales subidos | **Sí** |
 | `rag_hf-cache` | Modelo de embeddings descargado | No (se vuelve a descargar) |
+
+### Omni RAG apagado en un servidor compartido
+
+Si el servidor tiene otros servicios Docker y se limpia con `prune`, Omni RAG apagado necesita **contenedores creados**, aunque no estén en marcha. Sin contenedores, Docker considera sus imágenes y volúmenes «sin uso»:
+
+| Comando | Sin contenedores de Omni RAG | Con contenedores creados (aunque estén parados) |
+|---|---|---|
+| `docker image prune` | Nada (solo borra imágenes sin etiqueta) | Nada |
+| `docker image prune -a` | Borra todas sus imágenes; `rag-api`, `rag-web` y `rag-worker` hay que reconstruirlas | No las toca |
+| `docker volume prune -a` o `docker system prune --volumes` | **Borra `rag_pgdata` y `rag_uploads`: se pierde la base de datos** | No los toca |
+| `docker system prune` | — | Borra los contenedores parados y la protección desaparece |
+
+`image prune` nunca borra volúmenes: la base de datos solo corre peligro con los comandos que limpian volúmenes.
+
+Para dejarlo creado sin arrancarlo (usa las imágenes que ya existen, sin reconstruir ni descargar):
+
+```bash
+docker compose create --no-build --pull never
+```
+
+Para pararlo, usa `docker compose stop`, no `down`: `down` borra los contenedores. Los contenedores creados no arrancan solos al reiniciar el servidor, aunque tengan `restart: unless-stopped`.
+
+Actualizar sigue siendo `git pull` y `docker compose up -d --build`. Si después lo quieres apagado, `docker compose stop`. Para actualizar sin arrancarlo: `git pull`, `docker compose pull`, `docker compose build` y `docker compose create --force-recreate`. En ambos casos termina con `docker image prune` (sin `-a`) para borrar las imágenes viejas.
 
 ## Copias de seguridad
 
