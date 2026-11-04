@@ -1,6 +1,6 @@
-import { config } from "./config.js";
 import { sqlOwner } from "./db/client.js";
 import { removeStored } from "./storage/local.js";
+import { setting } from "./lib/settings.js";
 
 export const MAINTENANCE_QUEUE = "mantenimiento";
 
@@ -16,21 +16,21 @@ export const MAINTENANCE_QUEUE = "mantenimiento";
  */
 export async function runMaintenance() {
   const audit = await sqlOwner`
-    DELETE FROM audit_log WHERE created_at < now() - ${`${config.AUDIT_RETENTION_DAYS} days`}::interval RETURNING id`;
+    DELETE FROM audit_log WHERE created_at < now() - ${`${setting("AUDIT_RETENTION_DAYS")} days`}::interval RETURNING id`;
   const tokens = await sqlOwner`
     DELETE FROM user_tokens
      WHERE (used_at IS NOT NULL OR expires_at < now()) AND created_at < now() - interval '7 days' RETURNING id`;
   const cache = await sqlOwner`
-    DELETE FROM answer_cache WHERE created_at < now() - ${`${config.CACHE_TTL_HOURS} hours`}::interval RETURNING id`;
+    DELETE FROM answer_cache WHERE created_at < now() - ${`${setting("CACHE_TTL_HOURS")} hours`}::interval RETURNING id`;
   const trash = await sqlOwner<{ id: string; tenant_id: string }[]>`
     DELETE FROM documents
-     WHERE deleted_at IS NOT NULL AND deleted_at < now() - ${`${config.TRASH_RETENTION_DAYS} days`}::interval
+     WHERE deleted_at IS NOT NULL AND deleted_at < now() - ${`${setting("TRASH_RETENTION_DAYS")} days`}::interval
     RETURNING id, tenant_id`;
   const sessions = await sqlOwner`
     DELETE FROM user_sessions WHERE least(expires_at, coalesce(revoked_at, expires_at)) < now() - interval '7 days' RETURNING id`;
   const samples = await sqlOwner`
-    DELETE FROM container_samples WHERE at < now() - ${`${config.METRICS_RETENTION_DAYS} days`}::interval`;
-  await sqlOwner`DELETE FROM alert_events WHERE at < now() - ${`${config.AUDIT_RETENTION_DAYS} days`}::interval`;
+    DELETE FROM container_samples WHERE at < now() - ${`${setting("METRICS_RETENTION_DAYS")} days`}::interval`;
+  await sqlOwner`DELETE FROM alert_events WHERE at < now() - ${`${setting("AUDIT_RETENTION_DAYS")} days`}::interval`;
   await Promise.all(trash.map((d) => removeStored(`${d.tenant_id}/${d.id}`).catch(() => {})));
   return { auditDeleted: audit.length, tokensDeleted: tokens.length, cacheDeleted: cache.length, trashPurged: trash.length, sessionsDeleted: sessions.length, samplesDeleted: samples.count };
 }

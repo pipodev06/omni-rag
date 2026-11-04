@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { config } from "../config.js";
 import { toPgVector, type Tx } from "../db/client.js";
+import { setting } from "../lib/settings.js";
 
 /**
  * Caché de respuestas en PostgreSQL.
@@ -55,7 +56,7 @@ export async function findCachedAnswer(
 ): Promise<CachedAnswer | null> {
   const norm = normalizeQuestion(opts.question);
   const numbers = questionNumbers(opts.question);
-  const ttl = `${config.CACHE_TTL_HOURS} hours`;
+  const ttl = `${setting("CACHE_TTL_HOURS")} hours`;
 
   const [exact] = await tx<CachedAnswer[]>`
     SELECT id, answer, sources, model FROM answer_cache

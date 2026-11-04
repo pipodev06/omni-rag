@@ -3,11 +3,12 @@ import { MAINTENANCE_QUEUE, runMaintenance } from "./maintenance.js";
 import { migrate } from "./db/migrate.js";
 import { ingestDocument, markIngestError } from "./ingest/pipeline.js";
 import { runMonitor } from "./lib/monitor.js";
-import { collectBackupStatus } from "./lib/backupStatus.js";
+import { collectBackupStatus, writeBackupConfig } from "./lib/backupStatus.js";
 import { collectContainerMetrics } from "./lib/containerMetrics.js";
 import { config } from "./config.js";
 import { getBoss, INGEST_QUEUE, INGEST_RETRY_LIMIT, stopBoss, type IngestJob } from "./queue.js";
 import { installLogger } from "./lib/logger.js";
+import { startSettingsRefresh } from "./lib/settings.js";
 
 installLogger();
 
@@ -22,6 +23,7 @@ const concurrency = Number(process.env.WORKER_CONCURRENCY ?? 2);
 
 async function main() {
   await migrate();
+  await startSettingsRefresh();
   const boss = await getBoss();
 
   await boss.work<IngestJob>(INGEST_QUEUE, { batchSize: 1, localConcurrency: concurrency }, async ([job]) => {
@@ -56,6 +58,8 @@ async function main() {
   await boss.work(MONITOR_QUEUE, async () => {
     // Estado de las copias para la pantalla Sistema → Copias; si falla, el monitor sigue.
     await collectBackupStatus().catch((err) => console.error("[copias] no se pudo leer el estado:", err instanceof Error ? err.message : err));
+    // Ajustes de copias y B2 para los scripts (archivo en /backup-config); si falla, el monitor sigue.
+    await writeBackupConfig().catch((err) => console.error("[copias] no se pudo escribir la configuración:", err instanceof Error ? err.message : err));
     const result = await runMonitor();
     if (result.opened.length || result.reminded.length || result.resolved.length) console.log("[monitor]", JSON.stringify(result));
     return result;

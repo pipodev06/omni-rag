@@ -1,5 +1,6 @@
-import { createCipheriv, createDecipheriv, createHash, createHmac, hkdfSync, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { config } from "../config.js";
+import { open, seal } from "./secretBox.js";
 
 /**
  * Verificación en dos pasos (TOTP, RFC 6238) compatible con Google Authenticator,
@@ -82,24 +83,11 @@ export function otpauthUrl(secret: string, account: string): string {
   return `otpauth://totp/${label}?secret=${secret}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=${DIGITS}&period=${STEP_SECONDS}`;
 }
 
-// --- Secreto cifrado en la base de datos (AES-256-GCM) ------------------------
-// La clave se deriva de JWT_SECRET: si lo cambias, hay que volver a configurar el 2FA.
-const encKey = () => Buffer.from(hkdfSync("sha256", config.JWT_SECRET, "rag", "totp-secret", 32));
-
-export function encryptSecret(secret: string): string {
-  const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", encKey(), iv);
-  const data = Buffer.concat([cipher.update(secret, "utf8"), cipher.final()]);
-  return [iv, cipher.getAuthTag(), data].map((b) => b.toString("base64")).join(".");
-}
-
-export function decryptSecret(stored: string): string {
-  const [iv, tag, data] = stored.split(".").map((p) => Buffer.from(p, "base64"));
-  if (!iv || !tag || !data) throw new Error("secreto TOTP corrupto");
-  const decipher = createDecipheriv("aes-256-gcm", encKey(), iv);
-  decipher.setAuthTag(tag);
-  return Buffer.concat([decipher.update(data), decipher.final()]).toString("utf8");
-}
+// --- Secreto cifrado en la base de datos (AES-256-GCM, ver secretBox.ts) ----------
+// Si cambias JWT_SECRET, hay que volver a configurar el 2FA.
+const TOTP_INFO = "totp-secret";
+export const encryptSecret = (secret: string): string => seal(TOTP_INFO, secret);
+export const decryptSecret = (stored: string): string => open(TOTP_INFO, stored);
 
 // --- Códigos de recuperación (por si se pierde el teléfono) ----------------------
 const RECOVERY_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789";

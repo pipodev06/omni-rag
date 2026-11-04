@@ -22,6 +22,7 @@ import { notifyQuota } from "../lib/quotaNotice.js";
 import { documentSlots } from "../lib/plans.js";
 import { parse, UUID_RE } from "../lib/validate.js";
 import { uniqueZipName, zipHeaders, zipStream } from "../lib/zipStream.js";
+import { setting } from "../lib/settings.js";
 
 export const documentRoutes = new Hono<AppEnv>();
 documentRoutes.use("*", requireAuth);
@@ -158,9 +159,9 @@ documentRoutes.get("/trash", requireRole("admin", "editor"), async (c) => {
      WHERE d.deleted_at IS NOT NULL
      ORDER BY d.deleted_at DESC
      LIMIT 1000`);
-  const keepMs = config.TRASH_RETENTION_DAYS * 86_400_000;
+  const keepMs = setting("TRASH_RETENTION_DAYS") * 86_400_000;
   const documents = rows.map((d) => ({ ...d, purgeAt: new Date(d.deletedAt.getTime() + keepMs) }));
-  return c.json({ documents, retentionDays: config.TRASH_RETENTION_DAYS });
+  return c.json({ documents, retentionDays: setting("TRASH_RETENTION_DAYS") });
 });
 
 documentRoutes.get("/:id", async (c) => {
@@ -480,7 +481,7 @@ interface Removed {
 async function trashDocuments(ctx: ReturnType<typeof tenantCtx>, ids: string[]): Promise<Removed[]> {
   const rows = await withTenant(ctx, async (tx) => {
     const removed =
-      config.TRASH_RETENTION_DAYS === 0
+      setting("TRASH_RETENTION_DAYS") === 0
         ? await tx<Removed[]>`DELETE FROM documents WHERE id = ANY(${ids}::uuid[]) RETURNING id, collection_id, filename`
         : await tx<Removed[]>`
             UPDATE documents SET deleted_at = now(), deleted_by = ${ctx.userId}, updated_at = now()
@@ -488,7 +489,7 @@ async function trashDocuments(ctx: ReturnType<typeof tenantCtx>, ids: string[]):
     await invalidateCollections(tx, [...new Set(removed.map((r) => r.collection_id))]);
     return removed;
   });
-  if (config.TRASH_RETENTION_DAYS === 0) await Promise.all(rows.map((r) => removeStored(`${ctx.tenantId}/${r.id}`).catch(() => {})));
+  if (setting("TRASH_RETENTION_DAYS") === 0) await Promise.all(rows.map((r) => removeStored(`${ctx.tenantId}/${r.id}`).catch(() => {})));
   return rows;
 }
 

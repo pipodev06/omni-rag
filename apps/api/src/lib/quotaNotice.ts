@@ -2,6 +2,7 @@ import { config } from "../config.js";
 import { sqlOwner } from "../db/client.js";
 import { sendEmail, emailEnabled } from "./mailer.js";
 import { getTenantPlan, questionsToday, quotaLevel } from "./plans.js";
+import { setting } from "./settings.js";
 
 /**
  * Avisa por correo a los administradores de la organización cuando se acerca (QUOTA_WARN_PERCENT) o
@@ -13,7 +14,7 @@ export async function notifyQuota(tenantId: string): Promise<void> {
     if (!emailEnabled()) return;
     const plan = await getTenantPlan(tenantId);
     const used = await questionsToday(tenantId);
-    const level = quotaLevel(used, plan.dailyQuestionLimit, config.QUOTA_WARN_PERCENT);
+    const level = quotaLevel(used, plan.dailyQuestionLimit, setting("QUOTA_WARN_PERCENT"));
     if (level !== "warn" && level !== "full") return;
 
     // El INSERT es el cerrojo: si ya se avisó hoy de este nivel (o dos preguntas coinciden), no devuelve fila.

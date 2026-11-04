@@ -1,22 +1,27 @@
 import nodemailer, { type Transporter } from "nodemailer";
 import { config } from "../config.js";
+import { setting } from "./settings.js";
 
 /**
  * Envío de correos (invitaciones y recuperación de contraseña) por SMTP.
  * Si SMTP_HOST está vacío, el correo está desactivado y la API devuelve los
  * enlaces al administrador para que los comparta él.
  */
-export const emailEnabled = () => config.SMTP_HOST !== "";
+export const emailEnabled = () => setting("SMTP_HOST") !== "";
 
-let transporter: Transporter | null = null;
+// El transporte se recrea si cambia algún dato del servidor (se editan desde Sistema → Configuración).
+let transporter: { signature: string; transport: Transporter } | null = null;
 function getTransporter(): Transporter {
-  transporter ??= nodemailer.createTransport({
-    host: config.SMTP_HOST,
-    port: config.SMTP_PORT,
-    secure: config.SMTP_SECURE,
-    auth: config.SMTP_USER ? { user: config.SMTP_USER, pass: config.SMTP_PASSWORD } : undefined,
-  });
-  return transporter;
+  const host = setting("SMTP_HOST");
+  const port = setting("SMTP_PORT");
+  const secure = setting("SMTP_SECURE");
+  const user = setting("SMTP_USER");
+  const pass = setting("SMTP_PASSWORD");
+  const signature = JSON.stringify([host, port, secure, user, pass]);
+  if (transporter?.signature !== signature) {
+    transporter = { signature, transport: nodemailer.createTransport({ host, port, secure, auth: user ? { user, pass } : undefined }) };
+  }
+  return transporter.transport;
 }
 
 const escapeHtml = (s: string) =>
@@ -41,7 +46,7 @@ ${link ? `<p style="margin:28px 0"><a href="${escapeHtml(link.url)}" style="back
 <p style="color:#71717a;font-size:13px;line-height:1.6">${escapeHtml(opts.outro)}${link ? `<br>Si el botón no funciona, copia este enlace en el navegador:<br><span style="word-break:break-all">${escapeHtml(link.url)}</span>` : ""}</p>
 </body></html>`;
   try {
-    await getTransporter().sendMail({ from: config.SMTP_FROM, to: opts.to, subject: opts.subject, text, html });
+    await getTransporter().sendMail({ from: setting("SMTP_FROM"), to: opts.to, subject: opts.subject, text, html });
     return true;
   } catch (err) {
     console.error("[correo] error enviando a", opts.to, err);

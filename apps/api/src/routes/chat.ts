@@ -17,6 +17,7 @@ import { userRateLimit } from "../lib/limits.js";
 import { notifyQuota } from "../lib/quotaNotice.js";
 import { getTenantPlan, questionsToday, quotaLevel, type TenantPlan } from "../lib/plans.js";
 import { parse, UUID_RE } from "../lib/validate.js";
+import { setting } from "../lib/settings.js";
 
 export const chatRoutes = new Hono<AppEnv>();
 chatRoutes.use("*", requireAuth);
@@ -94,10 +95,10 @@ chatRoutes.get("/quota", async (c) => {
   return c.json({
     used,
     limit,
-    level: quotaLevel(used, limit, config.QUOTA_WARN_PERCENT),
-    warnPercent: config.QUOTA_WARN_PERCENT,
+    level: quotaLevel(used, limit, setting("QUOTA_WARN_PERCENT")),
+    warnPercent: setting("QUOTA_WARN_PERCENT"),
     // Cuota personal: solo si el plan la define.
-    user: own === null ? null : { used: ownUsed, limit: own, level: quotaLevel(ownUsed, own, config.QUOTA_WARN_PERCENT) },
+    user: own === null ? null : { used: ownUsed, limit: own, level: quotaLevel(ownUsed, own, setting("QUOTA_WARN_PERCENT")) },
     // El interruptor «Buscar también en internet» del chat: el plan lo permite y hay un buscador configurado.
     webSearch: plan.webSearch && webSearchEnabled(),
   });
@@ -154,7 +155,7 @@ chatRoutes.post("/chat", userRateLimit(20, 60_000, "preguntas"), async (c) => {
           SELECT role, content FROM (
             SELECT role, content, created_at FROM messages
              WHERE conversation_id = ${body.conversationId!}
-             ORDER BY created_at DESC LIMIT ${config.HISTORY_MESSAGES}
+             ORDER BY created_at DESC LIMIT ${setting("HISTORY_MESSAGES")}
           ) m ORDER BY created_at`;
         return [...rows];
       })
@@ -165,7 +166,7 @@ chatRoutes.post("/chat", userRateLimit(20, 60_000, "preguntas"), async (c) => {
   const [vector, scope] = await Promise.all([embedQuery(query, signal), resolveScope(ctx, body.collectionIds, body.documentIds)]);
   // Con internet la respuesta depende de resultados que cambian: no se busca ni se guarda en la caché.
   const wantsWeb = body.webSearch === true && webSearchEnabled();
-  const cacheable = config.CACHE_ENABLED && history.length === 0 && !wantsWeb;
+  const cacheable = setting("CACHE_ENABLED") && history.length === 0 && !wantsWeb;
 
   // 3. ¿Ya se respondió esta misma pregunta con los mismos documentos?
   const cached = cacheable

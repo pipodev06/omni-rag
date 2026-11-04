@@ -1,5 +1,5 @@
-import { config } from "../config.js";
 import { configuredProviders, modelLabel, type LlmProvider } from "../lib/llmProviders.js";
+import { refreshSettings, setting } from "../lib/settings.js";
 import { completeChat } from "../rag/llm.js";
 
 /**
@@ -21,6 +21,7 @@ import { completeChat } from "../rag/llm.js";
  * Sin proveedores indicados usa todos los configurados salvo OpenRouter (su catálogo tiene cientos de modelos:
  * pásalo explícitamente, mejor con --gratis o --filtro).
  */
+await refreshSettings();
 const args = process.argv.slice(2);
 const flags = new Set(args.filter((a) => a.startsWith("--") && !a.includes("=")));
 const options = new Map(args.filter((a) => a.startsWith("--") && a.includes("=")).map((a) => [a.slice(2, a.indexOf("=")), a.slice(a.indexOf("=") + 1)] as const));
@@ -109,7 +110,7 @@ for (const p of providers) {
     .filter((m) => flags.has("--todos") || !NOT_CHAT.test(m.id))
     .filter((m) => p.id !== "openrouter" || !flags.has("--gratis") || m.free)
     .filter((m) => !needle || m.id.toLowerCase().includes(needle));
-  const refOf = (id: string) => (p.id === config.LLM_DEFAULT_PROVIDER ? id : modelLabel(p.id, id));
+  const refOf = (id: string) => (p.id === setting("LLM_DEFAULT_PROVIDER") ? id : modelLabel(p.id, id));
 
   const notes = [flags.has("--gratis") && p.id === "openrouter" && "solo gratuitos", needle && `que contienen «${needle}»`].filter(Boolean).join(", ");
   console.log(`\n## ${p.label}: ${models.length} modelos de chat${notes ? ` (${notes})` : ""} de ${all.length} en el catálogo`);

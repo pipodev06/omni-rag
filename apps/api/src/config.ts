@@ -159,8 +159,26 @@ const schema = z.object({
 
 export type Config = z.infer<typeof schema>;
 
+/** Valor por defecto de cada variable (lo que vale si no está en el .env ni en los ajustes de la pantalla). */
+export const DEFAULTS: Config = schema.parse({ DATABASE_URL: "-", APP_DATABASE_URL: "-", APP_DB_PASSWORD: "-".repeat(8), JWT_SECRET: "-".repeat(32) });
+
+/**
+ * Una variable escrita vacía en el .env (`ALERT_BACKUP_HOURS=`) cuenta como no escrita cuando "" no es un texto válido
+ * para ella (números, booleanos, enums: "" daría error o se convertiría en 0/false): así vaciarla para editarla en la
+ * pantalla no impide arrancar ni cambia su valor. Donde "" sí vale (p. ej. RERANKER_URL= desactiva el re-ranker) se respeta.
+ */
+function withoutInvalidEmpty(env: NodeJS.ProcessEnv): Record<string, string | undefined> {
+  const out: Record<string, string | undefined> = { ...env };
+  for (const [key, field] of Object.entries(schema.shape)) {
+    if (out[key] !== "" || !field.safeParse(undefined).success) continue;
+    const asEmpty = field.safeParse("");
+    if (!asEmpty.success || asEmpty.data !== "") delete out[key];
+  }
+  return out;
+}
+
 function load(): Config {
-  const parsed = schema.safeParse(process.env);
+  const parsed = schema.safeParse(withoutInvalidEmpty(process.env));
   if (!parsed.success) {
     const issues = parsed.error.issues.map((i) => `  - ${i.path.join(".")}: ${i.message}`).join("\n");
     throw new Error(`Configuración inválida:\n${issues}`);

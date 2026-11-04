@@ -1,10 +1,14 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { z } from "zod";
 import { requireAuth, requireSuperadmin, type AppEnv } from "../auth/middleware.js";
 import { config } from "../config.js";
 import { sqlOwner } from "../db/client.js";
-import { badRequest } from "../lib/errors.js";
-import { configuredProviders } from "../lib/llmProviders.js";
+import { audit } from "../lib/audit.js";
+import { HttpError, badRequest } from "../lib/errors.js";
+import { configuredProviders, getProvider, isConfigured, probeProvider } from "../lib/llmProviders.js";
+import { emailEnabled, sendEmail, verifyEmail } from "../lib/mailer.js";
+import { applySettings, backupDestination, SettingsError, setting, settingsView } from "../lib/settings.js";
+import { parse } from "../lib/validate.js";
 import type { HostInfo } from "../lib/containerMetrics.js";
 import type { BackupInfo } from "../lib/backupStatus.js";
 
@@ -74,7 +78,7 @@ systemRoutes.get("/resources", async (c) => {
       rerankerModel: config.RERANKER_URL ? (process.env.RERANKER_MODEL?.trim() || "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1") : null,
       llmProviders: configuredProviders().map((p) => p.id),
       antivirus: Boolean(config.CLAMAV_HOST),
-      webSearch: config.WEB_SEARCH_PROVIDER || null,
+      webSearch: setting("WEB_SEARCH_PROVIDER") || null,
     },
     autotune: autotuneValues(),
     containers: containers.map((r) => ({
@@ -140,7 +144,115 @@ systemRoutes.get("/alerts", async (c) => {
 systemRoutes.get("/backups", async (c) => {
   const [[snap], alerts] = await Promise.all([
     sqlOwner<{ at: Date; info: BackupInfo }[]>`SELECT at, info FROM backup_snapshot WHERE id = 1`,
-    sqlOwner<{ key: string; since: Date; message: string }[]>`SELECT key, since, message FROM alert_state WHERE key IN ('backup', 'backup-b2')`,
+    sqlOwner<{ key: string; since: Date; message: string }[]>`SELECT key, since, message FROM alert_state WHERE key IN ('backup', 'backup-b2', 'backup-offsite')`,
   ]);
-  return c.json({ readAt: snap?.at ?? null, info: snap?.info ?? null, alerts });
+  // El destino sale de los ajustes (se refrescan cada 30 s), no de la foto del worker, que tiene hasta 5 minutos.
+  return c.json({ readAt: snap?.at ?? null, info: snap?.info ? { ...snap.info, destination: backupDestination() } : null, alerts });
+});
+
+// --- Ajustes editables (Sistema → Configuración) ---------------------------------------------------------------
+
+systemRoutes.get("/settings", (c) => c.json(settingsView()));
+
+const SettingsBody = z.object({ values: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])) });
+
+systemRoutes.put("/settings", async (c) => {
+  const body = parse(SettingsBody, await c.req.json().catch(() => ({})));
+  let keys: string[];
+  try {
+    keys = await applySettings(body.values, c.get("user").username);
+  } catch (err) {
+    if (err instanceof SettingsError) throw badRequest(err.message);
+    throw err;
+  }
+  // Solo las claves: los valores (y menos los de los secretos) no van a la auditoría.
+  if (keys.length > 0) await audit(c, "settings.updated", { targetType: "settings", details: { keys } });
+  return c.json(settingsView());
+});
+
+/** Texto corto del error de un servidor externo para el superadministrador; el detalle completo queda en el registro. */
+const reason = (err: unknown) => (err instanceof Error ? err.message : String(err)).replace(/\s+/g, " ").slice(0, 300);
+
+systemRoutes.post("/settings/test-email", async (c) => {
+  const { to } = parse(z.object({ to: z.string().trim().email().max(254).optional() }), await c.req.json().catch(() => ({})));
+  if (!emailEnabled()) return c.json({ ok: false, message: "El correo está desactivado: indica el servidor SMTP." });
+  const target = to ?? setting("ALERT_EMAIL").split(/[,;\s]+/).find(Boolean) ?? c.get("user").email;
+  if (!target) throw badRequest("Indica un destinatario para el correo de prueba.");
+  try {
+    await verifyEmail();
+  } catch (err) {
+    console.warn("[correo] la prueba de conexión falló:", err);
+    return c.json({ ok: false, message: `No se pudo conectar o iniciar sesión: ${reason(err)}` });
+  }
+  const sent = await sendEmail({
+    to: target,
+    subject: `Prueba de correo de ${config.APP_NAME}`,
+    intro: "Si lees este mensaje, el correo saliente está bien configurado.",
+    buttonText: `Abrir ${config.APP_NAME}`,
+    url: config.APP_PUBLIC_URL,
+    outro: "Es un mensaje de prueba; no hace falta responder.",
+  });
+  return c.json(sent ? { ok: true, message: `Correo de prueba enviado a ${target}. Revisa la bandeja de entrada y el spam.` } : { ok: false, message: "El servidor rechazó el envío. El detalle está en los registros." });
+});
+
+systemRoutes.post("/settings/test-llm", async (c) => {
+  const { provider } = parse(z.object({ provider: z.string().max(40) }), await c.req.json().catch(() => ({})));
+  const p = getProvider(provider);
+  if (!p) throw badRequest("Proveedor desconocido");
+  if (!isConfigured(p)) return c.json({ ok: false, message: `${p.label} no está configurado.` });
+  return c.json(await probeProvider(p));
+});
+
+// --- Órdenes al servicio de copias ---------------------------------------------------------------
+
+/** Las órdenes sin terminar de hace más de 6 horas se ignoran: si el servicio de copias está caído no deben bloquear las nuevas. */
+const PENDING = sqlOwner`finished_at IS NULL AND created_at > now() - interval '6 hours'`;
+
+/** Crea una orden salvo que haya otra sin terminar (409). El INSERT con NOT EXISTS evita que dos clics creen dos. */
+async function requestBackupOrder(c: Context<AppEnv>, kind: "backup" | "destination", payload: object): Promise<{ id: number }> {
+  const [row] = await sqlOwner<{ id: number }[]>`
+    INSERT INTO backup_requests (kind, payload, requested_by)
+    SELECT ${kind}, ${sqlOwner.json(payload as never)}, ${c.get("user").username}
+     WHERE NOT EXISTS (SELECT 1 FROM backup_requests WHERE ${PENDING})
+    RETURNING id`;
+  if (!row) throw new HttpError(409, "Ya hay una orden de copias pendiente o en curso. Espera a que termine.");
+  return { id: Number(row.id) };
+}
+
+systemRoutes.post("/backups/run", async (c) => {
+  const order = await requestBackupOrder(c, "backup", {});
+  await audit(c, "backup.run_requested", { targetType: "backup_request", targetId: String(order.id) });
+  return c.json(order);
+});
+
+/** Ruta relativa dentro de /targets: sin «/» inicial ni «..»; vacío = la carpeta clásica. */
+const DestinationBody = z.object({
+  path: z.string().regex(/^[A-Za-z0-9 _.\-/]{0,200}$/).refine((p) => !p.includes("..") && !p.startsWith("/") && !p.includes("//")),
+  moveExisting: z.boolean(),
+});
+
+systemRoutes.post("/backups/destination", async (c) => {
+  const body = parse(DestinationBody, await c.req.json().catch(() => ({})));
+  const order = await requestBackupOrder(c, "destination", body);
+  await audit(c, "backup.destination_requested", { targetType: "backup_request", targetId: String(order.id), details: { path: body.path, moveExisting: body.moveExisting } });
+  return c.json(order);
+});
+
+systemRoutes.get("/backups/requests", async (c) => {
+  const rows = await sqlOwner<
+    { id: number; kind: string; payload: unknown; requested_by: string | null; created_at: Date; started_at: Date | null; finished_at: Date | null; ok: boolean | null; message: string | null }[]
+  >`SELECT id, kind, payload, requested_by, created_at, started_at, finished_at, ok, message FROM backup_requests ORDER BY id DESC LIMIT 20`;
+  return c.json({
+    requests: rows.map((r) => ({
+      id: Number(r.id),
+      kind: r.kind,
+      payload: r.payload,
+      requestedBy: r.requested_by,
+      createdAt: r.created_at,
+      startedAt: r.started_at,
+      finishedAt: r.finished_at,
+      ok: r.ok,
+      message: r.message,
+    })),
+  });
 });

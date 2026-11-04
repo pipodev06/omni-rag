@@ -1,4 +1,4 @@
-import { config } from "../config.js";
+import { setting } from "./settings.js";
 
 /** Un resultado de internet tal como se le da al modelo y se muestra como fuente. */
 export interface WebResult {
@@ -16,9 +16,9 @@ export interface WebResult {
  * Solo se envía la pregunta: nunca fragmentos de los documentos.
  */
 export function webSearchEnabled(): boolean {
-  const p = config.WEB_SEARCH_PROVIDER;
-  if (p === "searxng") return config.WEB_SEARCH_URL !== "";
-  return (p === "tavily" || p === "brave") && config.WEB_SEARCH_API_KEY !== "";
+  const p = setting("WEB_SEARCH_PROVIDER");
+  if (p === "searxng") return setting("WEB_SEARCH_URL") !== "";
+  return (p === "tavily" || p === "brave") && setting("WEB_SEARCH_API_KEY") !== "";
 }
 
 const clip = (s: unknown, max: number) => (typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, max) : "");
@@ -44,16 +44,16 @@ function clean(results: { title?: unknown; url?: unknown; snippet?: unknown }[],
 }
 
 export async function searchWeb(query: string, signal?: AbortSignal): Promise<WebResult[]> {
-  const max = config.WEB_SEARCH_MAX_RESULTS;
+  const max = setting("WEB_SEARCH_MAX_RESULTS");
   const timeout = AbortSignal.timeout(10_000);
   const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
   const q = query.slice(0, 400);
 
-  if (config.WEB_SEARCH_PROVIDER === "tavily") {
+  if (setting("WEB_SEARCH_PROVIDER") === "tavily") {
     const res = await fetch("https://api.tavily.com/search", {
       method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${config.WEB_SEARCH_API_KEY}` },
-      body: JSON.stringify({ api_key: config.WEB_SEARCH_API_KEY, query: q, max_results: max, search_depth: "basic", include_answer: false }),
+      headers: { "content-type": "application/json", authorization: `Bearer ${setting("WEB_SEARCH_API_KEY")}` },
+      body: JSON.stringify({ api_key: setting("WEB_SEARCH_API_KEY"), query: q, max_results: max, search_depth: "basic", include_answer: false }),
       signal: combined,
     });
     if (!res.ok) throw new Error(`Tavily respondió HTTP ${res.status}`);
@@ -61,16 +61,16 @@ export async function searchWeb(query: string, signal?: AbortSignal): Promise<We
     return clean((body.results ?? []).map((r) => ({ title: r.title, url: r.url, snippet: r.content })), max);
   }
 
-  if (config.WEB_SEARCH_PROVIDER === "brave") {
+  if (setting("WEB_SEARCH_PROVIDER") === "brave") {
     const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(q)}&count=${max}`;
-    const res = await fetch(url, { headers: { accept: "application/json", "x-subscription-token": config.WEB_SEARCH_API_KEY }, signal: combined });
+    const res = await fetch(url, { headers: { accept: "application/json", "x-subscription-token": setting("WEB_SEARCH_API_KEY") }, signal: combined });
     if (!res.ok) throw new Error(`Brave Search respondió HTTP ${res.status}`);
     const body = (await res.json()) as { web?: { results?: { title?: string; url?: string; description?: string }[] } };
     return clean((body.web?.results ?? []).map((r) => ({ title: r.title, url: r.url, snippet: r.description?.replace(/<[^>]+>/g, "") })), max);
   }
 
-  if (config.WEB_SEARCH_PROVIDER === "searxng") {
-    const url = `${config.WEB_SEARCH_URL.replace(/\/$/, "")}/search?q=${encodeURIComponent(q)}&format=json`;
+  if (setting("WEB_SEARCH_PROVIDER") === "searxng") {
+    const url = `${setting("WEB_SEARCH_URL").replace(/\/$/, "")}/search?q=${encodeURIComponent(q)}&format=json`;
     const res = await fetch(url, { headers: { accept: "application/json" }, signal: combined });
     if (!res.ok) throw new Error(`SearXNG respondió HTTP ${res.status} (¿está activado el formato json en su settings.yml?)`);
     const body = (await res.json()) as { results?: { title?: string; url?: string; content?: string }[] };

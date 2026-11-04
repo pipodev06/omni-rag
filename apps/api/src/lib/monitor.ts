@@ -5,6 +5,7 @@ import { sqlOwner } from "../db/client.js";
 import { BACKUP_DIR, BACKUP_STATUS_DIR, readJson, type B2Status, type LocalStatus } from "./backupStatus.js";
 import { configuredProviders } from "./llmProviders.js";
 import { emailEnabled, sendEmail } from "./mailer.js";
+import { setting } from "./settings.js";
 
 /**
  * Monitorización básica: el worker llama a `runMonitor()` cada 5 minutos. Cada comprobación devuelve el problema
@@ -28,7 +29,7 @@ export async function checkDisk(dir = config.STORAGE_DIR): Promise<Problem | nul
   const s = await statfs(dir).catch(() => null);
   if (!s || s.blocks === 0) return null;
   const freePct = (s.bavail / s.blocks) * 100;
-  if (freePct >= config.ALERT_DISK_FREE_PERCENT) return null;
+  if (freePct >= setting("ALERT_DISK_FREE_PERCENT")) return null;
   return { key: "disk", message: `Queda poco espacio en el disco de archivos: ${freePct.toFixed(1)} % libre (${((s.bavail * s.bsize) / GB).toFixed(1)} GB).` };
 }
 
@@ -37,9 +38,9 @@ export async function checkQueue(): Promise<Problem | null> {
   const [row] = await sqlOwner<{ n: number }[]>`
     SELECT count(*)::int AS n FROM documents
      WHERE deleted_at IS NULL AND status IN ('pending', 'processing')
-       AND updated_at < now() - ${`${config.ALERT_QUEUE_MINUTES} minutes`}::interval`;
+       AND updated_at < now() - ${`${setting("ALERT_QUEUE_MINUTES")} minutes`}::interval`;
   if (!row || row.n === 0) return null;
-  return { key: "queue", message: `${row.n} documento(s) llevan más de ${config.ALERT_QUEUE_MINUTES} minutos en cola o procesándose. Revisa «docker compose logs worker» y el servicio docling.` };
+  return { key: "queue", message: `${row.n} documento(s) llevan más de ${setting("ALERT_QUEUE_MINUTES")} minutos en cola o procesándose. Revisa «docker compose logs worker» y el servicio docling.` };
 }
 
 /** La última copia de seguridad es demasiado antigua. Si la carpeta no está montada en el worker, no se comprueba. */
@@ -50,10 +51,10 @@ export async function checkBackups(dir = BACKUP_DIR, now = Date.now()): Promise<
   let newest = 0;
   for (const n of dumps) newest = Math.max(newest, (await stat(join(dir, n))).mtimeMs);
   const hours = (now - newest) / 3_600_000;
-  if (newest === 0 || hours > config.ALERT_BACKUP_HOURS) {
+  if (newest === 0 || hours > setting("ALERT_BACKUP_HOURS")) {
     return {
       key: "backup",
-      message: newest === 0 ? "No hay ninguna copia de seguridad de la base de datos." : `La última copia de seguridad tiene ${Math.round(hours)} horas (máximo ${config.ALERT_BACKUP_HOURS}). Revisa «docker compose logs backup».`,
+      message: newest === 0 ? "No hay ninguna copia de seguridad de la base de datos." : `La última copia de seguridad tiene ${Math.round(hours)} horas (máximo ${setting("ALERT_BACKUP_HOURS")}). Revisa «docker compose logs backup».`,
     };
   }
   // Hay una copia reciente, pero el último intento falló (p. ej. no llegó a la carpeta externa).
@@ -72,6 +73,13 @@ export async function checkB2(dir = BACKUP_STATUS_DIR, now = Date.now()): Promis
   const maxAgeHours = status.at ? 26 : Math.max(26, (status.intervalHours || 6) * 2);
   if (now - Date.parse(status.checkedAt) > maxAgeHours * 3_600_000) return null;
   return { key: "backup-b2", message: `La subida a Backblaze B2 falla: ${status.error}. Revisa «docker compose logs backup-b2».` };
+}
+
+/** La copia externa no llega a su destino (p. ej. el disco USB elegido está desconectado); la copia local sigue haciéndose. */
+export async function checkOffsite(dir = BACKUP_DIR): Promise<Problem | null> {
+  const status = await readJson<LocalStatus>(join(dir, ".estado.json"));
+  if (!status?.offsiteError) return null;
+  return { key: "backup-offsite", message: `La copia externa no se está guardando: ${status.offsiteError}. Revisa «docker compose logs backup».` };
 }
 
 /** El modelo no está respondiendo: varios fallos seguidos en los últimos 15 minutos y ninguna respuesta correcta. */
@@ -117,7 +125,7 @@ export async function checkContainers(): Promise<Problem[]> {
   const mb = (b: number) => `${Math.round(b / 1024 ** 2)} MB`;
   for (const r of rows) {
     const k = `container:${r.name}`;
-    if (r.mem_limit && r.mem_bytes / r.mem_limit >= config.ALERT_CONTAINER_MEM_PERCENT / 100) {
+    if (r.mem_limit && r.mem_bytes / r.mem_limit >= setting("ALERT_CONTAINER_MEM_PERCENT") / 100) {
       problems.push({ key: `${k}:mem`, message: `«${r.name}» usa ${mb(r.mem_bytes)} de ${mb(r.mem_limit)} de RAM (${Math.round((r.mem_bytes / r.mem_limit) * 100)} %). Si llega al tope, Docker lo reinicia.` });
     }
     if (r.cpu_limit && r.cpu_n >= 5 && r.cpu_avg >= r.cpu_limit * 0.95) {
@@ -134,7 +142,7 @@ export async function checkContainers(): Promise<Problem[]> {
   return problems;
 }
 
-const recipients = () => config.ALERT_EMAIL.split(/[,;\s]+/).filter(Boolean);
+const recipients = () => setting("ALERT_EMAIL").split(/[,;\s]+/).filter(Boolean);
 
 async function notify(subject: string, intro: string): Promise<void> {
   if (!emailEnabled() || recipients().length === 0) return;
@@ -181,7 +189,7 @@ export async function applyProblems(problems: Problem[], now = new Date()): Prom
 }
 
 export async function runMonitor(): Promise<{ problems: number } & Awaited<ReturnType<typeof applyProblems>>> {
-  const checks: (() => Promise<Problem | Problem[] | null>)[] = [checkDisk, checkQueue, checkBackups, checkB2, checkLlm, checkContainers];
+  const checks: (() => Promise<Problem | Problem[] | null>)[] = [checkDisk, checkQueue, checkBackups, checkOffsite, checkB2, checkLlm, checkContainers];
   const problems: Problem[] = [];
   for (const check of checks) {
     try {
