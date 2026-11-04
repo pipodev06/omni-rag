@@ -2,6 +2,7 @@ import { readdir, stat, statfs } from "node:fs/promises";
 import { join } from "node:path";
 import { config } from "../config.js";
 import { sqlOwner } from "../db/client.js";
+import { BACKUP_DIR, BACKUP_STATUS_DIR, readJson, type B2Status, type LocalStatus } from "./backupStatus.js";
 import { configuredProviders } from "./llmProviders.js";
 import { emailEnabled, sendEmail } from "./mailer.js";
 
@@ -18,7 +19,6 @@ export interface Problem {
 }
 
 const GB = 1024 ** 3;
-const BACKUP_DIR = process.env.BACKUP_DIR ?? "/backups";
 const REMIND_AFTER_MS = 24 * 3600 * 1000;
 /** Tras arrancar el worker, la primera muestra de los contenedores tarda hasta un minuto en llegar. */
 const METRICS_GRACE_SECONDS = 180;
@@ -50,11 +50,28 @@ export async function checkBackups(dir = BACKUP_DIR, now = Date.now()): Promise<
   let newest = 0;
   for (const n of dumps) newest = Math.max(newest, (await stat(join(dir, n))).mtimeMs);
   const hours = (now - newest) / 3_600_000;
-  if (newest > 0 && hours <= config.ALERT_BACKUP_HOURS) return null;
-  return {
-    key: "backup",
-    message: newest === 0 ? "No hay ninguna copia de seguridad de la base de datos." : `La última copia de seguridad tiene ${Math.round(hours)} horas (máximo ${config.ALERT_BACKUP_HOURS}). Revisa «docker compose logs backup».`,
-  };
+  if (newest === 0 || hours > config.ALERT_BACKUP_HOURS) {
+    return {
+      key: "backup",
+      message: newest === 0 ? "No hay ninguna copia de seguridad de la base de datos." : `La última copia de seguridad tiene ${Math.round(hours)} horas (máximo ${config.ALERT_BACKUP_HOURS}). Revisa «docker compose logs backup».`,
+    };
+  }
+  // Hay una copia reciente, pero el último intento falló (p. ej. no llegó a la carpeta externa).
+  const status = await readJson<LocalStatus>(join(dir, ".estado.json"));
+  if (status && status.ok === false) return { key: "backup", message: `Falló la última copia de seguridad: ${status.error}. Revisa «docker compose logs backup».` };
+  return null;
+}
+
+/**
+ * La subida a Backblaze B2 falla o no está configurada. Solo cuenta un estado de las últimas 26 h (o dos ciclos):
+ * si se quita el perfil «backblaze», el archivo de estado se queda viejo y deja de avisar.
+ */
+export async function checkB2(dir = BACKUP_STATUS_DIR, now = Date.now()): Promise<Problem | null> {
+  const status = await readJson<B2Status>(join(dir, "b2.json"));
+  if (!status || status.ok !== false) return null;
+  const maxAgeHours = status.at ? 26 : Math.max(26, (status.intervalHours || 6) * 2);
+  if (now - Date.parse(status.checkedAt) > maxAgeHours * 3_600_000) return null;
+  return { key: "backup-b2", message: `La subida a Backblaze B2 falla: ${status.error}. Revisa «docker compose logs backup-b2».` };
 }
 
 /** El modelo no está respondiendo: varios fallos seguidos en los últimos 15 minutos y ninguna respuesta correcta. */
@@ -164,7 +181,7 @@ export async function applyProblems(problems: Problem[], now = new Date()): Prom
 }
 
 export async function runMonitor(): Promise<{ problems: number } & Awaited<ReturnType<typeof applyProblems>>> {
-  const checks: (() => Promise<Problem | Problem[] | null>)[] = [checkDisk, checkQueue, checkBackups, checkLlm, checkContainers];
+  const checks: (() => Promise<Problem | Problem[] | null>)[] = [checkDisk, checkQueue, checkBackups, checkB2, checkLlm, checkContainers];
   const problems: Problem[] = [];
   for (const check of checks) {
     try {

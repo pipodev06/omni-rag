@@ -3,6 +3,7 @@ import { MAINTENANCE_QUEUE, runMaintenance } from "./maintenance.js";
 import { migrate } from "./db/migrate.js";
 import { ingestDocument, markIngestError } from "./ingest/pipeline.js";
 import { runMonitor } from "./lib/monitor.js";
+import { collectBackupStatus } from "./lib/backupStatus.js";
 import { collectContainerMetrics } from "./lib/containerMetrics.js";
 import { config } from "./config.js";
 import { getBoss, INGEST_QUEUE, INGEST_RETRY_LIMIT, stopBoss, type IngestJob } from "./queue.js";
@@ -53,6 +54,8 @@ async function main() {
   await boss.createQueue(MONITOR_QUEUE);
   await boss.schedule(MONITOR_QUEUE, "*/5 * * * *");
   await boss.work(MONITOR_QUEUE, async () => {
+    // Estado de las copias para la pantalla Sistema → Copias; si falla, el monitor sigue.
+    await collectBackupStatus().catch((err) => console.error("[copias] no se pudo leer el estado:", err instanceof Error ? err.message : err));
     const result = await runMonitor();
     if (result.opened.length || result.reminded.length || result.resolved.length) console.log("[monitor]", JSON.stringify(result));
     return result;

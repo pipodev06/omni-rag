@@ -6,6 +6,7 @@ import { sqlOwner } from "../db/client.js";
 import { badRequest } from "../lib/errors.js";
 import { configuredProviders } from "../lib/llmProviders.js";
 import type { HostInfo } from "../lib/containerMetrics.js";
+import type { BackupInfo } from "../lib/backupStatus.js";
 
 /**
  * Pantalla Sistema (solo superadministrador): stack, recursos asignados a cada contenedor frente a lo que consume y
@@ -133,4 +134,13 @@ systemRoutes.get("/alerts", async (c) => {
       SELECT id, at, key, event, message FROM alert_events ORDER BY at DESC, id DESC LIMIT 300`,
   ]);
   return c.json({ open, events });
+});
+
+/** Copias de seguridad: lo que guardó el worker en su última lectura (cada 5 minutos) y las alertas de copias abiertas. */
+systemRoutes.get("/backups", async (c) => {
+  const [[snap], alerts] = await Promise.all([
+    sqlOwner<{ at: Date; info: BackupInfo }[]>`SELECT at, info FROM backup_snapshot WHERE id = 1`,
+    sqlOwner<{ key: string; since: Date; message: string }[]>`SELECT key, since, message FROM alert_state WHERE key IN ('backup', 'backup-b2')`,
+  ]);
+  return c.json({ readAt: snap?.at ?? null, info: snap?.info ?? null, alerts });
 });
