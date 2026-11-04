@@ -257,7 +257,7 @@ export function uploadDocuments(
 export const errorMessage = (err: unknown) => (err instanceof Error ? err.message : "Error inesperado");
 
 export const formatBytes = (n: number) =>
-  n < 1024 ? `${n} B` : n < 1024 ** 2 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 ** 2).toFixed(1)} MB`;
+  n < 1024 ? `${n} B` : n < 1024 ** 2 ? `${(n / 1024).toFixed(1)} KB` : n < 1024 ** 3 ? `${(n / 1024 ** 2).toFixed(1)} MB` : `${(n / 1024 ** 3).toFixed(2)} GB`;
 
 const dateFormat = new Intl.DateTimeFormat("es", { dateStyle: "short", timeStyle: "short" });
 const shortDateFormat = new Intl.DateTimeFormat("es", { day: "numeric", month: "short" });

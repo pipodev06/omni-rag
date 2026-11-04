@@ -613,8 +613,24 @@ El worker revisa **cada 5 minutos**:
 | Cola de documentos | hay documentos en cola o procesándose desde hace más de `ALERT_QUEUE_MINUTES` minutos (30): worker caído o Docling atascado |
 | Copias de seguridad | la copia más reciente en `./backups` tiene más de `ALERT_BACKUP_HOURS` horas (36), o no hay ninguna |
 | Modelo de lenguaje | en los últimos 15 minutos fallaron 3 o más preguntas y ninguna se contestó (claves vencidas, cuota agotada) |
+| RAM de un contenedor | usa más del `ALERT_CONTAINER_MEM_PERCENT` % (90) de su tope: si llega al tope, Docker lo reinicia |
+| CPU de un contenedor | lleva 10 minutos usando el 95 % o más de su tope de núcleos: responde lento |
+| Reinicios | un contenedor se reinició en los últimos 15 minutos, murió por falta de memoria (OOM) o está en «restarting» |
+| Salud | un contenedor con comprobación de salud está «unhealthy» |
+| Métricas | no llegan muestras de los contenedores desde hace 3 minutos (proxy de Docker caído) |
 
 Cada problema avisa **una vez al empezar**, recuerda **cada 24 horas** mientras siga y avisa de nuevo **al resolverse**. Con `ALERT_EMAIL=tu@correo.com` (varios, separados por comas) y SMTP configurado llega por correo; sin eso solo queda en los registros (`docker compose logs worker | grep monitor`). La comprobación de copias necesita que el worker vea `./backups` (ya está montada en solo lectura).
+
+Las alertas de contenedores llevan su nombre (`container:docling:mem`) para saber cuál falla.
+
+### Pantalla Sistema
+
+El superadministrador tiene **Sistema** en el menú:
+
+- **Recursos** (`/sistema/recursos`): RAM y núcleos del servidor, versiones del stack y, por contenedor, el consumo actual, el pico de RAM de 7 días y el p95 de CPU de 24 horas frente a su tope. La columna **Autotune** muestra lo que dejó `deploy/autotune.sh` en el `.env` y avisa con «Sin aplicar» si no coincide con lo que Docker aplica (falta `docker compose up -d`). El **Diagnóstico** marca «RAM justa» o «CPU justa» (por encima del 85 %) y «Le sobra RAM» (el pico de 7 días no llega al 35 % del tope); con menos de 24 horas de datos lo indica. Así se comprueba si el autotune reparte bien.
+- **Métricas y alertas** (`/sistema/metricas`): gráficos de RAM y CPU de un contenedor (1 hora, 24 horas o 7 días) frente a su tope, las alertas abiertas y el historial de alertas.
+
+El worker toma una muestra por contenedor cada minuto a través de `docker-proxy`, un proxy del socket de Docker con lista blanca: solo responde a las consultas de consumo, topes y reinicios (ninguna otra ruta ni método), vive en una red interna sin salida a internet y solo atiende al worker. Las muestras se guardan `METRICS_RETENTION_DAYS` días (14). Para desactivarlo, deja `DOCKER_PROXY_URL=` vacío en el `.env`.
 
 Esto no sustituye a un monitor externo: si se cae todo el servidor no puede avisarte. Para eso añade un servicio gratuito (UptimeRobot, Better Stack…) que consulte `https://tu-dominio/api/health` cada minuto.
 

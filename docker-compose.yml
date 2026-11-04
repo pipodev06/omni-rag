@@ -131,6 +131,8 @@ services:
       STORAGE_DIR: /data/uploads
       CLAMAV_HOST: ${CLAMAV_HOST:-}
       REQUIRE_SUPERADMIN_2FA: ${REQUIRE_SUPERADMIN_2FA:-auto}
+      # Métricas de los contenedores (pantalla Sistema). Solo el worker llega al proxy (red «docker»); vacío = sin métricas.
+      DOCKER_PROXY_URL: ${DOCKER_PROXY_URL-http://docker-proxy:2375}
     volumes:
       - uploads:/data/uploads
     security_opt: ["no-new-privileges:true"]
@@ -157,7 +159,7 @@ services:
       - ./backups:/backups:ro
     security_opt: ["no-new-privileges:true"]
     cap_drop: [ALL]
-    networks: [default, ingest]
+    networks: [default, ingest, docker]
     depends_on:
       db:
         condition: service_healthy
@@ -179,6 +181,29 @@ services:
       - api
 
   # Copias de seguridad automáticas en ./backups (base de datos + archivos).
+  # Proxy del socket de Docker para las métricas de la pantalla Sistema. Lista blanca exacta: solo GET a /info,
+  # /containers/json y /containers/<id>/stats|json; cualquier otra ruta o método se rechaza. Solo atiende al worker y
+  # vive en una red interna sin salida a internet. Imagen mínima (sin shell), sin capacidades y de solo lectura.
+  # Docker rootless o Podman: cambia DOCKER_SOCKET. Para no usar root: DOCKER_PROXY_USER=65534:<gid del grupo docker>.
+  docker-proxy:
+    image: wollomatic/socket-proxy:1.13.1
+    restart: unless-stopped
+    user: ${DOCKER_PROXY_USER:-0:0}
+    command:
+      - "-listenip=0.0.0.0"
+      - "-allowfrom=worker"
+      - "-allowGET=(/v[0-9.]+)?/(info|containers/json|containers/[0-9a-f]{64}/(stats|json))"
+      - "-watchdoginterval=600"
+      - "-stoponwatchdog"
+      - "-shutdowngracetime=5"
+    volumes:
+      - ${DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock:ro
+    networks: [docker]
+    mem_limit: 32m
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
   backup:
     image: pgvector/pgvector:pg17
     restart: unless-stopped
@@ -258,6 +283,9 @@ services:
 networks:
   # Red sin salida a internet donde vive Docling.
   ingest:
+    internal: true
+  # Red sin salida a internet entre el worker y el proxy de Docker.
+  docker:
     internal: true
 
 volumes:

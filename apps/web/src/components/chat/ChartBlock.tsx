@@ -275,8 +275,6 @@ function downloadCsv(chart: ChartSpec) {
 /** Bloque ```chart de una respuesta. Mientras llega la respuesta muestra un aviso; si el JSON no sirve, el texto tal cual. */
 export function ChartBlock({ source, streaming }: { source: string; streaming?: boolean }) {
   const parsed = useMemo(() => parseChart(source), [source]);
-  const [tip, setTip] = useState<Tip | null>(null);
-  const [table, setTable] = useState(false);
 
   if (!parsed.ok) {
     if (streaming) {
@@ -294,7 +292,13 @@ export function ChartBlock({ source, streaming }: { source: string; streaming?: 
     );
   }
 
-  const { chart } = parsed;
+  return <ChartFigure chart={parsed.chart} />;
+}
+
+/** Gráfico ya validado, con leyenda, tooltip, «Ver datos» y «Descargar CSV». Lo usan las respuestas y la pantalla Sistema. */
+export function ChartFigure({ chart }: { chart: ChartSpec }) {
+  const [tip, setTip] = useState<Tip | null>(null);
+  const [table, setTable] = useState(false);
   const legend = chart.type === "pie" ? chart.labels : chart.series.length > 1 ? chart.series.map((s) => s.name) : [];
   return (
     <figure className="viz not-prose my-4 rounded-lg border bg-card p-3">

@@ -138,6 +138,11 @@ Límites de CPU y memoria de los servicios pesados, para no ahogar a otros conte
 | `B2_KEEP_DAYS` | `30` | Días que se conserva en Backblaze lo borrado y las copias de la base | up |
 | `ALERT_EMAIL` | vacío | Correo(s) para las alertas de monitorización, separados por comas. Vacío = solo en los registros | up |
 | `ALERT_DISK_FREE_PERCENT`, `ALERT_QUEUE_MINUTES`, `ALERT_BACKUP_HOURS` | `15`, `30`, `36` | Umbrales de las alertas: disco libre, documentos atascados y antigüedad de la última copia | up |
+| `ALERT_CONTAINER_MEM_PERCENT` | `90` | Porcentaje de su tope de RAM a partir del cual un contenedor genera la alerta «al límite» | up |
+| `DOCKER_PROXY_URL` | `http://docker-proxy:2375` | Proxy de Docker del que el worker lee el consumo de los contenedores (pantalla Sistema). Vacío = sin métricas | up |
+| `DOCKER_SOCKET` | `/var/run/docker.sock` | Socket de Docker que lee el proxy de métricas (`docker-proxy`). Cámbialo solo con Docker rootless o Podman | up |
+| `DOCKER_PROXY_USER` | `0:0` | Usuario del proxy de métricas (sin capacidades ni shell). Para uno sin privilegios: `65534:<gid del grupo docker>` | up |
+| `METRICS_RETENTION_DAYS` | `14` | Días que se guardan las muestras de consumo de los contenedores | up |
 | `LOG_FORMAT` | `json` | Registros: `json` (una línea por evento) o `text` | up |
 
 ## Internas (las fija `docker-compose.yml`; normalmente no se tocan)
