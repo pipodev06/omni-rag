@@ -118,6 +118,8 @@ Abre `https://rag.tuempresa.com`, entra con `SEED_ADMIN_USERNAME` y **cambia la 
 
 **Las copias automáticas ya existen**: el servicio `backup` guarda cada día en `./backups` la base de datos y los archivos (7 días) y comprueba cada copia restaurándola. Lo que hay que añadir en producción es una **segunda copia fuera del servidor**: si el disco o la máquina se pierden, `./backups` se pierde con ellos.
 
+**Configurarlo desde la pantalla.** *Sistema → Copias* (solo el superadministrador) permite cambiar los horarios, los días de retención, la copia externa y los datos de Backblaze sin editar el `.env` ni reiniciar: el servicio de copias relee los ajustes cada minuto (las claves de B2 llegan a `backup-b2` en unos 5 minutos, porque el worker las deja en un archivo cada ciclo del monitor) y el botón *Hacer copia ahora* lanza una copia inmediata. **Una variable escrita (no vacía) en el `.env` manda** sobre la pantalla y allí aparece bloqueada; `.env.example` trae esos ajustes comentados para que se puedan editar en la pantalla. Lo que sigue explica las variables, que siguen funcionando igual.
+
 **Opción integrada (recomendada):** apunta `BACKUP_OFFSITE_DIR` a una carpeta que no esté en ese disco (disco USB, NAS montado o carpeta sincronizada con OneDrive, Drive o Dropbox) y actívala en `.env`:
 
 ```bash
@@ -132,6 +134,17 @@ Tras cada copia verificada, el servicio la copia allí y borra las de más de `B
 openssl enc -d -aes-256-cbc -pbkdf2 -in db_AAAA-MM-DD_HHMM.dump.enc -out db.dump   # pide la frase
 ```
 
+**Elegir y cambiar el destino desde la pantalla (`BACKUP_TARGETS_DIR`).** `BACKUP_OFFSITE_DIR` es una sola carpeta fijada en el `.env`. Para elegir el disco desde *Sistema → Copias → Cambiar destino* (por ejemplo, un USB o un NAS), define `BACKUP_TARGETS_DIR` con la carpeta del servidor **que contiene** los discos; cada subcarpeta (hasta dos niveles) es un destino posible. La pantalla muestra el espacio libre de cada una y avisa con «Mismo disco que el servidor» si no protege de la pérdida del disco.
+
+- **Linux (USB o NAS):** monta el disco de forma permanente con su UUID en `/etc/fstab` (opción `nofail`, para que el servidor arranque aunque el disco no esté), por ejemplo en `/mnt/usb1`, y pon `BACKUP_TARGETS_DIR=/mnt` en el `.env`. Crea dentro del disco la carpeta de las copias (`/mnt/usb1/omni`) o deja que la pantalla la cree.
+- **Windows (Docker Desktop):** `BACKUP_TARGETS_DIR=D:/` (la unidad del USB o del disco; debe estar compartida con Docker Desktop en *Settings → Resources → File sharing*). Los destinos son las carpetas de esa unidad.
+- Aplica con `docker compose up -d`. Si no la defines, `./backups-targets` queda vacía y la pantalla explica que falta la variable.
+- Docker puede no ver un disco montado **después** de arrancar el servicio `backup`: tras conectar o cambiar un disco, `docker compose restart backup`.
+
+*Cambiar de destino.* El modal pide la carpeta (una de la lista o una subcarpeta nueva dentro de una existente) y la casilla *Llevar las copias existentes a la nueva carpeta*. Si la marcas, el servicio copia todas las copias a la nueva carpeta, las compara byte a byte y **solo si todo coincide borra las antiguas**; si algo falla no borra nada y la orden queda como fallida con el motivo. Si no la marcas, solo las copias nuevas van a la carpeta nueva y las anteriores se quedan donde estaban. Antes de aceptar se comprueba que la carpeta admite escritura y que hay espacio. El destino elegido es el que usa también `backup-b2`. Volver a elegir el destino actual confirma el disco (útil tras cambiar de USB).
+
+*Destino desconectado.* Si el disco no está o ya no es el mismo que antes, la copia local **sigue haciéndose**, no se escribe en ninguna carpeta alternativa y la pantalla muestra «el destino externo no está conectado»; el monitor avisa por correo (alerta `backup-offsite`, si `ALERT_EMAIL` está configurado). Al reconectar el disco se retoma solo en un minuto (tras `docker compose restart backup` si Docker no lo ve); las copias que se hicieron mientras estaba desconectado solo existen en `./backups` hasta la próxima copia o hasta pulsar *Hacer copia ahora*.
+
 **Subirlas a Backblaze B2 (integrado):** el servicio `backup-b2` (rclone) sube cada 6 horas las copias cifradas de `BACKUP_OFFSITE_DIR` a un bucket de B2 y borra de allí las de más de 30 días.
 
 1. En Backblaze, crea un bucket **privado** y una *Application Key* limitada a ese bucket (*App Keys → Add a New Application Key*; no uses la Master Key). Guarda el `keyID` y la `applicationKey`: esta última solo se muestra una vez.
@@ -142,6 +155,7 @@ openssl enc -d -aes-256-cbc -pbkdf2 -in db_AAAA-MM-DD_HHMM.dump.enc -out db.dump
    B2_APPLICATION_KEY=<applicationKey>
    B2_BUCKET=<nombre del bucket>
    ```
+   Alternativa: deja esas tres variables fuera del `.env` y escríbelas en *Sistema → Copias* (la clave se guarda cifrada); el servicio `backup-b2` espera sin reiniciarse hasta que estén completas. Con `COMPOSE_PROFILES=backblaze` en el `.env`, igualmente.
 3. `docker compose up -d` y comprueba con una subida inmediata: `docker compose run --rm backup-b2 --once`. Debe terminar con una línea `[b2] … sincronizado`. Si dice que no hay copias cifradas, falta la frase o aún no corrió ninguna copia (`docker compose exec backup sh /backup.sh --once`).
 
 **Archivos subidos incrementales (recomendado con muchos GB).** Por defecto cada copia incluye un `.tgz` completo de todos los archivos: con 150 GB serían 150 GB nuevos cada día. Con estas dos líneas en el `.env`, la copia diaria lleva solo la base de datos y los archivos se sincronizan aparte, subiendo únicamente lo nuevo:
@@ -169,13 +183,13 @@ BACKUP_AT=03:00     # copia diaria a las 03:00
 B2_AT=04:00         # subida diaria a las 04:00, después de la copia
 ```
 
-`BACKUP_TZ` (por defecto `<-05>5`, Lima) cambia la zona; usa ese formato POSIX, por ejemplo `<-03>3` para Argentina. Con hora fija, al arrancar el contenedor solo se hace copia si la última tiene más de 24 h (el servidor estaba apagado o parado a esa hora), y `backup-b2` sube a los 5 minutos las copias que aún no estén en B2. Para una copia inmediata: `docker compose exec backup sh /backup.sh --once`. Aplica con `docker compose up -d`; en los registros aparece `próxima copia a las 03:00 … dentro de N min`. Las marcas de tiempo de los registros y los nombres de archivo siguen en UTC.
+`BACKUP_TZ` (por defecto `<-05>5`, Lima) cambia la zona; usa ese formato POSIX, por ejemplo `<-03>3` para Argentina. Con hora fija, al arrancar el contenedor solo se hace copia si la última tiene más de 24 h (el servidor estaba apagado o parado a esa hora), y `backup-b2` sube a los 5 minutos las copias que aún no estén en B2. Para una copia inmediata: `docker compose exec backup sh /backup.sh --once`. Aplica con `docker compose up -d` (o cámbialo en *Sistema → Copias*, sin reiniciar); en los registros aparece `próxima copia a las 03:00 … dentro de N min`. Las marcas de tiempo de los registros y los nombres de archivo siguen en UTC.
 
 Solo se suben archivos `.enc`: sin la frase de cifrado no sale nada del servidor. Para restaurar, baja los dos archivos del bucket (web de Backblaze o `rclone copy`), descífralos con el comando de arriba y sigue [operacion.md](operacion.md#restaurar-una-copia). Si el bucket tiene versiones o reglas de ciclo de vida propias, déjalas en «mantener solo la última versión»: el servicio ya borra definitivamente lo antiguo.
 
 **Opción manual:** copia `./backups` con `rclone` a un almacenamiento S3 compatible o al *storage box* de tu proveedor con una tarea `cron` diaria (`0 4 * * * rclone sync /ruta/rag-project/backups remoto:rag-backups`). Esa copia no va cifrada salvo que lo configures tú.
 
-**Dónde ver si funcionan:** Sistema → Copias (solo el superadministrador) muestra la última copia y su verificación, la próxima hora, si van a la carpeta externa cifradas y el estado de B2, con el error exacto si algo falla (por ejemplo, las variables de B2 vacías). `backup.sh` deja ese estado en `./backups/.estado.json` y `b2-sync.sh` en el volumen `backup-status`; el worker lo lee cada 5 minutos y el monitor avisa si la última copia o la última subida fallaron (alertas `backup` y `backup-b2`). Una copia que falla no deja ningún `db_*.dump`: queda como `.dump.fallida` y no cuenta como copia reciente.
+**Dónde ver si funcionan:** Sistema → Copias (solo el superadministrador) muestra la última copia y su verificación, la próxima hora, si van a la carpeta externa cifradas y el estado de B2, con el error exacto si algo falla (por ejemplo, las variables de B2 vacías). `backup.sh` deja ese estado en `./backups/.estado.json` y `b2-sync.sh` en el volumen `backup-status`; el worker lo lee cada 5 minutos y el monitor avisa si la última copia o la última subida fallaron (alertas `backup` y `backup-b2`) o si la copia externa no se pudo hacer (`backup-offsite`). `backup.sh` deja además la lista de destinos posibles en `./backups/.destinos.json`. Una copia que falla no deja ningún `db_*.dump`: queda como `.dump.fallida` y no cuenta como copia reciente.
 
 Prueba alguna vez a restaurar en un servidor limpio (ver [operacion.md](operacion.md#restaurar-una-copia)).
 

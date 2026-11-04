@@ -122,6 +122,8 @@ Límites de CPU y memoria de los servicios pesados, para no ahogar a otros conte
 
 ## Retención, copias de seguridad y alertas
 
+Los ajustes de copias (`BACKUP_*`, salvo `BACKUP_OFFSITE_DIR`, `BACKUP_TARGETS_DIR` y `BACKUP_ENCRYPTION_PASSPHRASE`) y de Backblaze (`B2_*`) también se pueden cambiar en **Sistema → Copias**, sin reiniciar. **Lo que está escrito (no vacío) en el `.env` manda** y queda bloqueado en la pantalla; para editarlo allí, quita la línea del `.env` y ejecuta `docker compose up -d`. Los valores por defecto de la tabla son los de `deploy/backup.sh` y `deploy/b2-sync.sh`.
+
 | Variable | Por defecto | Qué hace | Aplica |
 |---|---|---|---|
 | `AUDIT_RETENTION_DAYS` | `365` | Días que se guarda la auditoría | up |
@@ -129,7 +131,9 @@ Límites de CPU y memoria de los servicios pesados, para no ahogar a otros conte
 | `BACKUP_INTERVAL_HOURS`, `BACKUP_KEEP_DAYS` | `24`, `7` | Cada cuántas horas se copia y cuántos días se conservan en el servidor | up |
 | `BACKUP_AT`, `BACKUP_TZ` | vacío, `<-05>5` (Perú) | Hora fija de la copia (`03:00`) y su zona horaria | up |
 | `BACKUP_UPLOADS_TGZ` | `true` | Incluir un `.tgz` de los archivos en la copia diaria. `false` si se usa la copia incremental | up |
-| `BACKUP_OFFSITE`, `BACKUP_OFFSITE_DIR` | `false`, `./backups-offsite` | Segunda copia en una carpeta externa al disco | up |
+| `BACKUP_OFFSITE`, `BACKUP_OFFSITE_DIR` | `false`, `./backups-offsite` | Segunda copia en una carpeta externa al disco. `BACKUP_OFFSITE_DIR` es la carpeta del servidor (solo `.env`) | up |
+| `BACKUP_TARGETS_DIR` | `./backups-targets` (vacía: sin cambio de destino) | Carpeta del servidor que contiene los discos o carpetas entre los que se elige el destino de la copia externa en Sistema → Copias (por ejemplo `/mnt` en Linux o `D:/` en Windows). Se monta en `/targets` del servicio `backup`. Solo `.env` | up |
+| `BACKUP_DESTINATION` | vacío | Subcarpeta de `BACKUP_TARGETS_DIR` donde se guarda la copia externa (vacío = `BACKUP_OFFSITE_DIR`). La escribe la pantalla al cambiar el destino; si la fijas en el `.env`, queda bloqueada allí | up |
 | `BACKUP_ENCRYPTION_PASSPHRASE` | vacío | Frase para cifrar las copias que salen del servidor. **Sin ella no se pueden restaurar** | up |
 | `B2_KEY_ID`, `B2_APPLICATION_KEY`, `B2_BUCKET` | vacío | Backblaze B2: clave limitada al bucket y su **nombre** (no el ID). Requiere `COMPOSE_PROFILES=backblaze` | up |
 | `B2_PATH` | `omni-rag` | Carpeta dentro del bucket | up |

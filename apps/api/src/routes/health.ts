@@ -4,6 +4,7 @@ import { webSearchEnabled } from "../lib/webSearch.js";
 import { sqlOwner } from "../db/client.js";
 import { antivirusEnabled, pingAntivirus } from "../lib/antivirus.js";
 import { configuredProviders } from "../lib/llmProviders.js";
+import { setting } from "../lib/settings.js";
 
 /** Estado de los servicios de los que depende el RAG. */
 export const healthRoutes = new Hono();
@@ -39,7 +40,7 @@ healthRoutes.get("/", async (c) => {
     // Proveedores de LLM con clave (o dirección) configurada. Vacío = el chat no puede responder.
     llm: configuredProviders().map((p) => p.id),
     // Buscador para el modo híbrido: el nombre del proveedor, o «desactivado».
-    webSearch: webSearchEnabled() ? config.WEB_SEARCH_PROVIDER : "desactivado",
+    webSearch: webSearchEnabled() ? setting("WEB_SEARCH_PROVIDER") : "desactivado",
   };
   const ok = database === "ok";
   return c.json({ ok, services }, ok ? 200 : 503);

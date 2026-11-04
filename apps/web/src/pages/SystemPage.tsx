@@ -1,13 +1,15 @@
 import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { Activity, BellRing, CalendarClock, CloudUpload, Cpu, DatabaseBackup, HardDrive, MemoryStick, Server, ShieldCheck, type LucideIcon } from "lucide-react";
+import { Activity, BellRing, Cpu, HardDrive, MemoryStick, Server } from "lucide-react";
 import { api, formatBytes, formatDate, timeAgo } from "@/api";
 import { cn } from "@/lib/utils";
 import type { ChartSpec } from "@/lib/chartSpec";
 import { ChartFigure } from "@/components/chat/ChartBlock";
 import { EmptyState, Page, PageHeader, TableCard } from "@/components/common";
-import { Badge } from "@/components/ui/badge";
+import { BackupsTab } from "@/components/system/BackupsTab";
+import { ConfigTab } from "@/components/system/ConfigTab";
+import { OpenAlerts, SIGNALS, Tag, Tile, TONE, describeKey, type OpenAlert } from "@/components/system/shared";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -53,39 +55,12 @@ interface Resources {
   containers: Container[];
 }
 
-type OpenAlert = { key: string; since: string; message: string };
-
 interface Alerts {
   open: OpenAlert[];
   events: { id: number; at: string; key: string; event: "opened" | "reminded" | "resolved"; message: string }[];
 }
 
-const TONE = {
-  bad: "text-destructive bg-destructive/10 border-destructive/20",
-  warn: "text-warning bg-warning/10 border-warning/20",
-  ok: "text-success bg-success/10 border-success/20",
-  muted: "text-muted-foreground",
-} as const;
-
-function Tag({ tone, children, title }: { tone: keyof typeof TONE; children: string; title?: string }) {
-  return (
-    <Badge variant="outline" className={cn("font-medium", TONE[tone])} title={title}>
-      {children}
-    </Badge>
-  );
-}
-
 const cores = (n: number) => n.toLocaleString("es", { maximumFractionDigits: 2, minimumFractionDigits: n < 10 ? 2 : 0 });
-
-const SIGNALS: Record<string, string> = { mem: "RAM al límite", cpu: "CPU al límite", restart: "Se reinició", health: "No responde" };
-const CHECKS: Record<string, string> = { disk: "Disco", queue: "Cola de documentos", backup: "Copias de seguridad", "backup-b2": "Copias en B2", llm: "Modelo de lenguaje", metrics: "Métricas" };
-
-/** «container:api:mem» → { source: "api", label: "RAM al límite" }; «disk» → { source: "Disco", … }. */
-function describeKey(key: string): { source: string; label: string } {
-  const [kind, name, signal] = key.split(":");
-  if (kind === "container" && name) return { source: name, label: SIGNALS[signal ?? ""] ?? signal ?? "" };
-  return { source: CHECKS[key] ?? key, label: "" };
-}
 
 /** Lectura de los datos para contrastar con el autotune: ¿el tope se queda corto, sobra o está bien? */
 function diagnose(c: Container): { tone: keyof typeof TONE; label: string; title?: string }[] {
@@ -151,18 +126,6 @@ function UsageCell({ now, peak, limit, format, peakLabel }: { now: number; peak:
           {peakLabel}: {format(peak)}
         </p>
       )}
-    </div>
-  );
-}
-
-function Tile({ icon: Icon, label, value, hint }: { icon: LucideIcon; label: string; value: string; hint?: string }) {
-  return (
-    <div className="rounded-xl border bg-card p-4">
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Icon className="size-4" /> {label}
-      </div>
-      <p className="mt-1 font-mono text-xl font-semibold tabular-nums">{value}</p>
-      {hint && <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>}
     </div>
   );
 }
@@ -268,30 +231,6 @@ function ResourcesTab() {
         </TableCard>
       )}
     </>
-  );
-}
-
-/** Alertas abiertas en recuadros rojos (pestañas Métricas y Copias). */
-function OpenAlerts({ alerts }: { alerts: OpenAlert[] }) {
-  if (alerts.length === 0) return null;
-  return (
-    <div className="mb-4 shrink-0 space-y-2">
-      {alerts.map((a) => {
-        const d = describeKey(a.key);
-        return (
-          <div key={a.key} className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm">
-            <BellRing className="mt-0.5 size-4 shrink-0 text-destructive" />
-            <div className="min-w-0">
-              <p className="font-medium">
-                {d.source}
-                {d.label && ` · ${d.label}`} <span className="font-mono text-xs font-normal text-muted-foreground">desde {formatDate(a.since)}</span>
-              </p>
-              <p className="text-muted-foreground">{a.message}</p>
-            </div>
-          </div>
-        );
-      })}
-    </div>
   );
 }
 
@@ -423,131 +362,17 @@ function MetricsTab() {
   );
 }
 
-interface Backups {
-  readAt: string | null;
-  info: {
-    mounted: boolean;
-    copies: { stamp: string; at: string; dbBytes: number; uploadsBytes: number | null }[];
-    totalBytes: number;
-    failed: number;
-    local: { attemptAt: string; ok: boolean; error: string; counts: string; at: string; intervalHours: number; nextAt: string; offsite: boolean; encrypted: boolean; keepDays: number } | null;
-    b2: { checkedAt: string; ok: boolean; error: string; lastOkAt: string; at: string; intervalHours: number; nextAt: string; syncUploads: boolean; keepDays: number } | null;
-  } | null;
-  alerts: OpenAlert[];
-}
-
-/** «8, 83, 724» (lo que cuenta la verificación) → texto legible. */
-function describeCounts(counts: string): string | undefined {
-  const [u, d, f] = counts.split(",").map((x) => x.trim());
-  return u && d && f ? `${u} usuarios · ${d} documentos · ${f} fragmentos` : undefined;
-}
-
-const schedule = (at: string, hours: number) => (at ? `Diaria a las ${at}` : `Cada ${hours} h`);
-
-function BackupsTab() {
-  const { data, isLoading } = useQuery({ queryKey: ["system", "backups"], queryFn: () => api.get<Backups>("/system/backups"), refetchInterval: 60_000 });
-  if (isLoading || !data) return <Skeleton className="h-64 w-full" />;
-  const info = data.info;
-  if (!info || !info.mounted) {
-    return (
-      <EmptyState
-        icon={DatabaseBackup}
-        title={info ? "La carpeta de copias no está montada en el worker" : "Aún no hay datos de las copias"}
-        description={
-          info
-            ? "El worker lee ./backups en solo lectura para comprobar las copias. Recrea los contenedores con «docker compose up -d»."
-            : "El worker lee el estado de las copias cada 5 minutos. Si no aparece nada, revisa «docker compose logs worker backup»."
-        }
-      />
-    );
-  }
-  const last = info.copies[0];
-  const local = info.local;
-  const b2 = info.b2;
-  const offsite = local ? (local.offsite ? (local.encrypted ? "Carpeta externa · cifrada" : "Carpeta externa · SIN cifrar") : "Solo en el servidor") : "—";
-
-  return (
-    <>
-      <OpenAlerts alerts={data.alerts} />
-      <div className="mb-4 grid shrink-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Tile icon={DatabaseBackup} label="Última copia" value={last ? timeAgo(last.at) : "Ninguna"} hint={last ? `${formatDate(last.at)} · ${formatBytes(last.dbBytes + (last.uploadsBytes ?? 0))}` : undefined} />
-        <Tile
-          icon={ShieldCheck}
-          label="Último intento"
-          value={local ? (local.ok ? "Correcto" : "Falló") : "—"}
-          hint={local ? (local.ok ? (describeCounts(local.counts) ?? "Restaurada en una base de prueba") : local.error) : "backup.sh aún no anotó ningún intento"}
-        />
-        <Tile icon={CalendarClock} label="Próxima copia" value={local?.nextAt ? formatDate(local.nextAt) : "—"} hint={local ? `${schedule(local.at, local.intervalHours)} · se guardan ${local.keepDays} días` : undefined} />
-        <Tile icon={HardDrive} label="Fuera del servidor" value={offsite} hint={`${info.copies.length} copia(s) · ${formatBytes(info.totalBytes)} en ./backups`} />
-      </div>
-
-      <div className="mb-4 flex shrink-0 flex-wrap items-center gap-x-5 gap-y-1 rounded-xl border bg-card p-4 text-sm">
-        <span className="flex items-center gap-2 font-medium">
-          <CloudUpload className="size-4 text-muted-foreground" /> Backblaze B2
-        </span>
-        {b2 ? (
-          <>
-            <Tag tone={b2.ok ? "ok" : "bad"}>{b2.ok ? "Funciona" : "Falla"}</Tag>
-            {!b2.ok && <span className="text-destructive">{b2.error}</span>}
-            <span className="text-muted-foreground">
-              Última subida: <span className="font-mono text-xs">{b2.lastOkAt ? formatDate(b2.lastOkAt) : "ninguna"}</span>
-            </span>
-            {b2.nextAt && (
-              <span className="text-muted-foreground">
-                Próxima: <span className="font-mono text-xs">{formatDate(b2.nextAt)}</span>
-              </span>
-            )}
-            <span className="text-muted-foreground">
-              {schedule(b2.at, b2.intervalHours)} · {b2.syncUploads ? "base y archivos subidos" : "solo la base"} · se guardan {b2.keepDays} días
-            </span>
-          </>
-        ) : (
-          <span className="text-muted-foreground">Desactivado. Se activa con el perfil «backblaze» (docs/produccion.md → Copias de seguridad).</span>
-        )}
-      </div>
-
-      {info.copies.length === 0 ? (
-        <EmptyState icon={DatabaseBackup} title="No hay copias en ./backups" description="Haz una ahora con «docker compose exec backup sh /backup.sh --once»." />
-      ) : (
-        <TableCard>
-          <Table>
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="pl-4">Fecha</TableHead>
-                <TableHead className="hidden sm:table-cell">Archivo</TableHead>
-                <TableHead className="text-right">Base de datos</TableHead>
-                <TableHead className="pr-4 text-right">Archivos subidos</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {info.copies.map((c) => (
-                <TableRow key={c.stamp}>
-                  <TableCell className="pl-4 font-mono text-xs whitespace-nowrap tabular-nums">{formatDate(c.at)}</TableCell>
-                  <TableCell className="hidden font-mono text-xs text-muted-foreground sm:table-cell">db_{c.stamp}.dump</TableCell>
-                  <TableCell className="text-right font-mono text-xs tabular-nums">{formatBytes(c.dbBytes)}</TableCell>
-                  <TableCell className="pr-4 text-right font-mono text-xs tabular-nums">{c.uploadsBytes === null ? "—" : formatBytes(c.uploadsBytes)}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TableCard>
-      )}
-      {info.failed > 0 && <p className="mt-2 shrink-0 text-xs text-muted-foreground">{info.failed} copia(s) fallida(s) apartada(s) como «.dump.fallida»; se borran a los {local?.keepDays ?? 7} días.</p>}
-    </>
-  );
-}
-
-const TABS = { recursos: "Recursos", metricas: "Métricas y alertas", copias: "Copias" } as const;
+const TABS = { recursos: "Recursos", metricas: "Métricas y alertas", copias: "Copias", configuracion: "Configuración" } as const;
 
 export function SystemPage() {
   const { tab } = useParams();
   const navigate = useNavigate();
-  const current = tab === "metricas" || tab === "copias" ? tab : "recursos";
+  const current = tab === "metricas" || tab === "copias" || tab === "configuracion" ? tab : "recursos";
   return (
     <Page fill>
       <PageHeader
         title="Sistema"
-        description="Recursos del servidor y de cada contenedor: lo que el autotune asignó (topes de CPU y RAM) frente a lo que consumen, con picos de 24 horas y 7 días, el historial de alertas del monitor y el estado de las copias de seguridad (locales, carpeta externa y Backblaze B2). El worker toma una muestra por minuto a través de un proxy de Docker que solo responde a consultas de consumo."
+        description="Recursos del servidor y de cada contenedor: lo que el autotune asignó (topes de CPU y RAM) frente a lo que consumen, con picos de 24 horas y 7 días, el historial de alertas del monitor y el estado de las copias de seguridad (locales, carpeta externa y Backblaze B2) y la configuración editable del sistema (alertas, correo, límites, modelos, búsqueda y copias), salvo lo que esté fijado en el archivo de entorno del servidor. El worker toma una muestra por minuto a través de un proxy de Docker que solo responde a consultas de consumo."
       />
       <Tabs value={current} onValueChange={(v) => navigate(`/sistema/${v}`)} className="mb-4 shrink-0">
         <TabsList>
@@ -558,7 +383,7 @@ export function SystemPage() {
           ))}
         </TabsList>
       </Tabs>
-      {current === "metricas" ? <MetricsTab /> : current === "copias" ? <BackupsTab /> : <ResourcesTab />}
+      {current === "metricas" ? <MetricsTab /> : current === "copias" ? <BackupsTab /> : current === "configuracion" ? <ConfigTab /> : <ResourcesTab />}
     </Page>
   );
 }

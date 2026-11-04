@@ -1,4 +1,5 @@
 import { config } from "../config.js";
+import { setting } from "./settings.js";
 
 /**
  * Proveedores de LLM. Todos hablan el formato «compatible con OpenAI» (`/chat/completions` con streaming);
@@ -29,12 +30,12 @@ interface ProviderDef {
 
 // Se leen de `config` en cada llamada (no al cargar el módulo) para poder probarlos cambiando la configuración.
 const DEFS: ProviderDef[] = [
-  { id: "openrouter", label: "OpenRouter", kind: "openrouter", keyVar: "OPENROUTER_API_KEY", baseUrl: () => config.OPENROUTER_BASE_URL, apiKey: () => config.OPENROUTER_API_KEY },
-  { id: "groq", label: "Groq", kind: "openai", keyVar: "GROQ_API_KEY", baseUrl: () => "https://api.groq.com/openai/v1", apiKey: () => config.GROQ_API_KEY },
-  { id: "google", label: "Google (Gemini)", kind: "openai", keyVar: "GOOGLE_API_KEY", baseUrl: () => "https://generativelanguage.googleapis.com/v1beta/openai", apiKey: () => config.GOOGLE_API_KEY },
-  { id: "openai", label: "OpenAI", kind: "openai", keyVar: "OPENAI_API_KEY", baseUrl: () => "https://api.openai.com/v1", apiKey: () => config.OPENAI_API_KEY },
-  { id: "deepseek", label: "DeepSeek", kind: "openai", keyVar: "DEEPSEEK_API_KEY", baseUrl: () => "https://api.deepseek.com", apiKey: () => config.DEEPSEEK_API_KEY },
-  { id: "custom", label: "Servidor propio", kind: "openai", keyVar: "LLM_CUSTOM_BASE_URL", baseUrl: () => config.LLM_CUSTOM_BASE_URL, apiKey: () => config.LLM_CUSTOM_API_KEY },
+  { id: "openrouter", label: "OpenRouter", kind: "openrouter", keyVar: "OPENROUTER_API_KEY", baseUrl: () => config.OPENROUTER_BASE_URL, apiKey: () => setting("OPENROUTER_API_KEY") },
+  { id: "groq", label: "Groq", kind: "openai", keyVar: "GROQ_API_KEY", baseUrl: () => "https://api.groq.com/openai/v1", apiKey: () => setting("GROQ_API_KEY") },
+  { id: "google", label: "Google (Gemini)", kind: "openai", keyVar: "GOOGLE_API_KEY", baseUrl: () => "https://generativelanguage.googleapis.com/v1beta/openai", apiKey: () => setting("GOOGLE_API_KEY") },
+  { id: "openai", label: "OpenAI", kind: "openai", keyVar: "OPENAI_API_KEY", baseUrl: () => "https://api.openai.com/v1", apiKey: () => setting("OPENAI_API_KEY") },
+  { id: "deepseek", label: "DeepSeek", kind: "openai", keyVar: "DEEPSEEK_API_KEY", baseUrl: () => "https://api.deepseek.com", apiKey: () => setting("DEEPSEEK_API_KEY") },
+  { id: "custom", label: "Servidor propio", kind: "openai", keyVar: "LLM_CUSTOM_BASE_URL", baseUrl: () => setting("LLM_CUSTOM_BASE_URL"), apiKey: () => setting("LLM_CUSTOM_API_KEY") },
 ];
 
 export const PROVIDER_IDS = DEFS.map((d) => d.id);
@@ -68,8 +69,25 @@ export function parseModelRef(ref: string): ModelRef {
     const head = ref.slice(0, i);
     if (PROVIDER_IDS.includes(head)) return { providerId: head, model: ref.slice(i + 1) };
   }
-  return { providerId: config.LLM_DEFAULT_PROVIDER, model: ref };
+  return { providerId: setting("LLM_DEFAULT_PROVIDER"), model: ref };
 }
 
 /** Nombre con el que se guarda y se muestra el modelo usado: sin prefijo si es de OpenRouter (como siempre). */
 export const modelLabel = (providerId: string, model: string): string => (providerId === "openrouter" ? model : `${providerId}:${model}`);
+
+/**
+ * Comprobación mínima de un proveedor, sin gastar cuota: OpenRouter tiene un endpoint que valida la clave
+ * (su catálogo es público) y los demás responden a `/models` solo con una clave válida. Devuelve un texto apto para mostrar.
+ */
+export async function probeProvider(p: LlmProvider): Promise<{ ok: boolean; message: string }> {
+  const url = p.kind === "openrouter" ? `${p.baseUrl}/auth/key` : `${p.baseUrl}/models`;
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000), headers: p.apiKey ? { authorization: `Bearer ${p.apiKey}` } : undefined });
+    if (res.ok) return { ok: true, message: `${p.label}: la conexión funciona.` };
+    if (res.status === 401 || res.status === 403) return { ok: false, message: `${p.label} rechazó la clave (HTTP ${res.status}).` };
+    return { ok: false, message: `${p.label} respondió con un error (HTTP ${res.status}).` };
+  } catch (err) {
+    console.warn(`[${p.id}] la comprobación falló:`, err instanceof Error ? err.message : err);
+    return { ok: false, message: `No se pudo conectar con ${p.label}.` };
+  }
+}

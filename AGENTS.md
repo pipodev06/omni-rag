@@ -40,6 +40,8 @@ Cambiarlos solo si el usuario lo pide de forma explícita.
 
 ## Variables de entorno
 
+**Ajustes en la pantalla** (Sistema → Configuración y Copias, solo superadmin): la clave de cada ajuste es el nombre de su variable. Precedencia: variable del `.env` no vacía (la pantalla la muestra bloqueada) > fila de `settings` > valor por defecto. Un ajuste editable va en el catálogo de `lib/settings.ts` y se lee con `setting("CLAVE")`, nunca con `config.X`; los secretos se cifran con `lib/secretBox.ts`. Se quedan solo en el `.env`: contraseñas de la base, `JWT_SECRET`, `BACKUP_ENCRYPTION_PASSPHRASE` (si viviera en la base, la llave iría dentro de la copia que cifra), Docker, red, topes del autotune y lo que obliga a reprocesar documentos (`EMBEDDING_*`, `CHUNK_*`). Los scripts de copia leen sus ajustes de la base con psql (`backup.sh`) o del `b2.env` que escribe el worker (`b2-sync.sh`), y reciben órdenes por `backup_requests`. En el compose esas variables van como `${X:-}`: un valor por defecto en el compose las dejaría bloqueadas.
+
 Toda variable nueva se declara en `apps/api/src/config.ts` (o en `docker-compose.yml` si es de infraestructura), se añade a `.env.example` con su comentario y se describe en `docs/variables.md`. Un test (`apps/api/test/docs.test.ts`) falla si falta en alguno de los dos archivos. Los secretos nunca se escriben en el repositorio.
 
 ## Acceso

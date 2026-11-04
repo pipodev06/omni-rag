@@ -159,6 +159,8 @@ services:
       - ./backups:/backups:ro
       # Solo lectura: estado de la subida a B2 (pantalla Sistema → Copias).
       - backup-status:/backup-status:ro
+      # Escribe el archivo de ajustes de B2 con lo guardado en Sistema → Copias (lo lee backup-b2).
+      - backup-config:/backup-config
     security_opt: ["no-new-privileges:true"]
     cap_drop: [ALL]
     networks: [default, ingest, docker]
@@ -206,18 +208,21 @@ services:
     security_opt: ["no-new-privileges:true"]
 
   # Copias de seguridad automáticas en ./backups (base de datos + archivos).
+  # Los horarios y demás ajustes de copias se pueden fijar en el .env o en Sistema → Copias. Las variables llegan vacías
+  # si no están en el .env (solo mandan si no están vacías) y los valores por defecto viven en deploy/backup.sh.
   backup:
     image: pgvector/pgvector:pg17
     restart: unless-stopped
     entrypoint: ["sh", "/backup.sh"]
     environment:
       PGPASSWORD: ${POSTGRES_PASSWORD}
-      BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-24}
+      BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-}
       BACKUP_AT: ${BACKUP_AT:-}
-      BACKUP_UPLOADS_TGZ: ${BACKUP_UPLOADS_TGZ:-true}
-      BACKUP_TZ: ${BACKUP_TZ:-<-05>5}
-      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-7}
-      BACKUP_OFFSITE: ${BACKUP_OFFSITE:-false}
+      BACKUP_UPLOADS_TGZ: ${BACKUP_UPLOADS_TGZ:-}
+      BACKUP_TZ: ${BACKUP_TZ:-}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-}
+      BACKUP_OFFSITE: ${BACKUP_OFFSITE:-}
+      BACKUP_DESTINATION: ${BACKUP_DESTINATION:-}
       BACKUP_ENCRYPTION_PASSPHRASE: ${BACKUP_ENCRYPTION_PASSPHRASE:-}
     volumes:
       - ./deploy/backup.sh:/backup.sh:ro
@@ -225,12 +230,18 @@ services:
       - ./backups:/backups
       # Carpeta externa (disco, NAS, carpeta sincronizada). Solo se usa con BACKUP_OFFSITE=true.
       - ${BACKUP_OFFSITE_DIR:-./backups-offsite}:/offsite
+      # Discos o carpetas entre los que se puede elegir el destino desde Sistema → Copias (BACKUP_TARGETS_DIR).
+      # Sin definirla es una carpeta vacía del proyecto y la pantalla no ofrece cambiar de destino.
+      - ${BACKUP_TARGETS_DIR:-./backups-targets}:/targets
+      # Solo para dar al worker permiso de escritura en la carpeta de ajustes (ver deploy/backup.sh).
+      - backup-config:/backup-config
     depends_on:
       db:
         condition: service_healthy
 
-  # Sube las copias cifradas de BACKUP_OFFSITE_DIR a Backblaze B2. Solo con COMPOSE_PROFILES=backblaze
-  # (y BACKUP_OFFSITE=true + BACKUP_ENCRYPTION_PASSPHRASE: sin cifrar no sube nada).
+  # Sube las copias cifradas de la carpeta externa (BACKUP_OFFSITE_DIR o el destino elegido) a Backblaze B2. Solo con
+  # COMPOSE_PROFILES=backblaze (y BACKUP_OFFSITE=true + BACKUP_ENCRYPTION_PASSPHRASE: sin cifrar no sube nada).
+  # Las claves de B2 pueden ir en el .env o guardarse en Sistema → Copias (llegan por /backup-config).
   backup-b2:
     image: rclone/rclone:1.69.3
     profiles: ["backblaze"]
@@ -243,17 +254,21 @@ services:
       RCLONE_CONFIG_B2_KEY: ${B2_APPLICATION_KEY:-}
       RCLONE_CONFIG_B2_HARD_DELETE: "true"
       B2_BUCKET: ${B2_BUCKET:-}
-      B2_PATH: ${B2_PATH:-omni-rag}
-      B2_INTERVAL_HOURS: ${B2_INTERVAL_HOURS:-6}
+      B2_PATH: ${B2_PATH:-}
+      B2_INTERVAL_HOURS: ${B2_INTERVAL_HOURS:-}
       B2_AT: ${B2_AT:-}
-      B2_SYNC_UPLOADS: ${B2_SYNC_UPLOADS:-false}
+      B2_SYNC_UPLOADS: ${B2_SYNC_UPLOADS:-}
       BACKUP_ENCRYPTION_PASSPHRASE: ${BACKUP_ENCRYPTION_PASSPHRASE:-}
-      BACKUP_TZ: ${BACKUP_TZ:-<-05>5}
-      B2_KEEP_DAYS: ${B2_KEEP_DAYS:-30}
+      BACKUP_TZ: ${BACKUP_TZ:-}
+      BACKUP_DESTINATION: ${BACKUP_DESTINATION:-}
+      B2_KEEP_DAYS: ${B2_KEEP_DAYS:-}
     volumes:
       - ./deploy/b2-sync.sh:/b2-sync.sh:ro
       - uploads:/uploads:ro
       - ${BACKUP_OFFSITE_DIR:-./backups-offsite}:/offsite:ro
+      - ${BACKUP_TARGETS_DIR:-./backups-targets}:/targets:ro
+      # Ajustes guardados en Sistema → Copias (los escribe el worker); se releen cada minuto.
+      - backup-config:/backup-config:ro
       # Estado de la última subida (sin secretos) para la pantalla Sistema → Copias.
       - backup-status:/status
 
@@ -293,6 +308,7 @@ networks:
     internal: true
 
 volumes:
+  backup-config:
   backup-status:
   caddy-data:
   caddy-config:

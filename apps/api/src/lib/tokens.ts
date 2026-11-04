@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { config } from "../config.js";
 import { sqlOwner } from "../db/client.js";
 import { sendEmail } from "./mailer.js";
+import { setting } from "./settings.js";
 
 /**
  * Enlaces de un solo uso para invitar usuarios y restablecer contraseñas.
@@ -20,7 +21,7 @@ export function linkFor(kind: TokenKind, token: string): string {
 export async function createUserLink(opts: { tenantId: string; userId: string; kind: TokenKind; createdBy: string | null }): Promise<string> {
   const token = randomBytes(32).toString("base64url");
   const expires =
-    opts.kind === "invite" ? `${config.INVITE_EXPIRES_HOURS} hours` : `${config.RESET_EXPIRES_MINUTES} minutes`;
+    opts.kind === "invite" ? `${setting("INVITE_EXPIRES_HOURS")} hours` : `${setting("RESET_EXPIRES_MINUTES")} minutes`;
   await sqlOwner.begin(async (tx) => {
     await tx`UPDATE user_tokens SET used_at = now()
               WHERE user_id = ${opts.userId} AND kind = ${opts.kind} AND used_at IS NULL`;
@@ -40,7 +41,7 @@ export function emailLink(kind: TokenKind, to: { email: string; name: string }, 
         intro: `Hola ${to.name}: te han invitado a ${config.APP_NAME} en la organización «${tenantName}». Allí podrás hacer preguntas sobre los documentos de tu equipo.`,
         buttonText: "Crear mi contraseña",
         url,
-        outro: `El enlace caduca en ${config.INVITE_EXPIRES_HOURS} horas.`,
+        outro: `El enlace caduca en ${setting("INVITE_EXPIRES_HOURS")} horas.`,
       })
     : sendEmail({
         to: to.email,
@@ -48,7 +49,7 @@ export function emailLink(kind: TokenKind, to: { email: string; name: string }, 
         intro: `Hola ${to.name}: hemos recibido una solicitud para restablecer tu contraseña.`,
         buttonText: "Elegir una nueva contraseña",
         url,
-        outro: `El enlace caduca en ${config.RESET_EXPIRES_MINUTES} minutos. Si no lo pediste tú, ignora este correo: tu contraseña no cambiará.`,
+        outro: `El enlace caduca en ${setting("RESET_EXPIRES_MINUTES")} minutos. Si no lo pediste tú, ignora este correo: tu contraseña no cambiará.`,
       });
 }
 

@@ -1,23 +1,25 @@
 import { config } from "../config.js";
 import { emailEnabled, sendEmail, verifyEmail } from "../lib/mailer.js";
+import { refreshSettings, setting } from "../lib/settings.js";
 
 /**
- * Prueba el correo saliente con el SMTP del .env: comprueba la conexión y las credenciales y, si se indica un
+ * Prueba el correo saliente con el SMTP configurado (variables o pantalla Sistema): comprueba la conexión y las credenciales y, si se indica un
  * destinatario, envía un mensaje de prueba. Muestra el error real del servidor (en la API solo queda en los registros).
  *
  *   docker compose exec api node dist/scripts/test-email.js [destinatario@correo.com]
  */
 const to = process.argv[2];
+await refreshSettings();
 
 if (!emailEnabled()) {
   console.log("SMTP_HOST está vacío: el correo está desactivado. Configura SMTP_* en el .env y aplica con «docker compose up -d».");
   process.exit(1);
 }
 
-const mode = config.SMTP_SECURE ? "TLS directo" : "STARTTLS si el servidor lo ofrece";
-console.log(`Servidor: ${config.SMTP_HOST}:${config.SMTP_PORT} (${mode})`);
-console.log(`Usuario:  ${config.SMTP_USER || "(sin autenticación)"}`);
-console.log(`Remitente: ${config.SMTP_FROM}`);
+const mode = setting("SMTP_SECURE") ? "TLS directo" : "STARTTLS si el servidor lo ofrece";
+console.log(`Servidor: ${setting("SMTP_HOST")}:${setting("SMTP_PORT")} (${mode})`);
+console.log(`Usuario:  ${setting("SMTP_USER") || "(sin autenticación)"}`);
+console.log(`Remitente: ${setting("SMTP_FROM")}`);
 
 try {
   await verifyEmail();

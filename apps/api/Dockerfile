@@ -20,7 +20,7 @@ FROM node:22-alpine
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=build /out ./
-RUN mkdir -p /data/uploads && chown -R node:node /data
+RUN mkdir -p /data/uploads /backup-config && chown -R node:node /data /backup-config
 USER node
 EXPOSE 3001
 CMD ["node", "dist/server.js"]

@@ -2,6 +2,7 @@ import { config } from "../config.js";
 import { HttpError } from "../lib/errors.js";
 import { configuredProviders, getProvider, isConfigured, modelLabel, parseModelRef, type LlmProvider, type ProviderKind } from "../lib/llmProviders.js";
 import type { ChatMessage } from "./prompt.js";
+import { setting } from "../lib/settings.js";
 
 /**
  * Cliente de LLM con streaming para cualquier proveedor «compatible con OpenAI» (OpenRouter, Groq, Google, OpenAI,
@@ -105,13 +106,13 @@ export function buildRequestBody(kind: ProviderKind, providerId: string, model: 
   const base = { model, messages, stream: true };
   if (kind === "openrouter") {
     // Si el modelo «razona», no enviar el razonamiento: solo la respuesta final.
-    return { ...base, temperature: config.LLM_TEMPERATURE, max_tokens: config.LLM_MAX_TOKENS, reasoning: { exclude: true } };
+    return { ...base, temperature: setting("LLM_TEMPERATURE"), max_tokens: setting("LLM_MAX_TOKENS"), reasoning: { exclude: true } };
   }
   return {
     ...base,
     ...(withUsageOption && { stream_options: { include_usage: true } }),
-    ...(providerId === "openai" ? { max_completion_tokens: config.LLM_MAX_TOKENS } : { max_tokens: config.LLM_MAX_TOKENS }),
-    ...(noTemperature(providerId, model) ? {} : { temperature: config.LLM_TEMPERATURE }),
+    ...(providerId === "openai" ? { max_completion_tokens: setting("LLM_MAX_TOKENS") } : { max_tokens: setting("LLM_MAX_TOKENS") }),
+    ...(noTemperature(providerId, model) ? {} : { temperature: setting("LLM_TEMPERATURE") }),
   };
 }
 

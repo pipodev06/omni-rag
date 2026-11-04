@@ -6,12 +6,14 @@ import { migrate } from "./db/migrate.js";
 import { getBoss, stopBoss } from "./queue.js";
 import { ensureInitialAdmin } from "./scripts/bootstrap.js";
 import { installLogger } from "./lib/logger.js";
+import { startSettingsRefresh } from "./lib/settings.js";
 
 installLogger();
 
 async function main() {
   await migrate();
   await ensureInitialAdmin();
+  await startSettingsRefresh();
   await getBoss(); // prepara la cola para poder encolar documentos
 
   const server = serve({ fetch: createApp().fetch, port: config.PORT, hostname: "0.0.0.0" }, (info) =>

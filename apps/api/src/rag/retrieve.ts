@@ -3,6 +3,7 @@ import { withTenant, type TenantContext } from "../db/client.js";
 import { scopeKey } from "./cache.js";
 import { applyRerank, rerank, rerankerEnabled, rerankText } from "./rerank.js";
 import { hybridSearch, type SearchHit } from "./search.js";
+import { setting } from "../lib/settings.js";
 
 export interface RetrievalScope {
   /** Colecciones en las que se busca (las accesibles ∩ el filtro pedido). */
@@ -49,7 +50,7 @@ export async function retrieve(
   ctx: TenantContext,
   opts: { queryText: string; queryVector: number[]; scope: RetrievalScope; topK?: number; signal?: AbortSignal },
 ): Promise<RankedHit[]> {
-  const topK = opts.topK ?? config.RETRIEVAL_TOP_K;
+  const topK = opts.topK ?? setting("RETRIEVAL_TOP_K");
   if (opts.scope.collectionIds.length === 0) return [];
   const useReranker = rerankerEnabled();
 
@@ -70,5 +71,5 @@ export async function retrieve(
     opts.signal,
   );
   if (!scores) return candidates.slice(0, topK).map((h) => ({ ...h, rerankScore: null }));
-  return applyRerank(candidates, scores, topK, config.RERANK_MIN_SCORE);
+  return applyRerank(candidates, scores, topK, setting("RERANK_MIN_SCORE"));
 }

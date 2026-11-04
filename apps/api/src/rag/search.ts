@@ -1,5 +1,6 @@
 import { config } from "../config.js";
 import { toPgVector, type Tx } from "../db/client.js";
+import { setting } from "../lib/settings.js";
 
 export interface SearchHit {
   chunkId: number;
@@ -55,7 +56,7 @@ export function identifierTerms(text: string): string[] {
  * solo se consideren trozos de colecciones a las que el usuario tiene acceso.
  */
 export async function hybridSearch(tx: Tx, opts: SearchOptions): Promise<SearchHit[]> {
-  const topK = opts.topK ?? config.RETRIEVAL_TOP_K;
+  const topK = opts.topK ?? setting("RETRIEVAL_TOP_K");
   const candidates = opts.candidates ?? config.RETRIEVAL_CANDIDATES;
   const collections = opts.collectionIds && opts.collectionIds.length > 0 ? opts.collectionIds : null;
   const documents = opts.documentIds && opts.documentIds.length > 0 ? opts.documentIds : null;
