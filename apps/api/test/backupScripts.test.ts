@@ -1,5 +1,5 @@
 import { execFile, execFileSync, spawn } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -51,9 +51,10 @@ const STUBS: Record<string, string> = {
     'echo "rclone $*" >> "$STUB_LOG"',
     'echo "ACCOUNT=$RCLONE_CONFIG_B2_ACCOUNT KEY=$RCLONE_CONFIG_B2_KEY" >> "$STUB_LOG"',
     '[ -z "$STUB_RCLONE_FAIL" ] || exit 1',
-    '[ "$1" != "obscure" ] || echo obscured',
+    '[ "$1" != "obscure" ] || { echo "obscure-stdin=$(cat)" >> "$STUB_LOG"; echo obscured; exit 0; }',
     "exit 0",
   ].join("\n"),
+  timeout: 'echo "timeout $*" >> "$STUB_LOG"\nshift\nexec "$@"',
   sleep: `${STRIP_STUBS}\nexec sleep 0.2`,
   cmp: `[ -z "$STUB_CMP_FAIL" ] || exit 1\n${STRIP_STUBS}\nexec cmp "$@"`,
   cp: `[ -z "$STUB_CP_FAIL" ] || exit 1\n${STRIP_STUBS}\nexec cp "$@"`,
@@ -115,6 +116,17 @@ class Sandbox {
       });
     });
   }
+
+  /** Carga las funciones de backup.sh (sin su bucle) y ejecuta `cmd`; devuelve la salida. */
+  fn(cmd: string, extra: Record<string, string> = {}): Promise<Result> {
+    return new Promise((resolve) => {
+      execFile("sh", ["-c", `cd "${this.px}"\n. "${this.px}/backup-lib.sh"\n${cmd}`], { cwd: this.root, env: this.env(extra), timeout: 60_000, encoding: "utf8" }, (err, stdout, stderr) => {
+        resolve({ code: err ? (typeof err.code === "number" ? err.code : -1) : 0, out: `${stdout}${stderr}` });
+      });
+    });
+  }
+  /** Hace «viejo» un archivo (fecha de modificación hace `days` días). */
+  age = (rel: string, days: number) => utimes(this.p(...rel.split("/")), new Date(Date.now() - days * 86_400_000), new Date(Date.now() - days * 86_400_000));
 
   ls = (...parts: string[]) => readdir(this.p(...parts)).then((n) => n.sort());
   read = (...parts: string[]) => readFile(this.p(...parts), "utf8");
@@ -291,6 +303,78 @@ describe.concurrent("deploy/backup.sh --once (copia con pg_dump y rclone falsos)
   }, T);
 });
 
+describe.concurrent("deploy/backup.sh: retención, espacio, órdenes caducadas y escaneo de destinos", { skip: !hasGnuSh }, () => {
+  it("la retención solo borra archivos con el nombre exacto de copia, en ./backups y en la carpeta externa", async () => {
+    const sb = await sandbox();
+    const old = ["db_2020-01-01_0300.dump", "db_2020-01-01_0300.dump.fallida", "uploads_2020-01-01_0300.tgz", "db_2020-01-01_0300.dump.enc", "uploads_2020-01-01_0300.tgz.enc"];
+    const mine = ["db_clientes.xlsx", "uploads_viejo.tgz", "db_2020-01-01_0300.dump.bak", "notas.txt", "db_2020-1-1_0300.dump"];
+    for (const dir of ["backups", "offsite"]) {
+      for (const n of [...old, ...mine]) {
+        await sb.write(`${dir}/${n}`, "x");
+        await sb.age(`${dir}/${n}`, 400);
+      }
+    }
+    // Una carpeta con nombre de copia no es un archivo: no se borra aunque sea vieja.
+    await mkdir(sb.p("offsite", "db_2020-01-02_0300.dump"));
+    const r = await sb.run("backup.sh", ["--once"], { BACKUP_OFFSITE: "true", BACKUP_UPLOADS_TGZ: "false" });
+    expect(r.code, r.out).toBe(0);
+    for (const dir of ["backups", "offsite"]) {
+      const names = await sb.ls(dir);
+      for (const n of old) expect(names, `${dir}/${n} debía borrarse`).not.toContain(n);
+      for (const n of mine) expect(names, `${dir}/${n} no es nuestro: debía quedar`).toContain(n);
+    }
+    expect(await sb.exists("offsite", "db_2020-01-02_0300.dump")).toBe(true);
+  }, T);
+
+  it("sin espacio libre para el doble de la última copia: la copia falla con mensaje claro y no crea nada", async () => {
+    const sb = await sandbox();
+    await sb.write("backups/db_2026-11-01_0300.dump", "A".repeat(100_000));
+    const r = await sb.run("backup.sh", ["--once"], { BACKUP_UPLOADS_TGZ: "false", STUB_DF_FREE_KB: "100" });
+    expect(r.code).not.toBe(0);
+    const st = await sb.json<LocalState>("backups", ".estado.json");
+    expect(st.ok).toBe(false);
+    expect(st.error).toMatch(/no hay espacio suficiente/);
+    expect(dumps(await sb.ls("backups"))).toEqual(["db_2026-11-01_0300.dump"]);
+    expect(await sb.log()).not.toMatch(/pg_dump/);
+  }, T);
+
+  it("con espacio de sobra (o sin copia previa) la copia se hace", async () => {
+    const sb = await sandbox();
+    await sb.write("backups/db_2026-11-01_0300.dump", "A".repeat(100_000));
+    const r = await sb.run("backup.sh", ["--once"], { BACKUP_UPLOADS_TGZ: "false", STUB_DF_FREE_KB: "10000000" });
+    expect(r.code, r.out).toBe(0);
+    expect(dumps(await sb.ls("backups"))).toHaveLength(2);
+  }, T);
+
+  it("las órdenes sin empezar de más de 6 h se cierran como caducadas (ok=false)", async () => {
+    const sb = await sandbox();
+    const r = await sb.fn("process_requests");
+    expect(r.code, r.out).toBe(0);
+    expect(await sb.log()).toMatch(/UPDATE backup_requests SET finished_at = now\(\), ok = false, message = 'Caducada[^']*' WHERE started_at IS NULL AND finished_at IS NULL AND created_at < now\(\) - interval '6 hours'/);
+  }, T);
+
+  it("scan_targets: find, df y stat llevan «timeout 20»", async () => {
+    const sb = await sandbox();
+    await sb.write("targets/usb1/.keep", "");
+    const r = await sb.fn("scan_targets");
+    expect(r.code, r.out).toBe(0);
+    const log = await sb.log();
+    for (const cmd of ["find", "df", "stat"]) expect(log, cmd).toMatch(new RegExp(`timeout 20 ${cmd} `));
+    expect((await sb.json<{ dirs: { path: string }[] }>("backups", ".destinos.json")).dirs.map((d) => d.path)).toEqual(["usb1"]);
+  }, T);
+
+  it("tick escanea los destinos como mucho cada 5 min", async () => {
+    const sb = await sandbox();
+    await sb.write("targets/usb1/.keep", "");
+    const r = await sb.fn("tick; tick; tick");
+    expect(r.code, r.out).toBe(0);
+    expect(((await sb.log()).match(/timeout 20 find /g) ?? []).length).toBe(1);
+    const again = await sb.fn("LAST_SCAN=$(( $(date +%s) - 301 )); tick");
+    expect(again.code, again.out).toBe(0);
+    expect(((await sb.log()).match(/timeout 20 find /g) ?? []).length).toBe(2);
+  }, T);
+});
+
 describe.concurrent("deploy/backup.sh: orden «Cambiar destino» (do_destination)", { skip: !hasGnuSh }, () => {
   const COPIES = { "db_2026-11-01_0300.dump": "A".repeat(20), "uploads_2026-11-01_0300.tgz": "B".repeat(30) };
 
@@ -397,6 +481,46 @@ describe.concurrent("deploy/backup.sh: orden «Cambiar destino» (do_destination
     expect(r.ok).toBe(false);
     expect(r.msg).toMatch(/No se pudo guardar el destino en la base; no se borró nada/);
     await intact(sb, "offsite");
+  }, T);
+
+  const link = async (target: string, linkPath: string): Promise<boolean> => {
+    try {
+      await symlink(target, linkPath, "dir");
+      return (await stat(linkPath)).isDirectory();
+    } catch {
+      return false;
+    }
+  };
+
+  it("un enlace simbólico dentro de /targets hacia el origen: no borra nada y la orden termina con ok=false", async () => {
+    const sb = await withCopies();
+    if (!(await link(sb.p("offsite"), sb.p("targets", "usb1", "alias")))) return; // sin permiso para enlaces simbólicos (Windows)
+    const r = await sb.dest("usb1/alias", true);
+    expect(r.ok).toBe(false);
+    expect(r.msg).toMatch(/misma carpeta/);
+    await intact(sb, "offsite");
+    expect(await inserted(sb)).toBe(false);
+  }, T);
+
+  it("la misma carpeta con otra ruta (origen y destino son alias): no borra nada", async () => {
+    const sb = await sandbox();
+    await sb.write("targets/usb1/omni/db_2026-11-01_0300.dump", "A".repeat(20));
+    if (!(await link(sb.p("targets", "usb1", "omni"), sb.p("targets", "usb1", "otro")))) return;
+    const r = await sb.dest("usb1/otro", true, {}, "DEST_REL=usb1/omni");
+    expect(r.ok).toBe(false);
+    expect(r.msg).toMatch(/misma carpeta/);
+    expect(await sb.read("targets", "usb1", "omni", "db_2026-11-01_0300.dump")).toBe("A".repeat(20));
+    expect(await inserted(sb)).toBe(false);
+  }, T);
+
+  it("mover solo lleva las copias con nombre exacto (un db_clientes.xlsx se queda)", async () => {
+    const sb = await withCopies();
+    await sb.write("offsite/db_clientes.xlsx", "ajeno");
+    const r = await sb.dest("usb1/omni", true);
+    expect(r.ok, r.msg).toBe(true);
+    expect(r.msg).toMatch(/Copias movidas: 2/);
+    expect(await sb.read("offsite", "db_clientes.xlsx")).toBe("ajeno");
+    expect(await sb.exists("targets", "usb1", "omni", "db_clientes.xlsx")).toBe(false);
   }, T);
 
   it("sin espacio suficiente en el destino no copia nada", async () => {
@@ -567,6 +691,37 @@ describe.concurrent("deploy/b2-sync.sh", { skip: !hasGnuSh }, () => {
     const r = await sb.run("b2-sync.sh", ["--once"], { ...confFile(sb), STUB_RCLONE_FAIL: "1" });
     expect(r.code).toBe(1);
     expect(await b2State(sb)).toMatchObject({ ok: false });
+  }, T);
+
+  const PASS = "frase secreta para las pruebas";
+
+  it("la frase de cifrado va a rclone obscure por la entrada estándar, nunca como argumento", async () => {
+    const sb = await sandbox();
+    await sb.write("offsite/db_2026-11-01_0300.dump.enc", "cifrado");
+    await writeFile(sb.p("config", "b2.env"), CREDS.join("\n") + "\n");
+    const r = await sb.run("b2-sync.sh", ["--once"], { ...confFile(sb), BACKUP_ENCRYPTION_PASSPHRASE: PASS });
+    expect(r.code, r.out).toBe(0);
+    const log = await sb.log();
+    expect(log).toContain("rclone obscure -");
+    expect(log).toContain(`obscure-stdin=${PASS}`);
+    expect(log).toContain(`obscure-stdin=${PASS}:nombres`);
+    expect(log.split("\n").filter((l) => l.startsWith("rclone ") && l.includes(PASS))).toEqual([]);
+  }, T);
+
+  it("el archivo temporal con las claves se borra tras cargarlo y la frase se ofusca una sola vez en el bucle", async () => {
+    const sb = await sandbox();
+    await writeFile(sb.p("config", "b2.env"), CREDS.join("\n") + "\n");
+    const child = spawn("sh", [`${sb.px}/b2-sync.sh`], { cwd: sb.root, env: sb.env({ ...confFile(sb), BACKUP_ENCRYPTION_PASSPHRASE: PASS }), stdio: "ignore" });
+    try {
+      const first = await waitFor(async () => (await b2State(sb)).checkedAt);
+      await waitFor(async () => (await b2State(sb)).checkedAt !== first); // el bucle dio al menos otra vuelta
+      await new Promise((r) => setTimeout(r, 1500));
+      expect(await sb.exists("tmp", "b2.env.seguro")).toBe(false);
+      expect(((await sb.log()).match(/rclone obscure -/g) ?? []).length).toBe(2);
+      expect(child.exitCode).toBeNull();
+    } finally {
+      child.kill("SIGKILL");
+    }
   }, T);
 });
 

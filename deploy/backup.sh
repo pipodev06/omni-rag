@@ -20,7 +20,6 @@ set -eu
 DEST=/backups
 TARGETS=/targets
 CLASSIC=/offsite
-CONFIG_DIR=/backup-config
 STATUS="$DEST/.estado.json"
 SETTINGS=/tmp/settings.tsv
 TAB=$(printf '\t')
@@ -31,6 +30,10 @@ mkdir -p "$DEST"
 # Valores efectivos (los fija load_settings).
 INTERVAL_HOURS=24; KEEP_DAYS=7; AT=""; TZ_EFF="<-05>5"; UPLOADS_TGZ=true; OFFSITE_ON=false; DEST_REL=""
 WARNED=""
+LAST_SCAN=0
+
+# find, df y stat sobre un disco colgado (NFS caído, USB que falla) pueden quedarse bloqueados: con «timeout» si existe.
+if command -v timeout >/dev/null 2>&1; then TMO="timeout 20"; else TMO=""; fi
 
 psql_q() { psql -h db -U rag_owner -d rag -q -At "$@"; }
 
@@ -97,7 +100,11 @@ secs_until() {
 
 # --- Destino externo ---------------------------------------------------------------------------------------
 offsite_dir() { if [ -n "$DEST_REL" ]; then printf '%s' "$TARGETS/$DEST_REL"; else printf '%s' "$CLASSIC"; fi; }
-dev_of() { stat -c %d "$1" 2>/dev/null || true; }
+dev_of() { $TMO stat -c %d "$1" 2>/dev/null || true; }
+# Identidad de un archivo o carpeta (disco:inodo). Dos rutas distintas (enlaces simbólicos) pueden ser lo mismo.
+ident_of() { $TMO stat -L -c '%d:%i' "$1" 2>/dev/null || true; }
+# 0 si las dos rutas son el mismo archivo o carpeta, o si no se puede saber (ante la duda, se trata como el mismo).
+same_thing() { a=$(ident_of "$1"); b=$(ident_of "$2"); [ -z "$a" ] || [ -z "$b" ] || [ "$a" = "$b" ]; }
 
 # Lista de destinos permitidos para la pantalla: /backups/.destinos.json (hasta 2 niveles, máx. 100).
 # «available» es false si /targets está vacío y en el mismo disco que /backups (BACKUP_TARGETS_DIR sin definir).
@@ -106,14 +113,14 @@ scan_targets() {
   if [ -d "$TARGETS" ]; then
     back_dev=$(dev_of "$DEST"); root_dev=$(dev_of "$TARGETS")
     [ "$root_dev" = "$back_dev" ] || avail=true
-    dirs=$(find "$TARGETS" -mindepth 1 -maxdepth 2 -type d ! -path '*/.*' ! -path '*/$*' ! -path '*/System Volume Information*' ! -path '*/lost+found*' 2>/dev/null | sort | head -n 100 || true)
+    dirs=$($TMO find "$TARGETS" -mindepth 1 -maxdepth 2 -type d ! -path '*/.*' ! -path '*/$*' ! -path '*/System Volume Information*' ! -path '*/lost+found*' 2>/dev/null | sort | head -n 100 || true)
     while IFS= read -r d; do
       [ -n "$d" ] || continue
       rel="${d#"$TARGETS"/}"
       valid_path "$rel" || continue
       w=false; [ ! -w "$d" ] || w=true
       same=false; [ "$(dev_of "$d")" != "$back_dev" ] || same=true
-      free=$(df -Pk "$d" 2>/dev/null | awk 'NR == 2 { printf "%.0f", $4 * 1024 }' || true)
+      free=$($TMO df -Pk "$d" 2>/dev/null | awk 'NR == 2 { printf "%.0f", $4 * 1024 }' || true)
       item=$(printf '{"path":"%s","sameDisk":%s,"freeBytes":%s,"writable":%s}' "$rel" "$same" "${free:-0}" "$w")
       list="${list:+$list,}$item"
     done <<EOF
@@ -147,8 +154,17 @@ dest_check() {
   fi
 }
 
-# Archivos de copia de una carpeta (solo los nuestros; nunca otros archivos del usuario).
-backup_files() { find "$1" -maxdepth 1 -type f \( -name 'db_*' -o -name 'uploads_*' \) ! -name '*.tmp' ! -name '*.fallida' 2>/dev/null | sort || true; }
+# Archivos de copia de una carpeta: solo los que tienen EXACTAMENTE el nombre que ponemos nosotros (nunca otros archivos del usuario).
+BACKUP_NAMES="db_????-??-??_????.dump db_????-??-??_????.dump.enc uploads_????-??-??_????.tgz uploads_????-??-??_????.tgz.enc"
+backup_files() {
+  for pat in $BACKUP_NAMES; do find "$1" -maxdepth 1 -type f -name "$pat" 2>/dev/null || true; done | sort
+}
+# Borra de una carpeta las copias (y los volcados fallidos) de más de KEEP_DAYS días; solo con nuestro nombre exacto.
+prune_old() {
+  for pat in $BACKUP_NAMES db_????-??-??_????.dump.fallida; do
+    find "$1" -maxdepth 1 -type f -name "$pat" -mtime +"$KEEP_DAYS" -delete 2>/dev/null || true
+  done
+}
 files_bytes() {
   [ -n "$1" ] || { echo 0; return 0; }
   printf '%s\n' "$1" | while IFS= read -r f; do stat -c %s "$f"; done | awk '{ s += $1 } END { printf "%.0f", s }'
@@ -172,7 +188,7 @@ offsite() {
       cp "$f" "$dir/$name.tmp" && mv "$dir/$name.tmp" "$dir/$name" || { rm -f "$dir/$name.tmp"; return 1; }
     fi
   done
-  find "$dir" -maxdepth 1 \( -name 'db_*' -o -name 'uploads_*' \) -mtime +"$KEEP_DAYS" -delete
+  prune_old "$dir"
   if [ -n "${BACKUP_ENCRYPTION_PASSPHRASE:-}" ]; then how="cifrada"; else how="SIN cifrar"; fi
   echo "[backup] copia enviada a la carpeta externa ($how)"
 }
@@ -237,6 +253,15 @@ backup() {
   LAST_ERROR=""
   COUNTS=""
   echo "[backup] $ATTEMPT_AT iniciando copia $ts"
+  # Espacio libre en /backups: al menos el doble de la última copia (base + archivos).
+  last="$(ls -t "$DEST"/db_*.dump 2>/dev/null | head -n 1 || true) $(ls -t "$DEST"/uploads_*.tgz 2>/dev/null | head -n 1 || true)"
+  last_bytes=$(files_bytes "$(printf '%s
+' $last)")
+  free=$($TMO df -Pk "$DEST" 2>/dev/null | awk 'NR == 2 { printf "%.0f", $4 * 1024 }' || true)
+  if [ -n "$free" ] && [ "$free" -lt $(( last_bytes * 2 )) ]; then
+    fail "no hay espacio suficiente en la carpeta de copias: libres $((free / 1048576)) MB, hacen falta al menos $((last_bytes * 2 / 1048576)) MB (el doble de la última copia)"
+    return 1
+  fi
   pg_dump -h db -U rag_owner -d rag -Fc -f "$DEST/db_$ts.dump.tmp" || { fail "pg_dump no pudo volcar la base de datos"; return 1; }
   mv "$DEST/db_$ts.dump.tmp" "$DEST/db_$ts.dump" || { fail "no se pudo guardar el volcado (¿disco lleno?)"; return 1; }
   files=""
@@ -247,9 +272,7 @@ backup() {
   fi
   verify "$DEST/db_$ts.dump" "$files" || { fail "la copia no se pudo restaurar en la base de prueba"; return 1; }
   offsite "$DEST/db_$ts.dump" $files || { LAST_ERROR="la copia local está bien, pero no se pudo copiar a la carpeta externa"; echo "[backup] ERROR: $LAST_ERROR"; }
-  find "$DEST" -maxdepth 1 -name 'db_*.dump' -mtime +"$KEEP_DAYS" -delete
-  find "$DEST" -maxdepth 1 -name 'db_*.dump.fallida' -mtime +"$KEEP_DAYS" -delete
-  find "$DEST" -maxdepth 1 -name 'uploads_*.tgz' -mtime +"$KEEP_DAYS" -delete
+  prune_old "$DEST"
   if [ -n "$files" ]; then size="$(du -h "$files" | cut -f1) archivos"; else size="archivos aparte (BACKUP_UPLOADS_TGZ=false)"; fi
   echo "[backup] copia $ts terminada: $(du -h "$DEST/db_$ts.dump" | cut -f1) base de datos, $size"
   save_status
@@ -285,6 +308,10 @@ do_destination() { # ruta relativa («» = carpeta clásica), mover (true/false)
   if ! { : > "$probe"; } 2>/dev/null; then REQ_MSG="La carpeta no admite escritura"; return 0; fi
   rm -f "$probe"
   same_dest=false; [ "$to" != "$from" ] || same_dest=true
+  # Dos rutas distintas pueden ser la misma carpeta (enlace simbólico, otro montaje): mover ahí borraría las copias.
+  if [ "$move" = "true" ] && [ "$same_dest" = "false" ] && [ -d "$from" ] && same_thing "$from" "$to"; then
+    REQ_MSG="El origen y el destino son la misma carpeta (o no se pudo comprobar); no se movió nada"; return 0
+  fi
   # Espacio: lo que se mueve, o al menos la última copia.
   if [ "$move" = "true" ] && [ "$same_dest" = "false" ] && [ -d "$from" ]; then
     list=$(backup_files "$from"); need=$(files_bytes "$list")
@@ -318,7 +345,12 @@ EOF
   psql_q -c "INSERT INTO settings (key, value, updated_by) VALUES ('BACKUP_DESTINATION', to_jsonb('$new'::text), 'backup') ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, secret = NULL, updated_at = now(), updated_by = 'backup'" >/dev/null 2>&1 \
     || { REQ_MSG="No se pudo guardar el destino en la base; no se borró nada"; return 0; }
   if [ "$moved" -gt 0 ]; then
-    while IFS= read -r f; do [ -z "$f" ] || rm -f "$f"; done <<EOF
+    # Antes de cada borrado, el original y su copia no pueden ser el mismo archivo.
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      ! same_thing "$f" "$to/$(basename "$f")" || continue
+      rm -f "$f"
+    done <<EOF
 $list
 EOF
   fi
@@ -333,6 +365,8 @@ EOF
 
 # Atiende las órdenes pendientes (máximo 5 por vuelta). La fila se toma con UPDATE … RETURNING para no repetirla.
 process_requests() {
+  # Una orden de copia que nadie atendió en 6 h ya no tiene sentido (el servicio estuvo parado): se cierra como caducada.
+  psql_q -c "UPDATE backup_requests SET finished_at = now(), ok = false, message = 'Caducada: no se atendió en 6 horas' WHERE started_at IS NULL AND finished_at IS NULL AND created_at < now() - interval '6 hours'" >/dev/null 2>&1 || true
   n=0
   while [ "$n" -lt 5 ]; do
     n=$((n + 1))
@@ -363,7 +397,9 @@ process_requests() {
 # Vuelta de mantenimiento (cada minuto): ajustes, destinos, estado del destino y órdenes.
 tick() {
   load_settings
-  scan_targets
+  # La lista de destinos se recalcula cada 5 min (find y df sobre discos externos cuestan); do_destination la refresca al llegar una orden.
+  now_s=$(date +%s)
+  if [ $(( now_s - LAST_SCAN )) -ge 300 ]; then scan_targets; LAST_SCAN=$now_s; fi
   if [ "$OFFSITE_ON" = "true" ]; then dest_check || true; else OFFSITE_ERROR=""; fi
   process_requests
 }
@@ -386,8 +422,6 @@ fi
 
 # Esperar a que la base de datos acepte conexiones.
 until pg_isready -h db -U rag_owner -d rag >/dev/null 2>&1; do sleep 2; done
-# La carpeta de ajustes para backup-b2 la escribe el worker (usuario node, uid 1000): se le da permiso aquí.
-[ ! -d "$CONFIG_DIR" ] || chown 1000:1000 "$CONFIG_DIR" 2>/dev/null || true
 # Una orden que quedó a medias por un reinicio se cierra como fallida; si no, la pantalla no dejaría pedir otra.
 psql_q -c "UPDATE backup_requests SET finished_at = now(), ok = false, message = 'Interrumpida: el servicio de copias se reinició' WHERE started_at IS NOT NULL AND finished_at IS NULL" >/dev/null 2>&1 || true
 

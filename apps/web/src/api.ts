@@ -128,6 +128,8 @@ export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    /** Código estable que envía la API en algunos errores (p. ej. REAUTH_FAILED). */
+    public code?: string,
   ) {
     super(message);
   }
@@ -145,7 +147,8 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
     // La API devuelve { error } con un mensaje legible también en los errores.
     const data = await res.json().catch(() => ({}));
     if (res.status === 401 && url !== "/auth/login") window.dispatchEvent(new Event("rag:unauthorized"));
-    throw new ApiError(res.status, (data as { error?: string }).error ?? `Error ${res.status}`);
+    const { error, code } = data as { error?: string; code?: string };
+    throw new ApiError(res.status, error ?? `Error ${res.status}`, code);
   }
   return (await res.json().catch(() => ({}))) as T;
 }

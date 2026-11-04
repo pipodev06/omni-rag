@@ -139,11 +139,14 @@ openssl enc -d -aes-256-cbc -pbkdf2 -in db_AAAA-MM-DD_HHMM.dump.enc -out db.dump
 - **Linux (USB o NAS):** monta el disco de forma permanente con su UUID en `/etc/fstab` (opción `nofail`, para que el servidor arranque aunque el disco no esté), por ejemplo en `/mnt/usb1`, y pon `BACKUP_TARGETS_DIR=/mnt` en el `.env`. Crea dentro del disco la carpeta de las copias (`/mnt/usb1/omni`) o deja que la pantalla la cree.
 - **Windows (Docker Desktop):** `BACKUP_TARGETS_DIR=D:/` (la unidad del USB o del disco; debe estar compartida con Docker Desktop en *Settings → Resources → File sharing*). Los destinos son las carpetas de esa unidad.
 - Aplica con `docker compose up -d`. Si no la defines, `./backups-targets` queda vacía y la pantalla explica que falta la variable.
-- Docker puede no ver un disco montado **después** de arrancar el servicio `backup`: tras conectar o cambiar un disco, `docker compose restart backup`.
+- **No montes la unidad entera:** apunta `BACKUP_TARGETS_DIR` a una carpeta **dedicada** (por ejemplo `/mnt/usb1/omni-copias`, no `/mnt` ni `D:/`). El servicio solo ofrece como destino lo que hay dentro de esa carpeta, pero el contenedor puede leer y escribir en todo lo que montes: cuanto menos montes, menos puede dañar un fallo o una orden mal formada.
+- Docker puede no ver un disco montado **después** de arrancar el servicio `backup`: tras conectar o desconectar un disco, `docker compose restart backup` si la pantalla no lo detecta (la lista de destinos se recalcula cada 5 minutos, y al pedir un cambio de destino).
 
 *Cambiar de destino.* El modal pide la carpeta (una de la lista o una subcarpeta nueva dentro de una existente) y la casilla *Llevar las copias existentes a la nueva carpeta*. Si la marcas, el servicio copia todas las copias a la nueva carpeta, las compara byte a byte y **solo si todo coincide borra las antiguas**; si algo falla no borra nada y la orden queda como fallida con el motivo. Si no la marcas, solo las copias nuevas van a la carpeta nueva y las anteriores se quedan donde estaban. Antes de aceptar se comprueba que la carpeta admite escritura y que hay espacio. El destino elegido es el que usa también `backup-b2`. Volver a elegir el destino actual confirma el disco (útil tras cambiar de USB).
 
 *Destino desconectado.* Si el disco no está o ya no es el mismo que antes, la copia local **sigue haciéndose**, no se escribe en ninguna carpeta alternativa y la pantalla muestra «el destino externo no está conectado»; el monitor avisa por correo (alerta `backup-offsite`, si `ALERT_EMAIL` está configurado). Al reconectar el disco se retoma solo en un minuto (tras `docker compose restart backup` si Docker no lo ve); las copias que se hicieron mientras estaba desconectado solo existen en `./backups` hasta la próxima copia o hasta pulsar *Hacer copia ahora*.
+
+*Protecciones del servicio de copias.* Solo borra archivos con el nombre exacto que él mismo pone (`db_AAAA-MM-DD_HHMM.dump`, `.dump.enc`, `.dump.fallida`, `uploads_AAAA-MM-DD_HHMM.tgz` y `.tgz.enc`); un `db_clientes.xlsx` tuyo en esa carpeta no se toca. Antes de cada copia comprueba que hay en `./backups` al menos el doble de espacio que ocupó la última; si no, falla con un mensaje claro. Las órdenes de la pantalla sin atender en 6 horas se cierran como «Caducada». Al mover copias a otro destino se niega a seguir si origen y destino son la misma carpeta (por ejemplo, por un enlace simbólico). El contenedor `backup` corre sin las capacidades de root salvo `DAC_OVERRIDE` y `FOWNER`; `find`, `df` y `stat` sobre los discos externos llevan un tope de 20 segundos para que un disco colgado no bloquee el servicio.
 
 **Subirlas a Backblaze B2 (integrado):** el servicio `backup-b2` (rclone) sube cada 6 horas las copias cifradas de `BACKUP_OFFSITE_DIR` a un bucket de B2 y borra de allí las de más de 30 días.
 
@@ -265,6 +268,7 @@ Con `DOMAIN=localhost` y `COMPOSE_PROFILES=https`, Caddy usa un certificado prop
 ## Lista de comprobación
 
 - [ ] `DOMAIN`, `COMPOSE_PROFILES=https` y `WEB_BIND=127.0.0.1` en `.env`.
+- [ ] Guarda `JWT_SECRET` junto a `BACKUP_ENCRYPTION_PASSPHRASE`, fuera del servidor: de él sale la llave que cifra el 2FA y las claves guardadas en Sistema → Configuración. Si lo cambias, hay que volver a escribir esas claves (la pantalla las marca «No se puede leer») y cada usuario debe reconfigurar su 2FA.
 - [ ] Contraseñas y `JWT_SECRET` nuevos y aleatorios (con dominio, la API no arranca si siguen siendo los del ejemplo).
 - [ ] Solo los puertos 22, 80 y 443 abiertos.
 - [ ] Antivirus ClamAV valorado (`COMPOSE_PROFILES=…,antivirus` y `CLAMAV_HOST=clamav`): recomendable si los usuarios suben archivos de terceros.

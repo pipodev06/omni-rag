@@ -1,10 +1,12 @@
 import { useState, type FormEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Check, FolderOpen, Loader2 } from "lucide-react";
+import { Check, FolderOpen } from "lucide-react";
 import { toast } from "sonner";
-import { api, errorMessage, formatBytes } from "@/api";
+import { api, formatBytes } from "@/api";
 import { cn } from "@/lib/utils";
 import { useConfirm } from "@/components/ConfirmProvider";
+import { ReauthDialog, type Confirm } from "@/components/system/ReauthDialog";
+import { useReauthTotp } from "@/components/system/SettingsForm";
 import { Tag } from "@/components/system/shared";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -52,14 +54,15 @@ function DestinationForm({ targets, current, onClose }: Omit<Props, "open" | "on
   const [base, setBase] = useState<string>(current === "" ? CLASSIC : (targets.dirs.find((d) => d.path === current)?.path ?? current));
   const [sub, setSub] = useState("");
   const [move, setMove] = useState(false);
+  const totp = useReauthTotp();
+  const [reauth, setReauth] = useState(false);
   const change = useMutation({
-    mutationFn: (body: { path: string; moveExisting: boolean }) => api.post<{ id: number }>("/system/backups/destination", body),
+    mutationFn: (body: { path: string; moveExisting: boolean; confirm: Confirm }) => api.post<{ id: number }>("/system/backups/destination", body),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["system", "backups"] });
       toast.success("Orden enviada. El servicio de copias la atiende en menos de un minuto.");
       onClose();
     },
-    onError: (err) => toast.error(errorMessage(err)),
   });
 
   const classic = base === CLASSIC;
@@ -71,10 +74,11 @@ function DestinationForm({ targets, current, onClose }: Omit<Props, "open" | "on
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (move && !(await confirm({ title: "¿Llevar las copias existentes?", description: "Se copiarán a la nueva carpeta y, solo si la comparación sale exacta, se borrarán de la anterior.", confirmText: "Cambiar y mover" }))) return;
-    change.mutate({ path, moveExisting: move });
+    setReauth(true);
   };
 
   return (
+    <>
     <form onSubmit={submit} className="space-y-4">
       <DialogHeader>
         <DialogTitle>Cambiar destino de las copias</DialogTitle>
@@ -129,10 +133,13 @@ function DestinationForm({ targets, current, onClose }: Omit<Props, "open" | "on
         <Button type="button" variant="outline" onClick={onClose}>
           Cancelar
         </Button>
-        <Button type="submit" disabled={problem !== null || unchanged || change.isPending}>
-          {change.isPending && <Loader2 className="animate-spin" />} Cambiar destino
+        <Button type="submit" disabled={problem !== null || unchanged || reauth}>
+          Cambiar destino
         </Button>
       </DialogFooter>
     </form>
+    {/* Fuera del <form>: los eventos de React suben por los portales y un submit interno enviaría este formulario. */}
+    <ReauthDialog open={reauth} onCancel={() => setReauth(false)} totp={totp} onConfirm={(confirm) => change.mutateAsync({ path, moveExisting: move, confirm })} />
+    </>
   );
 }

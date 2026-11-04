@@ -94,9 +94,9 @@ describe("readBackupInfo", () => {
 
 describe("writeBackupConfig (b2.env para los scripts)", () => {
   // Los ajustes se simulan: aquí se prueba el formato del archivo, no el catálogo.
-  async function withSettings(pairs: [string, string][]) {
+  async function withSettings(pairs: [string, string][], b2 = true) {
     vi.resetModules();
-    vi.doMock("../src/lib/settings.js", () => ({ backupSettingsForScripts: () => pairs }));
+    vi.doMock("../src/lib/settings.js", () => ({ backupSettingsForScripts: () => pairs, b2Configured: () => b2 }));
     return import("../src/lib/backupStatus.js");
   }
   afterEach(() => vi.doUnmock("../src/lib/settings.js"));
@@ -163,6 +163,18 @@ describe("writeBackupConfig (b2.env para los scripts)", () => {
     expect(key).toBe(nasty);
     expect(id).toBe("linea1\nlinea2");
     expect(bucket).toBe("");
+  });
+
+  it("sin bucket o sin las dos claves de B2 no escribe nada y borra el archivo que hubiera", async () => {
+    const dir = await tmp();
+    const configured = await withSettings([["B2_BUCKET", "z"]]);
+    await configured.writeBackupConfig(dir);
+    expect(await readdir(dir)).toEqual(["b2.env"]);
+    const off = await withSettings([["B2_BUCKET", "z"], ["B2_APPLICATION_KEY", "secreta"]], false);
+    await off.writeBackupConfig(dir);
+    expect(await readdir(dir)).toEqual([]);
+    await off.writeBackupConfig(dir);
+    expect(await readdir(dir)).toEqual([]);
   });
 
   it("convive con otras carpetas dentro del directorio de configuración", async () => {

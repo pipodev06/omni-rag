@@ -77,17 +77,19 @@ export const modelLabel = (providerId: string, model: string): string => (provid
 
 /**
  * Comprobación mínima de un proveedor, sin gastar cuota: OpenRouter tiene un endpoint que valida la clave
- * (su catálogo es público) y los demás responden a `/models` solo con una clave válida. Devuelve un texto apto para mostrar.
+ * (su catálogo es público) y los demás responden a `/models` solo con una clave válida. Devuelve un texto fijo apto para mostrar
+ * (nunca el código HTTP ni el texto del servidor).
  */
 export async function probeProvider(p: LlmProvider): Promise<{ ok: boolean; message: string }> {
   const url = p.kind === "openrouter" ? `${p.baseUrl}/auth/key` : `${p.baseUrl}/models`;
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(8000), headers: p.apiKey ? { authorization: `Bearer ${p.apiKey}` } : undefined });
-    if (res.ok) return { ok: true, message: `${p.label}: la conexión funciona.` };
-    if (res.status === 401 || res.status === 403) return { ok: false, message: `${p.label} rechazó la clave (HTTP ${res.status}).` };
-    return { ok: false, message: `${p.label} respondió con un error (HTTP ${res.status}).` };
+    if (res.ok) return { ok: true, message: `${p.label}: responde correctamente.` };
+    console.warn(`[${p.id}] la comprobación recibió HTTP ${res.status}`);
+    if (res.status === 401 || res.status === 403) return { ok: false, message: `${p.label}: rechaza la clave.` };
+    return { ok: false, message: `${p.label}: error del servidor.` };
   } catch (err) {
     console.warn(`[${p.id}] la comprobación falló:`, err instanceof Error ? err.message : err);
-    return { ok: false, message: `No se pudo conectar con ${p.label}.` };
+    return { ok: false, message: `${p.label}: no responde.` };
   }
 }

@@ -34,6 +34,7 @@ NEXT_AT=""
 BUCKET=""; B2PATH="omni-rag"; INTERVAL_HOURS=6; KEEP_DAYS=30; AT=""; SYNC_UPLOADS=false; TZ_EFF="<-05>5"
 DEST_REL=""; SRC=/offsite; DEST=""
 WARNED=""
+OBSCURED_FOR=""; OBSCURED_1=""; OBSCURED_2=""
 
 # Variables que puede traer el archivo b2.env. Se guarda cómo venían del entorno para que la variable no vacía siempre mande.
 Q="'"
@@ -79,8 +80,10 @@ apply_config() {
   if [ -r "$CONF" ]; then
     # Solo se ejecutan las líneas «export CLAVE='valor'» con una clave conocida y el valor entre comillas simples: así
     # el archivo (lo escribe el worker) no puede ejecutar otra cosa.
-    grep -E "^export ($(echo "$CFG_KEYS" | tr ' ' '|'))=${Q}([^${Q}]|${Q}\\\\${Q}${Q})*${Q}\$" "$CONF" > /tmp/b2.env.seguro 2>/dev/null || true
+    # El archivo filtrado trae las claves de B2: solo lo lee quien lo crea (umask 077 solo aquí: el estado de /status lo lee el worker) y se borra en cuanto se carga.
+    ( umask 077; grep -E "^export ($(echo "$CFG_KEYS" | tr ' ' '|'))=${Q}([^${Q}]|${Q}\\\\${Q}${Q})*${Q}\$" "$CONF" > /tmp/b2.env.seguro 2>/dev/null ) || true
     . /tmp/b2.env.seguro
+    rm -f /tmp/b2.env.seguro
     for k in $CFG_KEYS; do eval "o=\$ORIG_$k"; [ -z "$o" ] || eval "$k=\$o"; done
   fi
   BUCKET="${B2_BUCKET:-}"
@@ -105,9 +108,14 @@ apply_config() {
   if [ -n "${BACKUP_ENCRYPTION_PASSPHRASE:-}" ]; then
     export RCLONE_CONFIG_CR_TYPE=crypt
     export RCLONE_CONFIG_CR_REMOTE="$DEST/archivos"
-    RCLONE_CONFIG_CR_PASSWORD="$(rclone obscure "$BACKUP_ENCRYPTION_PASSPHRASE")"
-    RCLONE_CONFIG_CR_PASSWORD2="$(rclone obscure "${BACKUP_ENCRYPTION_PASSPHRASE}:nombres")"
-    export RCLONE_CONFIG_CR_PASSWORD RCLONE_CONFIG_CR_PASSWORD2
+    # La frase va a rclone por la entrada estándar (nunca como argumento, que otros procesos pueden ver) y solo se vuelve
+    # a ofuscar si cambia: apply_config corre cada minuto.
+    if [ "$BACKUP_ENCRYPTION_PASSPHRASE" != "$OBSCURED_FOR" ] || [ -z "$OBSCURED_1" ]; then
+      OBSCURED_1=$(printf '%s\n' "$BACKUP_ENCRYPTION_PASSPHRASE" | rclone obscure -) || OBSCURED_1=""
+      OBSCURED_2=$(printf '%s\n' "${BACKUP_ENCRYPTION_PASSPHRASE}:nombres" | rclone obscure -) || OBSCURED_2=""
+      OBSCURED_FOR="$BACKUP_ENCRYPTION_PASSPHRASE"
+    fi
+    export RCLONE_CONFIG_CR_PASSWORD="$OBSCURED_1" RCLONE_CONFIG_CR_PASSWORD2="$OBSCURED_2"
   fi
 }
 
