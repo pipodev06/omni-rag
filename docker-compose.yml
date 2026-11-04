@@ -7,6 +7,12 @@
 # =====================================================================
 name: rag
 
+# DNS de los contenedores que salen a internet (modelos, OpenRouter, SMTP, antivirus, copias). Por defecto Cloudflare y
+# Google, por IPv4: no dependen del DNS del servidor, que a veces es solo IPv6. En una red con DNS propio, cámbialos.
+x-dns: &dns
+  - ${DNS_PRIMARY:-1.1.1.1}
+  - ${DNS_SECONDARY:-8.8.8.8}
+
 services:
   # Base de datos: PostgreSQL 17 con la extensión pgvector.
   db:
@@ -30,6 +36,7 @@ services:
   embeddings:
     image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.8
     restart: unless-stopped
+    dns: *dns
     # Lotes de 4096 tokens: misma calidad, ~2,3 GB de RAM en vez de ~3,2 GB.
     command: ["--model-id", "${EMBEDDING_MODEL:-intfloat/multilingual-e5-base}", "--max-batch-tokens", "4096", "--max-client-batch-size", "32"]
     # Recursos (los calcula deploy/autotune.sh según el hardware; 0 / 1024 = sin límite y peso normal).
@@ -48,6 +55,7 @@ services:
   reranker:
     image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.8
     restart: unless-stopped
+    dns: *dns
     command: ["--model-id", "${RERANKER_MODEL:-cross-encoder/mmarco-mMiniLMv2-L12-H384-v1}", "--max-batch-tokens", "4096", "--max-client-batch-size", "32"]
     # Recursos (ver deploy/autotune.sh). Pasados los núcleos reales casi no gana velocidad y sí memoria.
     cpus: ${RERANKER_CPUS:-0}
@@ -62,6 +70,7 @@ services:
   docling:
     image: quay.io/docling-project/docling-serve-cpu:v1.37.0
     restart: unless-stopped
+    dns: *dns
     environment:
       # Cada conversión simultánea puede usar ~3 GB con PDFs grandes.
       # 1 = cabe en 8 GB; súbelo solo si tienes RAM de sobra (ver docs/requisitos.md).
@@ -91,6 +100,7 @@ services:
     image: clamav/clamav:1.4
     profiles: ["antivirus"]
     restart: unless-stopped
+    dns: *dns
     environment:
       # clamd rechaza por defecto los archivos de más de 25 MB: se sube al máximo de subida + margen.
       CLAMD_CONF_StreamMaxLength: ${CLAMAV_MAX_SIZE:-100M}
@@ -110,6 +120,7 @@ services:
       context: .
       dockerfile: apps/api/Dockerfile
     restart: unless-stopped
+    dns: *dns
     env_file: .env
     environment: &backend-env
       DATABASE_URL: postgres://rag_owner:${POSTGRES_PASSWORD}@db:5432/rag
@@ -134,6 +145,7 @@ services:
       context: .
       dockerfile: apps/api/Dockerfile
     restart: unless-stopped
+    dns: *dns
     command: ["node", "dist/worker.js"]
     # Peso de CPU (ver deploy/autotune.sh): la ingesta cede CPU a las búsquedas y a otros servicios si hay competencia.
     cpu_shares: ${WORKER_CPU_SHARES:-1024}
@@ -196,6 +208,7 @@ services:
     image: rclone/rclone:1.69.3
     profiles: ["backblaze"]
     restart: unless-stopped
+    dns: *dns
     entrypoint: ["sh", "/b2-sync.sh"]
     environment:
       RCLONE_CONFIG_B2_TYPE: b2
