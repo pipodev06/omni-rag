@@ -157,6 +157,8 @@ services:
       - uploads:/data/uploads
       # Solo lectura: el monitor comprueba que las copias de seguridad sean recientes.
       - ./backups:/backups:ro
+      # Solo lectura: estado de la subida a B2 (pantalla Sistema → Copias).
+      - backup-status:/backup-status:ro
     security_opt: ["no-new-privileges:true"]
     cap_drop: [ALL]
     networks: [default, ingest, docker]
@@ -252,6 +254,8 @@ services:
       - ./deploy/b2-sync.sh:/b2-sync.sh:ro
       - uploads:/uploads:ro
       - ${BACKUP_OFFSITE_DIR:-./backups-offsite}:/offsite:ro
+      # Estado de la última subida (sin secretos) para la pantalla Sistema → Copias.
+      - backup-status:/status
 
   # HTTPS automático (Let's Encrypt). Solo con COMPOSE_PROFILES=https y DOMAIN definido.
   caddy:
@@ -289,6 +293,7 @@ networks:
     internal: true
 
 volumes:
+  backup-status:
   caddy-data:
   caddy-config:
   pgdata:

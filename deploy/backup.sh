@@ -43,6 +43,7 @@ verify() {
   fi
   counts=$(psql -h db -U rag_owner -d rag_restore_test -At -F ', '     -c "SELECT (SELECT count(*) FROM users), (SELECT count(*) FROM documents), (SELECT count(*) FROM chunks)")
   dropdb -h db -U rag_owner --if-exists rag_restore_test >/dev/null 2>&1
+  COUNTS="$counts"
   echo "[backup] VERIFICADA (restaurada en una base temporal). Usuarios, documentos, fragmentos: $counts"
 }
 
@@ -55,9 +56,10 @@ offsite() {
   for f in "$@"; do
     name=$(basename "$f")
     if [ -n "${BACKUP_ENCRYPTION_PASSPHRASE:-}" ]; then
-      openssl enc -aes-256-cbc -pbkdf2 -salt -pass env:BACKUP_ENCRYPTION_PASSPHRASE -in "$f" -out "/offsite/$name.enc.tmp"         && mv "/offsite/$name.enc.tmp" "/offsite/$name.enc"
+      openssl enc -aes-256-cbc -pbkdf2 -salt -pass env:BACKUP_ENCRYPTION_PASSPHRASE -in "$f" -out "/offsite/$name.enc.tmp" \
+        && mv "/offsite/$name.enc.tmp" "/offsite/$name.enc" || { rm -f "/offsite/$name.enc.tmp"; return 1; }
     else
-      cp "$f" "/offsite/$name.tmp" && mv "/offsite/$name.tmp" "/offsite/$name"
+      cp "$f" "/offsite/$name.tmp" && mv "/offsite/$name.tmp" "/offsite/$name" || { rm -f "/offsite/$name.tmp"; return 1; }
     fi
   done
   find /offsite \( -name 'db_*' -o -name 'uploads_*' \) -mtime +"$KEEP_DAYS" -delete
@@ -65,28 +67,66 @@ offsite() {
   echo "[backup] copia enviada a la carpeta externa ($how)"
 }
 
+# Estado de la última copia para la pantalla Sistema → Copias (lo lee el worker). Sin secretos: solo fechas y textos fijos.
+STATUS="$DEST/.estado.json"
+LAST_ERROR=""
+COUNTS=""
+# Una copia manual (--once) conserva la próxima hora que anotó el proceso principal.
+NEXT_AT=$(sed -n 's/.*"nextAt":"\([^"]*\)".*/\1/p' "$STATUS" 2>/dev/null || true)
+save_status() {
+  ok=true; [ -z "$LAST_ERROR" ] || ok=false
+  offsite_on="${BACKUP_OFFSITE:-false}"; encrypted=false; [ -z "${BACKUP_ENCRYPTION_PASSPHRASE:-}" ] || encrypted=true
+  printf '{"attemptAt":"%s","ok":%s,"error":"%s","counts":"%s","at":"%s","intervalHours":%s,"nextAt":"%s","offsite":%s,"encrypted":%s,"keepDays":%s}\n' \
+    "${ATTEMPT_AT:-}" "$ok" "$(printf '%s' "$LAST_ERROR" | tr -d '"\\')" "$COUNTS" "$AT" "$INTERVAL_HOURS" "$NEXT_AT" \
+    "$([ "$offsite_on" = "true" ] && echo true || echo false)" "$encrypted" "$KEEP_DAYS" > "$STATUS.tmp" && mv "$STATUS.tmp" "$STATUS" || true
+}
+
+# Cada paso comprueba su error a mano: la función se llama como «backup || …», y ahí `set -e` no actúa dentro.
+# Una copia que falla no deja ningún db_*.dump: si quedara uno a medias, contaría como copia reciente.
+fail() {
+  LAST_ERROR="$1"
+  echo "[backup] ERROR: $1"
+  rm -f "$DEST/db_$ts.dump.tmp" "$DEST/uploads_$ts.tgz.tmp"
+  [ ! -f "$DEST/db_$ts.dump" ] || mv "$DEST/db_$ts.dump" "$DEST/db_$ts.dump.fallida"
+  save_status
+  return 1
+}
+
 backup() {
   ts=$(date +%Y-%m-%d_%H%M)
-  echo "[backup] $(date -Iseconds) iniciando copia $ts"
-  pg_dump -h db -U rag_owner -d rag -Fc -f "$DEST/db_$ts.dump.tmp"
-  mv "$DEST/db_$ts.dump.tmp" "$DEST/db_$ts.dump"
+  ATTEMPT_AT=$(date -Iseconds)
+  LAST_ERROR=""
+  COUNTS=""
+  echo "[backup] $ATTEMPT_AT iniciando copia $ts"
+  pg_dump -h db -U rag_owner -d rag -Fc -f "$DEST/db_$ts.dump.tmp" || { fail "pg_dump no pudo volcar la base de datos"; return 1; }
+  mv "$DEST/db_$ts.dump.tmp" "$DEST/db_$ts.dump" || { fail "no se pudo guardar el volcado (¿disco lleno?)"; return 1; }
   files=""
   if [ "${BACKUP_UPLOADS_TGZ:-true}" = "true" ]; then
-    tar czf "$DEST/uploads_$ts.tgz.tmp" -C /uploads .
-    mv "$DEST/uploads_$ts.tgz.tmp" "$DEST/uploads_$ts.tgz"
+    tar czf "$DEST/uploads_$ts.tgz.tmp" -C /uploads . || { fail "no se pudo empaquetar los archivos subidos (¿disco lleno?)"; return 1; }
+    mv "$DEST/uploads_$ts.tgz.tmp" "$DEST/uploads_$ts.tgz" || { fail "no se pudo guardar el paquete de archivos"; return 1; }
     files="$DEST/uploads_$ts.tgz"
   fi
-  verify "$DEST/db_$ts.dump" "$files"
-  offsite "$DEST/db_$ts.dump" $files
+  verify "$DEST/db_$ts.dump" "$files" || { fail "la copia no se pudo restaurar en la base de prueba"; return 1; }
+  offsite "$DEST/db_$ts.dump" $files || { LAST_ERROR="la copia local está bien, pero no se pudo copiar a la carpeta externa"; echo "[backup] ERROR: $LAST_ERROR"; }
   find "$DEST" -name 'db_*.dump' -mtime +"$KEEP_DAYS" -delete
+  find "$DEST" -name 'db_*.dump.fallida' -mtime +"$KEEP_DAYS" -delete
   find "$DEST" -name 'uploads_*.tgz' -mtime +"$KEEP_DAYS" -delete
   if [ -n "$files" ]; then size="$(du -h "$files" | cut -f1) archivos"; else size="archivos aparte (BACKUP_UPLOADS_TGZ=false)"; fi
   echo "[backup] copia $ts terminada: $(du -h "$DEST/db_$ts.dump" | cut -f1) base de datos, $size"
+  save_status
+  [ -z "$LAST_ERROR" ]
+}
+
+# Programa la próxima copia en el estado (para la pantalla) y espera hasta entonces.
+wait_until_next() {
+  NEXT_AT=$(date -Iseconds -d "@$(( $(date +%s) + $1 ))")
+  save_status
+  sleep "$1"
 }
 
 if [ "${1:-}" = "--once" ]; then
   backup
-  exit 0
+  exit $?
 fi
 
 # Esperar a que la base de datos acepte conexiones.
@@ -101,11 +141,11 @@ if [ -n "$AT" ]; then
   while true; do
     wait=$(secs_until "$AT")
     echo "[backup] próxima copia a las $AT (hora local; ahora son $(TZ="${BACKUP_TZ:-<-05>5}" date +%H:%M)), dentro de $((wait / 60)) min"
-    sleep "$wait"
+    wait_until_next "$wait"
     backup || echo "[backup] ERROR en la copia (se reintentará mañana a la misma hora)"
   done
 fi
 while true; do
   backup || echo "[backup] ERROR en la copia (se reintentará en el próximo ciclo)"
-  sleep $((INTERVAL_HOURS * 3600))
+  wait_until_next $((INTERVAL_HOURS * 3600))
 done

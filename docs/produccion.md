@@ -175,6 +175,8 @@ Solo se suben archivos `.enc`: sin la frase de cifrado no sale nada del servidor
 
 **Opción manual:** copia `./backups` con `rclone` a un almacenamiento S3 compatible o al *storage box* de tu proveedor con una tarea `cron` diaria (`0 4 * * * rclone sync /ruta/rag-project/backups remoto:rag-backups`). Esa copia no va cifrada salvo que lo configures tú.
 
+**Dónde ver si funcionan:** Sistema → Copias (solo el superadministrador) muestra la última copia y su verificación, la próxima hora, si van a la carpeta externa cifradas y el estado de B2, con el error exacto si algo falla (por ejemplo, las variables de B2 vacías). `backup.sh` deja ese estado en `./backups/.estado.json` y `b2-sync.sh` en el volumen `backup-status`; el worker lo lee cada 5 minutos y el monitor avisa si la última copia o la última subida fallaron (alertas `backup` y `backup-b2`). Una copia que falla no deja ningún `db_*.dump`: queda como `.dump.fallida` y no cuenta como copia reciente.
+
 Prueba alguna vez a restaurar en un servidor limpio (ver [operacion.md](operacion.md#restaurar-una-copia)).
 
 ## Si ya tienes un nginx (u otro proxy) en el servidor

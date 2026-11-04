@@ -174,6 +174,17 @@ curl localhost:8000/api/documents -H "authorization: Bearer $TOKEN" \
 | DELETE | `/platform/tenants/:id` | `{ confirmSlug }`: borra la organización y todos sus datos. Exige que esté desactivada y que `confirmSlug` coincida con su identificador. «Plataforma» no se puede modificar, desactivar ni borrar (`400`), ni tampoco la organización en la que estás (sal del modo soporte antes) |
 | PATCH | `/platform/tenants/:id` | `{ name?, slug?, isActive?, dailyQuestionLimit?, planId? }` (`dailyQuestionLimit`: `null` = el del plan, `0` = sin límite) |
 
+## Sistema — `/system` (superadministrador)
+
+Lo recoge el worker (Docker cada minuto, copias cada 5 minutos) y la API solo lo lee de la base.
+
+| Método | Ruta | Respuesta |
+|---|---|---|
+| GET | `/system/resources` | Stack, datos del servidor, valores del autotune y cada contenedor con su consumo, topes, picos y alertas abiertas |
+| GET | `/system/metrics?name=&range=1h\|24h\|7d` | 48 puntos de RAM y CPU (uso y tope) de un contenedor |
+| GET | `/system/alerts` | Alertas abiertas y las últimas 300 del historial |
+| GET | `/system/backups` | `{ readAt, info, alerts }`. `info` = `{ mounted, copies: [{ stamp, at, dbBytes, uploadsBytes }], totalBytes, failed, local, b2 }`: `local` y `b2` son el estado que dejan `deploy/backup.sh` y `deploy/b2-sync.sh` (último intento, error, próxima hora; sin secretos), o `null` |
+
 ## Auditoría — `/audit` (admin)
 
 `GET /audit?category=&userId=&before=&limit=` → `{ items: [{ id, action, userId, userLabel, targetType, targetId, details, ip, createdAt }], nextBefore }`.

@@ -17,9 +17,34 @@
 # =====================================================================
 set -eu
 
-: "${B2_BUCKET:?Falta B2_BUCKET en el .env}"
-: "${RCLONE_CONFIG_B2_ACCOUNT:?Falta B2_KEY_ID en el .env}"
-: "${RCLONE_CONFIG_B2_KEY:?Falta B2_APPLICATION_KEY en el .env}"
+# Estado para la pantalla Sistema → Copias (lo lee el worker en el volumen «backup-status»). Sin secretos.
+STATUS_DIR=/status
+LAST_ERROR=""
+LAST_OK_AT=""
+NEXT_AT=""
+[ ! -f "$STATUS_DIR/b2.json" ] || LAST_OK_AT=$(sed -n 's/.*"lastOkAt":"\([^"]*\)".*/\1/p' "$STATUS_DIR/b2.json" 2>/dev/null || true)
+save_status() {
+  [ -d "$STATUS_DIR" ] || return 0
+  ok=true; [ -z "$LAST_ERROR" ] || ok=false
+  printf '{"checkedAt":"%s","ok":%s,"error":"%s","lastOkAt":"%s","at":"%s","intervalHours":%s,"nextAt":"%s","syncUploads":%s,"keepDays":%s}\n' \
+    "$(date -Iseconds)" "$ok" "$(printf '%s' "$LAST_ERROR" | tr -d '"\\')" "$LAST_OK_AT" "${B2_AT:-}" "${B2_INTERVAL_HOURS:-6}" "$NEXT_AT" \
+    "$([ "${B2_SYNC_UPLOADS:-false}" = "true" ] && echo true || echo false)" "${B2_KEEP_DAYS:-30}" > "$STATUS_DIR/b2.json.tmp" \
+    && mv "$STATUS_DIR/b2.json.tmp" "$STATUS_DIR/b2.json" || true
+}
+
+# Sin las tres variables no se puede subir nada: se anota en el estado (para verlo en la pantalla) y se sale.
+missing=""
+[ -n "${B2_BUCKET:-}" ] || missing="$missing B2_BUCKET"
+[ -n "${RCLONE_CONFIG_B2_ACCOUNT:-}" ] || missing="$missing B2_KEY_ID"
+[ -n "${RCLONE_CONFIG_B2_KEY:-}" ] || missing="$missing B2_APPLICATION_KEY"
+if [ -n "$missing" ]; then
+  LAST_ERROR="faltan en el .env:$missing (o quita backblaze de COMPOSE_PROFILES)"
+  echo "[b2] ERROR: $LAST_ERROR"
+  save_status
+  # Sin esta espera, Docker lo reinicia en bucle cada pocos segundos.
+  sleep 600
+  exit 1
+fi
 
 DEST="b2:${B2_BUCKET}/${B2_PATH:-omni-rag}"
 INTERVAL_HOURS="${B2_INTERVAL_HOURS:-6}"
@@ -46,16 +71,21 @@ check_at() {
 }
 
 need_passphrase() {
-  [ -n "${BACKUP_ENCRYPTION_PASSPHRASE:-}" ] || { echo "[b2] ERROR: falta BACKUP_ENCRYPTION_PASSPHRASE: los archivos solo se guardan cifrados."; exit 1; }
+  [ -n "${BACKUP_ENCRYPTION_PASSPHRASE:-}" ] && return 0
+  LAST_ERROR="falta BACKUP_ENCRYPTION_PASSPHRASE: los archivos solo se guardan cifrados"
+  echo "[b2] ERROR: $LAST_ERROR"
+  save_status
+  exit 1
 }
 
 upload_db() {
   if ! ls /offsite/*.enc >/dev/null 2>&1; then
-    echo "[b2] AVISO: no hay copias cifradas (*.enc) en /offsite. Activa BACKUP_OFFSITE=true y BACKUP_ENCRYPTION_PASSPHRASE: sin cifrar no se sube nada."
-    return 0
+    LAST_ERROR="no hay copias cifradas (*.enc) en /offsite: activa BACKUP_OFFSITE=true y BACKUP_ENCRYPTION_PASSPHRASE (sin cifrar no se sube nada)"
+    echo "[b2] AVISO: $LAST_ERROR"
+    return 1
   fi
-  rclone copy /offsite "$DEST" --include '*.enc' --max-depth 1 --transfers 2 --stats-one-line --stats 0 -v
-  rclone delete "$DEST" --min-age "${KEEP_DAYS}d" --include '*.enc' --max-depth 1 -v
+  rclone copy /offsite "$DEST" --include '*.enc' --max-depth 1 --transfers 2 --stats-one-line --stats 0 -v || return 1
+  rclone delete "$DEST" --min-age "${KEEP_DAYS}d" --include '*.enc' --max-depth 1 -v || return 1
   echo "[b2] $(date -Iseconds) copias de la base sincronizadas con $DEST"
 }
 
@@ -70,7 +100,7 @@ upload_files() {
     return 0
   fi
   today=$(date +%F)
-  rclone sync /uploads cr:current --backup-dir "cr:archive/$today" --transfers 4 --checkers 8 --stats-one-line --stats 0 -v
+  rclone sync /uploads cr:current --backup-dir "cr:archive/$today" --transfers 4 --checkers 8 --stats-one-line --stats 0 -v || return 1
   cutoff=$(date -d "@$(( $(date +%s) - KEEP_DAYS * 86400 ))" +%F)
   for d in $(rclone lsf cr:archive --dirs-only 2>/dev/null | tr -d '/'); do
     case "$d" in [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;; *) continue ;; esac
@@ -81,9 +111,21 @@ upload_files() {
   echo "[b2] $(date -Iseconds) archivos subidos sincronizados ($(rclone size cr:current 2>/dev/null | tr '\n' ' '))"
 }
 
+# Cada paso comprueba su error: la función se llama como «upload || …», y ahí `set -e` no actúa dentro.
 upload() {
-  upload_db
-  upload_files
+  LAST_ERROR=""
+  upload_db || [ -n "$LAST_ERROR" ] || LAST_ERROR="no se pudieron subir las copias de la base a B2 (revisa las claves y el bucket)"
+  [ -n "$LAST_ERROR" ] || upload_files || LAST_ERROR="no se pudieron sincronizar los archivos subidos con B2"
+  [ -n "$LAST_ERROR" ] || LAST_OK_AT=$(date -Iseconds)
+  save_status
+  [ -z "$LAST_ERROR" ]
+}
+
+# Anota la próxima subida en el estado y espera hasta entonces.
+wait_until_next() {
+  NEXT_AT=$(date -Iseconds -d "@$(( $(date +%s) + $1 ))" 2>/dev/null || true)
+  save_status
+  sleep "$1"
 }
 
 # ¿Hay copias cifradas en /offsite que todavía no están en B2? (el servidor estuvo apagado a la hora de la subida)
@@ -105,7 +147,7 @@ restore() {
 }
 
 case "${1:-}" in
-  --once) upload; exit 0 ;;
+  --once) upload; exit $? ;;
   --restore) shift; restore "$@"; exit 0 ;;
   --archive) need_passphrase; rclone lsf cr:archive --dirs-only | tr -d '/'; exit 0 ;;
 esac
@@ -121,11 +163,11 @@ if [ -n "$AT" ]; then
   while true; do
     wait=$(secs_until "$AT")
     echo "[b2] próxima subida a las $AT (hora local; ahora son $(TZ="${BACKUP_TZ:-<-05>5}" date +%H:%M)), dentro de $((wait / 60)) min"
-    sleep "$wait"
+    wait_until_next "$wait"
     upload || echo "[b2] ERROR al subir (se reintentará mañana a la misma hora)"
   done
 fi
 while true; do
   upload || echo "[b2] ERROR al subir (se reintentará en el próximo ciclo)"
-  sleep $((INTERVAL_HOURS * 3600))
+  wait_until_next $((INTERVAL_HOURS * 3600))
 done
