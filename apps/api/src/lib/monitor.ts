@@ -13,11 +13,15 @@ import { emailEnabled, sendEmail } from "./mailer.js";
 export interface Problem {
   key: string;
   message: string;
+  /** Aún no se puede saber si es un problema (p. ej. el worker acaba de arrancar): no se avisa, pero si ya estaba abierto sigue abierto. */
+  hold?: boolean;
 }
 
 const GB = 1024 ** 3;
 const BACKUP_DIR = process.env.BACKUP_DIR ?? "/backups";
 const REMIND_AFTER_MS = 24 * 3600 * 1000;
+/** Tras arrancar el worker, la primera muestra de los contenedores tarda hasta un minuto en llegar. */
+const METRICS_GRACE_SECONDS = 180;
 
 /** Poco espacio libre en el disco donde se guardan los archivos subidos. */
 export async function checkDisk(dir = config.STORAGE_DIR): Promise<Problem | null> {
@@ -89,7 +93,8 @@ export async function checkContainers(): Promise<Problem[]> {
            coalesce(r.cpu_avg, 0)::float8 AS cpu_avg, coalesce(r.cpu_n, 0) AS cpu_n, coalesce(r.restarts_delta, 0) AS restarts_delta
       FROM last l LEFT JOIN recent r USING (name)`;
   if (rows.length === 0) {
-    return [{ key: "metrics", message: "No llegan métricas de los contenedores desde hace más de 3 minutos. Revisa «docker compose logs docker-proxy worker»." }];
+    const hold = process.uptime() < METRICS_GRACE_SECONDS;
+    return [{ key: "metrics", message: "No llegan métricas de los contenedores desde hace más de 3 minutos. Revisa «docker compose logs docker-proxy worker».", hold }];
   }
   const problems: Problem[] = [];
   const mb = (b: number) => `${Math.round(b / 1024 ** 2)} MB`;
@@ -131,6 +136,7 @@ export async function applyProblems(problems: Problem[], now = new Date()): Prom
   const out = { opened: [] as string[], reminded: [] as string[], resolved: [] as string[] };
 
   for (const p of problems) {
+    if (p.hold) continue;
     const prev = knownByKey.get(p.key);
     if (!prev) {
       await sqlOwner`INSERT INTO alert_state (key, message) VALUES (${p.key}, ${p.message}) ON CONFLICT (key) DO NOTHING`;
@@ -168,5 +174,5 @@ export async function runMonitor(): Promise<{ problems: number } & Awaited<Retur
       console.error(`[monitor] falló la comprobación ${check.name}:`, err);
     }
   }
-  return { problems: problems.length, ...(await applyProblems(problems)) };
+  return { problems: problems.filter((p) => !p.hold).length, ...(await applyProblems(problems)) };
 }
