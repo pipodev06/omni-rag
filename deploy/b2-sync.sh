@@ -6,7 +6,8 @@
 #      cambiado. Lo que se borra en la aplicación pasa a «archive/AAAA-MM-DD» y allí se conserva B2_KEEP_DAYS días.
 #      Los nombres y el contenido se cifran con BACKUP_ENCRYPTION_PASSPHRASE (rclone crypt) antes de salir.
 #   - Cada B2_INTERVAL_HOURS horas (por defecto 6) o, con B2_AT=04:00, una vez al día a esa hora (hora de BACKUP_TZ;
-#     por defecto Lima, UTC-5): ponla después de BACKUP_AT.
+#     por defecto Lima, UTC-5): ponla después de BACKUP_AT. Con B2_AT, al arrancar se sube lo que haya quedado
+#     pendiente (copias *.enc de /offsite que aún no están en B2), tras esperar 5 minutos a la copia de «backup».
 #   - En B2 se conservan B2_KEEP_DAYS días (por defecto 30) las copias de la base y lo borrado de los archivos.
 # Subida inmediata:  docker compose run --rm backup-b2 --once
 # Restaurar archivos: docker compose run --rm -v "$PWD/restore:/restore" backup-b2 --restore /restore [origen]
@@ -85,6 +86,16 @@ upload() {
   upload_files
 }
 
+# ¿Hay copias cifradas en /offsite que todavía no están en B2? (el servidor estuvo apagado a la hora de la subida)
+pending() {
+  ls /offsite/*.enc >/dev/null 2>&1 || return 1
+  remote=$(rclone lsf "$DEST" --include '*.enc' --max-depth 1 --files-only) || return 1
+  for f in /offsite/*.enc; do
+    printf '%s\n' "$remote" | grep -qxF "$(basename "$f")" || return 0
+  done
+  return 1
+}
+
 restore() {
   need_passphrase
   dest="${1:?Indica la carpeta de destino, por ejemplo /restore}"
@@ -101,6 +112,12 @@ esac
 
 if [ -n "$AT" ]; then
   check_at "$AT" b2 B2_AT
+  # Al arrancar, «backup» puede estar haciendo la copia que faltaba: se le da tiempo antes de comprobar.
+  sleep 300
+  if pending; then
+    echo "[b2] hay copias sin subir a B2: se suben ahora"
+    upload || echo "[b2] ERROR al subir (se reintentará a las $AT)"
+  fi
   while true; do
     wait=$(secs_until "$AT")
     echo "[b2] próxima subida a las $AT (hora local; ahora son $(TZ="${BACKUP_TZ:-<-05>5}" date +%H:%M)), dentro de $((wait / 60)) min"

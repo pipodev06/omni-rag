@@ -2,7 +2,8 @@
 # =====================================================================
 # Copias de seguridad automáticas: base de datos (pg_dump) y archivos subidos.
 #   - Cada BACKUP_INTERVAL_HOURS horas (por defecto 24), o a una hora fija todos los días con BACKUP_AT=03:00
-#     (hora de BACKUP_TZ; por defecto Lima, UTC-5). Con BACKUP_AT no se hace copia al arrancar el contenedor.
+#     (hora de BACKUP_TZ; por defecto Lima, UTC-5). Con BACKUP_AT, al arrancar el contenedor solo se hace copia si
+#     la última tiene más de 24 h (el servidor estuvo apagado o parado a esa hora).
 #   - Se conservan BACKUP_KEEP_DAYS días (por defecto 7).
 #   - Se guardan en la carpeta ./backups del proyecto.
 # Copia inmediata:  docker compose exec backup sh /backup.sh --once
@@ -92,6 +93,11 @@ fi
 until pg_isready -h db -U rag_owner -d rag >/dev/null 2>&1; do sleep 2; done
 if [ -n "$AT" ]; then
   check_at "$AT" backup BACKUP_AT
+  # Si el servidor no estaba en marcha a la hora fijada, la copia de ese día se hace ahora.
+  if [ -z "$(find "$DEST" -maxdepth 1 -name 'db_*.dump' -mmin -1440 2>/dev/null)" ]; then
+    echo "[backup] la última copia tiene más de 24 h (o no hay ninguna): se hace una ahora"
+    backup || echo "[backup] ERROR en la copia (se reintentará a las $AT)"
+  fi
   while true; do
     wait=$(secs_until "$AT")
     echo "[backup] próxima copia a las $AT (hora local; ahora son $(TZ="${BACKUP_TZ:-<-05>5}" date +%H:%M)), dentro de $((wait / 60)) min"

@@ -180,7 +180,6 @@ services:
     depends_on:
       - api
 
-  # Copias de seguridad automáticas en ./backups (base de datos + archivos).
   # Proxy del socket de Docker para las métricas de la pantalla Sistema. Lista blanca exacta: solo GET a /info,
   # /containers/json y /containers/<id>/stats|json; cualquier otra ruta o método se rechaza. Solo atiende al worker y
   # vive en una red interna sin salida a internet. Imagen mínima (sin shell), sin capacidades y de solo lectura.
@@ -204,6 +203,7 @@ services:
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
 
+  # Copias de seguridad automáticas en ./backups (base de datos + archivos).
   backup:
     image: pgvector/pgvector:pg17
     restart: unless-stopped
