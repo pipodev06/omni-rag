@@ -10,7 +10,9 @@ export const MAINTENANCE_QUEUE = "mantenimiento";
  *  - enlaces de invitación/restablecimiento usados o caducados hace más de 7 días;
  *  - respuestas en caché más antiguas que CACHE_TTL_HOURS (ya no se usarían);
  *  - documentos en la papelera desde hace más de TRASH_RETENTION_DAYS días (se eliminan con su archivo);
- *  - sesiones caducadas o cerradas hace más de 7 días.
+ *  - sesiones caducadas o cerradas hace más de 7 días;
+ *  - muestras de consumo de los contenedores más antiguas que METRICS_RETENTION_DAYS y alertas pasadas más antiguas
+ *    que AUDIT_RETENTION_DAYS.
  */
 export async function runMaintenance() {
   const audit = await sqlOwner`
@@ -26,6 +28,9 @@ export async function runMaintenance() {
     RETURNING id, tenant_id`;
   const sessions = await sqlOwner`
     DELETE FROM user_sessions WHERE least(expires_at, coalesce(revoked_at, expires_at)) < now() - interval '7 days' RETURNING id`;
+  const samples = await sqlOwner`
+    DELETE FROM container_samples WHERE at < now() - ${`${config.METRICS_RETENTION_DAYS} days`}::interval`;
+  await sqlOwner`DELETE FROM alert_events WHERE at < now() - ${`${config.AUDIT_RETENTION_DAYS} days`}::interval`;
   await Promise.all(trash.map((d) => removeStored(`${d.tenant_id}/${d.id}`).catch(() => {})));
-  return { auditDeleted: audit.length, tokensDeleted: tokens.length, cacheDeleted: cache.length, trashPurged: trash.length, sessionsDeleted: sessions.length };
+  return { auditDeleted: audit.length, tokensDeleted: tokens.length, cacheDeleted: cache.length, trashPurged: trash.length, sessionsDeleted: sessions.length, samplesDeleted: samples.count };
 }

@@ -16,6 +16,7 @@ const UsagePage = lazy(() => import("@/pages/UsagePage").then((m) => ({ default:
 const PlatformPage = lazy(() => import("@/pages/PlatformPage").then((m) => ({ default: m.PlatformPage })));
 const QualityPage = lazy(() => import("@/pages/QualityPage").then((m) => ({ default: m.QualityPage })));
 const AuditPage = lazy(() => import("@/pages/AuditPage").then((m) => ({ default: m.AuditPage })));
+const SystemPage = lazy(() => import("@/pages/SystemPage").then((m) => ({ default: m.SystemPage })));
 const AccountPage = lazy(() => import("@/pages/AccountPage").then((m) => ({ default: m.AccountPage })));
 
 function FullScreenLoader() {
@@ -80,6 +81,8 @@ export function App() {
         <Route path="/auditoria" element={<Protected allow={!platform && user?.role === "admin"}><AuditPage /></Protected>} />
         <Route path="/consumo" element={<Protected allow={!platform && user?.role === "admin"}><UsagePage /></Protected>} />
         <Route path="/organizaciones" element={<Protected allow={user?.isSuperadmin === true}><PlatformPage /></Protected>} />
+        <Route path="/sistema" element={<Navigate to="/sistema/recursos" replace />} />
+        <Route path="/sistema/:tab" element={<Protected allow={user?.isSuperadmin === true}><SystemPage /></Protected>} />
         <Route path="/cuenta" element={<AccountPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/chat" replace />} />

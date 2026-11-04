@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { NavLink, Outlet, useNavigate } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  Activity,
   Building2,
   ChartColumn,
   ChevronsUpDown,
@@ -65,6 +66,7 @@ function useNavItems(): NavItem[] {
     { to: "/consumo", label: "Consumo", icon: ChartColumn, show: client && user.role === "admin" },
     { to: "/auditoria", label: "Auditoría", icon: ScrollText, show: client && user.role === "admin" },
     { to: "/organizaciones", label: "Organizaciones", icon: Building2, show: user.isSuperadmin },
+    { to: "/sistema", label: "Sistema", icon: Activity, show: user.isSuperadmin },
   ].filter((i) => i.show);
 }
 

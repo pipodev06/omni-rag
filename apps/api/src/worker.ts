@@ -3,6 +3,8 @@ import { MAINTENANCE_QUEUE, runMaintenance } from "./maintenance.js";
 import { migrate } from "./db/migrate.js";
 import { ingestDocument, markIngestError } from "./ingest/pipeline.js";
 import { runMonitor } from "./lib/monitor.js";
+import { collectContainerMetrics } from "./lib/containerMetrics.js";
+import { config } from "./config.js";
 import { getBoss, INGEST_QUEUE, INGEST_RETRY_LIMIT, stopBoss, type IngestJob } from "./queue.js";
 import { installLogger } from "./lib/logger.js";
 
@@ -14,6 +16,7 @@ installLogger();
  * (OCR, embeddings) no haga lenta la API.
  */
 const MONITOR_QUEUE = "monitor";
+const METRICS_QUEUE = "metricas";
 const concurrency = Number(process.env.WORKER_CONCURRENCY ?? 2);
 
 async function main() {
@@ -54,6 +57,23 @@ async function main() {
     if (result.opened.length || result.reminded.length || result.resolved.length) console.log("[monitor]", JSON.stringify(result));
     return result;
   });
+
+  // Consumo de los contenedores cada minuto (pantalla Sistema). Sin proxy de Docker no se programa.
+  await boss.createQueue(METRICS_QUEUE);
+  if (config.DOCKER_PROXY_URL) {
+    await boss.schedule(METRICS_QUEUE, "* * * * *");
+    await boss.work(METRICS_QUEUE, async () => {
+      try {
+        return await collectContainerMetrics();
+      } catch (err) {
+        // Sin reintentos: la muestra del minuto siguiente la reemplaza. El monitor avisa si dejan de llegar.
+        console.error("[metricas] no se pudo leer Docker:", err instanceof Error ? err.message : err);
+        return { error: true };
+      }
+    });
+  } else {
+    await boss.unschedule(METRICS_QUEUE).catch(() => {});
+  }
 
   console.log(`[worker] escuchando la cola "${INGEST_QUEUE}" (concurrencia ${concurrency})`);
 }
