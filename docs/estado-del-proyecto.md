@@ -12,7 +12,7 @@ Actualizado el 2026-11-04. Fase: **cierre**.
 
 ## Pendiente
 
-- Probar la pila completa con Docker (ver [deuda-tecnica.md](deuda-tecnica.md)): migraciones 019–021, scripts de copia en sus contenedores, pantallas en el navegador.
+- Probar en el navegador las pantallas Configuración y Copias, y una subida real a B2 (ver [deuda-tecnica.md](deuda-tecnica.md)). Migraciones, integración con la base y scripts en sus contenedores ya están probados.
 - En el servidor: rellenar `B2_KEY_ID`, `B2_APPLICATION_KEY` y `B2_BUCKET` (ahora también desde Sistema → Copias) o quitar `backblaze` de `COMPOSE_PROFILES`.
 - Desplegar: `git pull`, `sh deploy/build.sh`, `docker compose up -d`.
 - CI/CD: no hay; se crea solo si se pide.
