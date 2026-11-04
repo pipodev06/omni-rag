@@ -113,6 +113,13 @@ Límites de CPU y memoria de los servicios pesados, para no ahogar a otros conte
 | `RERANKER_CPU_SHARES`, `EMBEDDINGS_CPU_SHARES`, `DOCLING_CPU_SHARES`, `WORKER_CPU_SHARES` | `1024` | Peso de CPU frente a los demás contenedores (1024 = igual que el resto). Solo importa cuando hay competencia | up |
 | `DOCLING_OOM_SCORE_ADJ` | `0` | Con valor alto (`500`), si el servidor se queda sin memoria, el sistema cierra primero a Docling | up |
 
+### Red
+
+| Variable | Por defecto | Qué hace | Aplica |
+|---|---|---|---|
+| `DNS_PRIMARY`, `DNS_SECONDARY` | `1.1.1.1`, `8.8.8.8` | DNS que usan los contenedores que salen a internet (API, worker, embeddings, reranker, Docling, ClamAV y copias a B2). Cloudflare y Google por IPv4: no dependen del DNS del servidor, que a veces es solo IPv6. En una red con DNS propio (nombres internos de un SMTP o de SearXNG), pon los de tu red. Los contenedores se siguen viendo entre sí por nombre (`db`, `api`…) | up |
+| `PNPM_NETWORK_CONCURRENCY`, `PNPM_FETCH_RETRIES` | `4`, `8` en `deploy/build.sh` (`16`, `2` en `docker compose build`) | Solo en el build: descargas simultáneas y reintentos de `pnpm`. `build.sh` usa valores prudentes para enlaces lentos; se pueden cambiar en la línea de comandos (`PNPM_NETWORK_CONCURRENCY=8 sh deploy/build.sh`) | build |
+
 ## Retención, copias de seguridad y alertas
 
 | Variable | Por defecto | Qué hace | Aplica |

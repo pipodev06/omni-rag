@@ -1,9 +1,14 @@
 FROM node:22-alpine AS build
 WORKDIR /app
+# Node prueba antes las direcciones IPv4: en redes con IPv6 lento o roto evita los EAI_AGAIN y ERR_SOCKET_TIMEOUT.
+ENV NODE_OPTIONS=--dns-result-order=ipv4first
+# Valores de pnpm por defecto; deploy/build.sh los baja para enlaces lentos.
+ARG PNPM_NETWORK_CONCURRENCY=16
+ARG PNPM_FETCH_RETRIES=2
 RUN corepack enable
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
 COPY apps/web/package.json apps/web/
-RUN pnpm install --frozen-lockfile --filter @rag/web...
+RUN pnpm install --frozen-lockfile --network-concurrency $PNPM_NETWORK_CONCURRENCY --fetch-retries $PNPM_FETCH_RETRIES --fetch-timeout 120000 --filter @rag/web...
 COPY apps/web apps/web
 RUN pnpm --filter @rag/web build
 # Versiones .gz de los archivos estáticos, creadas una vez al construir: nginx las sirve con gzip_static sin gastar CPU por petición.

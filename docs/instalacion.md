@@ -76,6 +76,16 @@ docker compose logs -f api # ver el arranque de la API
 
 Si el build falla con `EAI_AGAIN registry.npmjs.org` (el DNS del servidor es solo IPv6 y la red de build de Docker no lo alcanza), usa en su lugar `sh deploy/build.sh`: construye las imágenes con la red del servidor y luego levanta todo. No sirve poner `network: host` en el compose, porque `docker compose` lo ejecuta con buildx bake, que exige un permiso que no puede pasar.
 
+Con un enlace lento (descargas de unos 50 KB/s) el build tarda más y `build.sh` ya usa descargas más prudentes y más reintentos de `pnpm` (`PNPM_NETWORK_CONCURRENCY`, `PNPM_FETCH_RETRIES`). Antes de construir, `build.sh` comprueba que el servidor resuelve `registry.npmjs.org` y, si no, avisa. La solución permanente es fijar un DNS por IPv4 en el servidor (no en el proyecto):
+
+```bash
+sudo mkdir -p /etc/systemd/resolved.conf.d
+printf '[Resolve]\nDNS=1.1.1.1 8.8.8.8\nFallbackDNS=1.0.0.1 8.8.4.4\nDomains=~.\n' | sudo tee /etc/systemd/resolved.conf.d/dns-ipv4.conf
+sudo systemctl restart systemd-resolved
+```
+
+Los contenedores ya salen con Cloudflare y Google por defecto (`DNS_PRIMARY`, `DNS_SECONDARY`).
+
 Al arrancar, la API:
 1. aplica las migraciones de la base de datos (crea tablas, políticas y el usuario `rag_app`);
 2. si no hay usuarios, crea tu superadministrador en la organización interna «Plataforma» (no es un cliente y no se puede borrar).
