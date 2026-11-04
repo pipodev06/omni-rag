@@ -227,7 +227,7 @@ systemRoutes.post("/backups/run", async (c) => {
 
 /** Ruta relativa dentro de /targets: sin «/» inicial ni «..»; vacío = la carpeta clásica. */
 const DestinationBody = z.object({
-  path: z.string().regex(/^[A-Za-z0-9 _.\-/]{0,200}$/).refine((p) => !p.includes("..") && !p.startsWith("/") && !p.includes("//")),
+  path: z.string().regex(/^[A-Za-z0-9 _.\-/]{0,200}$/).refine((p) => !p.includes("..") && !p.startsWith("/") && !p.includes("//") && !/(^|\/)\.(\/|$)/.test(p)),
   moveExisting: z.boolean(),
 });
 
