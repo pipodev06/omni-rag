@@ -116,6 +116,8 @@ services:
 
   # API HTTP (Hono + TypeScript). Aplica migraciones al arrancar.
   api:
+    # Imagen publicada por el CI en GitHub (GHCR). «docker compose pull» la descarga; «up -d --build» la construye aquí.
+    image: ghcr.io/pipodev06/omni-rag-api:${OMNI_RAG_VERSION:-latest}
     build:
       context: .
       dockerfile: apps/api/Dockerfile
@@ -143,6 +145,8 @@ services:
 
   # Worker: procesa los documentos subidos en segundo plano.
   worker:
+    # Misma imagen que la API.
+    image: ghcr.io/pipodev06/omni-rag-api:${OMNI_RAG_VERSION:-latest}
     build:
       context: .
       dockerfile: apps/api/Dockerfile
@@ -174,6 +178,7 @@ services:
 
   # Interfaz web (React) servida por nginx, que además redirige /api a la API.
   web:
+    image: ghcr.io/pipodev06/omni-rag-web:${OMNI_RAG_VERSION:-latest}
     build:
       context: .
       dockerfile: apps/web/Dockerfile
