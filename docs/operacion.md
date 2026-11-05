@@ -6,42 +6,68 @@
 docker compose ps                    # estado de los servicios
 docker compose logs -f api worker    # registros en vivo
 docker compose restart api worker    # reiniciar tras cambiar .env
-docker compose stop                  # parar sin borrar los contenedores (recomendado)
-docker compose down                  # parar y borrar los contenedores (los datos se conservan en volúmenes)
-docker compose up -d --build         # actualizar tras un git pull
+docker compose stop                  # parar sin borrar los contenedores
+docker compose down                  # parar y borrar los contenedores (los datos se conservan)
+git pull && docker compose pull && docker compose up -d   # actualizar (imágenes ya hechas, sin compilar)
 curl localhost:8000/api/health       # estado de dependencias
 ```
 
-Volúmenes con datos:
+### Imágenes
 
-| Volumen | Contenido | ¿Copia de seguridad? |
-|---|---|---|
-| `rag_pgdata` | Base de datos (usuarios, documentos, vectores, conversaciones) | **Sí** |
-| `rag_uploads` | Archivos originales subidos | **Sí** |
-| `rag_hf-cache` | Modelo de embeddings descargado | No (se vuelve a descargar) |
+Las imágenes propias (`ghcr.io/pipodev06/omni-rag-api`, que usan la API y el worker, y `omni-rag-web`) las construye y publica el CI de GitHub al subir cambios a `main` (`:latest`) o una etiqueta `v1.2.3` (`:1.2.3`). El servidor las descarga como cualquier otra imagen (beszel, Immich…): si un `docker image prune -a` las borra, `docker compose pull` las vuelve a bajar. Para fijar una versión, `OMNI_RAG_VERSION=1.2.3` en el `.env`.
+
+`docker compose up -d --build` sigue construyéndolas en la propia máquina (desarrollo, o un servidor que no llega a GHCR; ver también `deploy/build.sh`). La carpeta del repositorio sigue haciendo falta en el servidor: de ella salen el `docker-compose.yml` y los scripts de copias de `deploy/`.
+
+### Dónde viven los datos
+
+| Dato | Volumen de Docker (por defecto) | Carpeta (con el override) | ¿Copia de seguridad? |
+|---|---|---|---|
+| Base de datos (usuarios, documentos, vectores, conversaciones) | `rag_pgdata` | `./data/postgres` | **Sí** |
+| Archivos originales subidos | `rag_uploads` | `./data/uploads` | **Sí** |
+| Modelos de embeddings y re-ranker | `rag_hf-cache` | `./data/modelos` | No (se vuelven a descargar) |
+| Ajustes y estado de las copias externas | `rag_backup-config`, `rag_backup-status` | `./data/copias-config`, `./data/copias-estado` | No (se regeneran) |
+| Firmas del antivirus | `rag_clamav-db` | `./data/clamav` | No |
+| Copias de seguridad | — | `./backups` (siempre carpeta) | Es la copia |
+
+Con **volúmenes de Docker** (lo que trae `docker-compose.yml`, cómodo en desarrollo y en Windows) hay un riesgo en servidores que se limpian con `prune`: si Omni RAG se queda **sin contenedores** (un `down`, o un `system prune` con todo parado), `docker volume prune -a` o `docker system prune --volumes` borran `rag_pgdata` y `rag_uploads`, y con ellos la base de datos. `docker compose stop` deja los contenedores y no hay riesgo, pero un `down` por error sí.
+
+Con **carpetas** (`./data`, como beszel o Immich) ningún `prune` puede tocarlos, se pare como se pare. Es lo recomendado en un servidor: la parte 2 de `docker-compose.override.example.yml`.
+
+### Pasar los datos a carpetas
+
+Una sola vez, en un servidor que ya tiene datos en volúmenes. Los volúmenes viejos no se borran: si algo falla, basta con quitar la parte 2 del override y volver a arrancar.
+
+```bash
+cd ~/docker/rag                                     # la carpeta del proyecto
+docker compose exec backup sh /backup.sh --once     # copia de seguridad antes de nada (con todo en marcha)
+docker compose stop
+
+# Copia cada volumen a su carpeta conservando dueños y permisos (también los de la carpeta raíz).
+mkdir -p data
+for par in pgdata:postgres uploads:uploads hf-cache:modelos backup-config:copias-config backup-status:copias-estado clamav-db:clamav; do
+  vol="rag_${par%%:*}"; dir="data/${par##*:}"
+  docker volume inspect "$vol" >/dev/null 2>&1 || { echo "sin $vol, se salta"; continue; }
+  [ -e "$dir" ] && { echo "ya existe $dir: revísalo antes de seguir"; break; }
+  docker run --rm -v "$vol":/de:ro -v "$PWD/$dir":/a alpine \
+    sh -c 'cp -a /de/. /a/ && chown "$(stat -c %u:%g /de)" /a && chmod "$(stat -c %a /de)" /a' && echo "ok $vol → $dir"
+done
+```
+
+Después añade la parte 2 de `docker-compose.override.example.yml` a tu `docker-compose.override.yml` (si ya tienes uno con la red del proxy, copia solo los servicios de esa parte) y arranca:
+
+```bash
+docker compose config | grep -E "source: .*/data/"  # deben salir las carpetas de ./data, no los volúmenes
+docker compose up -d
+curl localhost:8000/api/health
+```
+
+Entra y comprueba que están tus documentos y conversaciones. Cuando lleves unos días sin problemas, borra los volúmenes viejos: `docker volume rm rag_pgdata rag_uploads rag_hf-cache rag_backup-config rag_backup-status` (y `rag_clamav-db` si lo tenías).
 
 ### Omni RAG apagado en un servidor compartido
 
-Si el servidor tiene otros servicios Docker y se limpia con `prune`, Omni RAG apagado necesita **contenedores creados**, aunque no estén en marcha. Sin contenedores, Docker considera sus imágenes y volúmenes «sin uso»:
+Con los datos en carpetas e imágenes descargadas, Omni RAG se para como cualquier otro servicio (Stop en Dockge o `docker compose stop`) y ningún `prune` le hace daño: como mucho, `image prune -a` borra imágenes que `docker compose pull` vuelve a bajar. Los contenedores parados no arrancan solos al reiniciar el servidor.
 
-| Comando | Sin contenedores de Omni RAG | Con contenedores creados (aunque estén parados) |
-|---|---|---|
-| `docker image prune` | Nada (solo borra imágenes sin etiqueta) | Nada |
-| `docker image prune -a` | Borra todas sus imágenes; `rag-api`, `rag-web` y `rag-worker` hay que reconstruirlas | No las toca |
-| `docker volume prune -a` o `docker system prune --volumes` | **Borra `rag_pgdata` y `rag_uploads`: se pierde la base de datos** | No los toca |
-| `docker system prune` | — | Borra los contenedores parados y la protección desaparece |
-
-`image prune` nunca borra volúmenes: la base de datos solo corre peligro con los comandos que limpian volúmenes.
-
-Para dejarlo creado sin arrancarlo (usa las imágenes que ya existen, sin reconstruir ni descargar):
-
-```bash
-docker compose create --no-build --pull never
-```
-
-Para pararlo, usa `docker compose stop`, no `down`: `down` borra los contenedores. Los contenedores creados no arrancan solos al reiniciar el servidor, aunque tengan `restart: unless-stopped`.
-
-Actualizar sigue siendo `git pull` y `docker compose up -d --build`. Si después lo quieres apagado, `docker compose stop`. Para actualizar sin arrancarlo: `git pull`, `docker compose pull`, `docker compose build` y `docker compose create --force-recreate`. En ambos casos termina con `docker image prune` (sin `-a`) para borrar las imágenes viejas.
+Si aún tienes los datos en volúmenes, no lo apagues con `down` (borra los contenedores y deja los volúmenes «sin uso» para un `prune`); usa `stop`, o deja los contenedores creados sin arrancar con `docker compose create --no-build`.
 
 ## Copias de seguridad
 
@@ -66,6 +92,8 @@ docker compose logs backup          # ver el resultado de las copias
 > La carpeta `./backups` está en el mismo disco: cópiala también **fuera del servidor** (ver [produccion.md](produccion.md#6-copias-de-seguridad-fuera-del-servidor)).
 
 ### Restaurar una copia
+
+Con los datos en carpetas (ver «Dónde viven los datos» arriba), en los comandos de restaurar de esta sección cambia `-v rag_uploads:/data` por `-v "$PWD/data/uploads":/data`.
 
 Con el sistema parado salvo `db` (sustituye la fecha):
 

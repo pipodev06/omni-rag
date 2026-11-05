@@ -235,7 +235,7 @@ server {
 server { listen 80; server_name rag.tuempresa.com; return 301 https://$host$request_uri; }
 ```
 
-Si tu proxy corre **en Docker** (Nginx Proxy Manager, Traefik…) y solo está en su propia red, no alcanzará a `rag-web-1` y dará 502 (`could not be resolved`). Conecta la web a esa red con `docker-compose.override.example.yml` (cópialo como `docker-compose.override.yml` y apunta el proxy a `rag-web-1:80`). Usa siempre `docker compose up -d` sin `-f`, o el override se ignora.
+Si tu proxy corre **en Docker** (Nginx Proxy Manager, Traefik…) y solo está en su propia red, no alcanzará a `rag-web-1` y dará 502 (`could not be resolved`). Conecta la web a esa red con `docker-compose.override.example.yml` (cópialo como `docker-compose.override.yml` y apunta el proxy a `rag-web-1:80`). Usa siempre `docker compose up -d` sin `-f`, o el override se ignora. Ese mismo archivo trae una segunda parte para guardar los datos en carpetas (`./data`) en vez de volúmenes de Docker, recomendada si el servidor se limpia con `prune` ([operacion.md](operacion.md#dónde-viven-los-datos)).
 
 Por qué cada línea importa:
 
@@ -256,10 +256,12 @@ No añadas `Content-Security-Policy` ni `X-Frame-Options` en tu nginx: ya las en
 ```bash
 cd omni-rag
 git pull
-docker compose up -d --build
+docker compose pull      # baja las imágenes nuevas que publicó el CI (ghcr.io/pipodev06/omni-rag-*)
+docker compose up -d
+docker image prune       # sin -a: borra solo las imágenes viejas
 ```
 
-Las migraciones de la base de datos se aplican solas al arrancar. Antes de actualizar, haz una copia manual: `docker compose exec backup sh /backup.sh --once`.
+Si el servidor no llega a GHCR, `docker compose up -d --build` las construye ahí mismo, como antes. Las migraciones de la base de datos se aplican solas al arrancar. Antes de actualizar, haz una copia manual: `docker compose exec backup sh /backup.sh --once`.
 
 ## Probar la configuración HTTPS en local
 

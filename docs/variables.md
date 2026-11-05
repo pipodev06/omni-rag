@@ -35,6 +35,7 @@ Todas se definen en el archivo `.env` (cópialo de `.env.example`, que trae cada
 | `DB_PORT` | `15432` | Puerto de PostgreSQL (solo en `127.0.0.1`, para depurar) | up |
 | `EMBEDDINGS_PORT` | `18080` | Puerto del servicio de embeddings (solo `127.0.0.1`) | up |
 | `MAILPIT_PORT` | `8025` | Bandeja de pruebas (solo con el perfil `correo-pruebas`) | up |
+| `OMNI_RAG_VERSION` | `latest` | Versión de las imágenes `ghcr.io/pipodev06/omni-rag-api` y `omni-rag-web` que descarga `docker compose pull` (`latest` = lo último de `main`; `1.2.0` = una etiqueta `v1.2.0`) | pull + up |
 
 ## Correo
 
