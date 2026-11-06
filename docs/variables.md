@@ -35,7 +35,7 @@ Copia a la base el valor actual de cada uno (los secretos, cifrados), lo deja en
 | Variable | Por defecto | Qué hace | Aplica |
 |---|---|---|---|
 | `DOMAIN` | vacío | Dominio público (`rag.tuempresa.com`). Activa las comprobaciones de producción: secretos fuertes, cookie segura y 2FA del superadministrador. Obligatorio también con tu propio nginx o túnel | up |
-| `COMPOSE_PROFILES` | vacío | Servicios opcionales, separados por comas: `https` (Caddy), `antivirus`, `backblaze`, `correo-pruebas` | up |
+| `COMPOSE_PROFILES` | vacío | Servicios opcionales, separados por comas: `https` (Caddy), `antivirus`, `correo-pruebas`. `backblaze` ya no hace falta: `backup-b2` siempre está en marcha | up |
 | `APP_PUBLIC_URL` | `https://DOMAIN` o `http://localhost:8000` | URL de los enlaces de los correos | up |
 | `APP_NAME` | `Omni RAG` | Nombre que aparece en los correos y en la app del autenticador | up |
 | `WEB_BIND` | `0.0.0.0` | IP donde escucha la web. En producción tras proxy o Caddy: `127.0.0.1` | up |
@@ -144,7 +144,7 @@ Los ajustes de copias (`BACKUP_*`, salvo `BACKUP_OFFSITE_DIR`, `BACKUP_TARGETS_D
 | `BACKUP_TARGETS_DIR` | `./backups-targets` (vacía: sin cambio de destino) | Carpeta del servidor que contiene los discos o carpetas entre los que se elige el destino de la copia externa en Sistema → Copias (por ejemplo `/mnt` en Linux o `D:/` en Windows). Se monta en `/targets` del servicio `backup`. Solo `.env` | up |
 | `BACKUP_DESTINATION` | vacío | Subcarpeta de `BACKUP_TARGETS_DIR` donde se guarda la copia externa (vacío = `BACKUP_OFFSITE_DIR`). La escribe la pantalla al cambiar el destino; si la fijas en el `.env`, queda bloqueada allí | up |
 | `BACKUP_ENCRYPTION_PASSPHRASE` | vacío | Frase para cifrar las copias que salen del servidor. **Sin ella no se pueden restaurar** | up |
-| `B2_KEY_ID`, `B2_APPLICATION_KEY`, `B2_BUCKET` | vacío | Backblaze B2: clave limitada al bucket y su **nombre** (no el ID). Requiere `COMPOSE_PROFILES=backblaze` | up |
+| `B2_KEY_ID`, `B2_APPLICATION_KEY`, `B2_BUCKET` | vacío | Backblaze B2 (opcional): clave limitada al bucket y su **nombre** (no el ID). También en *Sistema → Copias* | up |
 | `B2_PATH` | `omni-rag` | Carpeta dentro del bucket | up |
 | `B2_AT`, `B2_INTERVAL_HOURS` | vacío, `6` | Hora fija de la subida (`04:00`) o cada cuántas horas | up |
 | `B2_SYNC_UPLOADS` | `false` | Subir los archivos de forma incremental y cifrada | up |

@@ -117,7 +117,7 @@ Para cuando se pierde el servidor. **Las copias no incluyen el `.env`**: guarda 
    docker compose run --rm --no-deps -v "$PWD/restore:/restore" --entrypoint sh backup-b2 -c 'rclone lsl "b2:$B2_BUCKET/$B2_PATH"'   # ver qué hay
    docker compose run --rm --no-deps -v "$PWD/restore:/restore" --entrypoint sh backup-b2 -c 'rclone copy "b2:$B2_BUCKET/$B2_PATH" /restore --include "*_AAAA-MM-DD_HHMM.*"'
    ```
-   (Requiere `COMPOSE_PROFILES=backblaze` y las `B2_*` en el `.env`.)
+   (Requiere las `B2_*` en el `.env`: en un servidor limpio aún no hay base de la que leerlas.)
 3. **Descifra** (pide la frase) y comprueba que los archivos sirven:
    ```bash
    cd restore

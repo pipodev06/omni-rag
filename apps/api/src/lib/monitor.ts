@@ -5,7 +5,7 @@ import { sqlOwner } from "../db/client.js";
 import { BACKUP_DIR, BACKUP_STATUS_DIR, readJson, type B2Status, type LocalStatus } from "./backupStatus.js";
 import { configuredProviders } from "./llmProviders.js";
 import { emailEnabled, sendEmail } from "./mailer.js";
-import { setting } from "./settings.js";
+import { b2Configured, setting } from "./settings.js";
 
 /**
  * Monitorización básica: el worker llama a `runMonitor()` cada 5 minutos. Cada comprobación devuelve el problema
@@ -74,10 +74,11 @@ export async function checkBackups(dir = BACKUP_DIR, now = Date.now(), uptimeSec
 }
 
 /**
- * La subida a Backblaze B2 falla o no está configurada. Solo cuenta un estado de las últimas 26 h (o dos ciclos):
- * si se quita el perfil «backblaze», el archivo de estado se queda viejo y deja de avisar.
+ * La subida a Backblaze B2 falla. B2 es opcional: sin bucket ni claves no se avisa (la pantalla lo muestra como «no
+ * configurado»). Solo cuenta un estado de las últimas 26 h (o dos ciclos): si backup-b2 se para, deja de avisar.
  */
-export async function checkB2(dir = BACKUP_STATUS_DIR, now = Date.now()): Promise<Problem | null> {
+export async function checkB2(dir = BACKUP_STATUS_DIR, now = Date.now(), configured = b2Configured()): Promise<Problem | null> {
+  if (!configured) return null;
   const status = await readJson<B2Status>(join(dir, "b2.json"));
   if (!status || status.ok !== false) return null;
   const maxAgeHours = status.at ? 26 : Math.max(26, (status.intervalHours || 6) * 2);

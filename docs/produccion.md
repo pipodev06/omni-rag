@@ -153,12 +153,11 @@ openssl enc -d -aes-256-cbc -pbkdf2 -in db_AAAA-MM-DD_HHMM.dump.enc -out db.dump
 1. En Backblaze, crea un bucket **privado** y una *Application Key* limitada a ese bucket (*App Keys → Add a New Application Key*; no uses la Master Key). Guarda el `keyID` y la `applicationKey`: esta última solo se muestra una vez.
 2. En `.env`, además de `BACKUP_OFFSITE=true` y la frase de cifrado:
    ```bash
-   COMPOSE_PROFILES=backblaze        # o https,backblaze si usas Caddy
    B2_KEY_ID=<keyID>
    B2_APPLICATION_KEY=<applicationKey>
    B2_BUCKET=<nombre del bucket>
    ```
-   Alternativa: deja esas tres variables fuera del `.env` y escríbelas en *Sistema → Copias* (la clave se guarda cifrada); el servicio `backup-b2` espera sin reiniciarse hasta que estén completas. Con `COMPOSE_PROFILES=backblaze` en el `.env`, igualmente.
+   Alternativa: deja esas tres variables fuera del `.env` y escríbelas en *Sistema → Copias* (la clave se guarda cifrada); el servicio `backup-b2` (siempre en marcha) espera sin hacer nada hasta que estén completas. B2 es opcional: sin configurar, la pantalla lo muestra como «No configurado» y no hay alertas.
 3. `docker compose up -d` y comprueba con una subida inmediata: `docker compose run --rm backup-b2 --once`. Debe terminar con una línea `[b2] … sincronizado`. Si dice que no hay copias cifradas, falta la frase o aún no corrió ninguna copia (`docker compose exec backup sh /backup.sh --once`).
 
 **Archivos subidos incrementales (recomendado con muchos GB).** Por defecto cada copia incluye un `.tgz` completo de todos los archivos: con 150 GB serían 150 GB nuevos cada día. Con estas dos líneas en el `.env`, la copia diaria lleva solo la base de datos y los archivos se sincronizan aparte, subiendo únicamente lo nuevo:

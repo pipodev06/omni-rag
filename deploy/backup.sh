@@ -363,6 +363,29 @@ EOF
   echo "[backup] $REQ_MSG"
 }
 
+# Borra una copia (base y archivos de esa fecha) de ./backups y de la carpeta externa. Pone REQ_OK y REQ_MSG.
+# La más reciente no se borra: siempre queda al menos una. En B2 sigue hasta caducar (b2-sync copia, no sincroniza).
+do_delete() { # AAAA-MM-DD_HHMM
+  st="$1"; REQ_OK=false
+  case "$st" in
+    [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]_[0-9][0-9][0-9][0-9]) ;;
+    *) REQ_MSG="Copia no válida"; return 0 ;;
+  esac
+  newest=$(ls -t "$DEST"/db_????-??-??_????.dump 2>/dev/null | head -n 1 || true)
+  if [ "$newest" = "$DEST/db_$st.dump" ]; then REQ_MSG="La copia más reciente no se puede borrar: siempre queda al menos una"; return 0; fi
+  n=0
+  for dir in "$DEST" "$(offsite_dir)"; do
+    [ -d "$dir" ] || continue
+    for f in "$dir/db_$st.dump" "$dir/db_$st.dump.enc" "$dir/db_$st.dump.fallida" "$dir/uploads_$st.tgz" "$dir/uploads_$st.tgz.enc"; do
+      [ -f "$f" ] || continue
+      rm -f "$f" && n=$((n + 1))
+    done
+  done
+  if [ "$n" -eq 0 ]; then REQ_MSG="No se encontró la copia $st"; return 0; fi
+  REQ_OK=true; REQ_MSG="Copia $st borrada ($n archivo(s)). En Backblaze B2 se conserva hasta caducar"
+  echo "[backup] $REQ_MSG"
+}
+
 # Atiende las órdenes pendientes (máximo 5 por vuelta). La fila se toma con UPDATE … RETURNING para no repetirla.
 process_requests() {
   # Una orden de copia que nadie atendió en 6 h ya no tiene sentido (el servicio estuvo parado): se cierra como caducada.
@@ -370,10 +393,10 @@ process_requests() {
   n=0
   while [ "$n" -lt 5 ]; do
     n=$((n + 1))
-    row=$(psql_q -F "$TAB" -c "UPDATE backup_requests SET started_at = now() WHERE id = (SELECT id FROM backup_requests WHERE started_at IS NULL ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING id, kind, COALESCE(payload->>'path', ''), COALESCE(payload->>'moveExisting', 'false')" 2>/dev/null | head -n 1 || true)
+    row=$(psql_q -F "$TAB" -c "UPDATE backup_requests SET started_at = now() WHERE id = (SELECT id FROM backup_requests WHERE started_at IS NULL ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING id, kind, COALESCE(payload->>'path', ''), COALESCE(payload->>'moveExisting', 'false'), COALESCE(payload->>'stamp', '')" 2>/dev/null | head -n 1 || true)
     [ -n "$row" ] || return 0
     id=$(printf '%s' "$row" | cut -f1); kind=$(printf '%s' "$row" | cut -f2)
-    rpath=$(printf '%s' "$row" | cut -f3); rmove=$(printf '%s' "$row" | cut -f4)
+    rpath=$(printf '%s' "$row" | cut -f3); rmove=$(printf '%s' "$row" | cut -f4); rstamp=$(printf '%s' "$row" | cut -f5)
     is_uint "$id" || return 0
     case "$kind" in
       backup)
@@ -386,6 +409,12 @@ process_requests() {
         echo "[backup] orden $id: cambiar destino"
         REQ_OK=false; REQ_MSG="Orden no procesada"
         do_destination "$rpath" "$rmove" || true
+        finish_request "$id" "$REQ_OK" "$REQ_MSG"
+        ;;
+      delete)
+        echo "[backup] orden $id: borrar la copia $rstamp"
+        REQ_OK=false; REQ_MSG="Orden no procesada"
+        do_delete "$rstamp" || true
         finish_request "$id" "$REQ_OK" "$REQ_MSG"
         ;;
       *) finish_request "$id" false "Tipo de orden desconocido" ;;

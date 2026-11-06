@@ -155,7 +155,7 @@ export const GROUPS: Group[] = [
   {
     id: "b2",
     title: "Backblaze B2",
-    description: "Subida de las copias cifradas a Backblaze B2. Requiere el perfil «backblaze» y la copia externa activada.",
+    description: "Opcional pero recomendado: sube las copias cifradas a Backblaze B2, fuera del servidor. Necesita la copia externa activada y la frase de cifrado del archivo de entorno.",
     fields: [
       { key: "B2_AT", label: "Hora fija", help: "Formato HH:MM (24 h). Vacío: una subida cada N horas.", type: "time", fallback: "", restartNote: COPIES_NOTE },
       { key: "B2_INTERVAL_HOURS", label: "Intervalo entre subidas", help: "Horas entre subidas cuando no hay hora fija.", type: "number", min: 1, max: 720, step: 1, int: true, unit: "h", fallback: 6, restartNote: COPIES_NOTE },

@@ -247,12 +247,12 @@ services:
     cap_add: [DAC_OVERRIDE, FOWNER]
     security_opt: ["no-new-privileges:true"]
 
-  # Sube las copias cifradas de la carpeta externa (BACKUP_OFFSITE_DIR o el destino elegido) a Backblaze B2. Solo con
-  # COMPOSE_PROFILES=backblaze (y BACKUP_OFFSITE=true + BACKUP_ENCRYPTION_PASSPHRASE: sin cifrar no sube nada).
+  # Sube las copias cifradas de la carpeta externa (BACKUP_OFFSITE_DIR o el destino elegido) a Backblaze B2. Siempre en
+  # marcha pero opcional: sin bucket ni claves espera sin hacer nada. Necesita BACKUP_OFFSITE=true y
+  # BACKUP_ENCRYPTION_PASSPHRASE (sin cifrar no sube nada).
   # Las claves de B2 pueden ir en el .env o guardarse en Sistema → Copias (llegan por /backup-config).
   backup-b2:
     image: rclone/rclone:1.69.3
-    profiles: ["backblaze"]
     restart: unless-stopped
     dns: *dns
     entrypoint: ["sh", "/b2-sync.sh"]

@@ -176,6 +176,27 @@ describe("POST /system/backups/destination: validación de la ruta", () => {
   });
 });
 
+describe("POST /system/backups/delete", () => {
+  it("con la fecha de una copia crea la orden «delete» y la audita", async () => {
+    const res = await call("POST", "/backups/delete", { stamp: "2026-11-04_0515", confirm: CONFIRM });
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect(state.orders[0]).toMatchObject({ kind: "delete" });
+    expect(JSON.stringify(state.orders[0])).toContain("2026-11-04_0515");
+    expect(audit).toHaveBeenCalledWith(expect.anything(), "backup.delete_requested", expect.objectContaining({ details: { stamp: "2026-11-04_0515" } }));
+  });
+
+  it.each(["", "2026-11-04", "../db_2026-11-04_0515", "2026-11-04_0515*", "2026-11-04_0515;rm", "2026-11-04_051"])("rechaza %j con 400", async (stamp) => {
+    expect((await call("POST", "/backups/delete", { stamp, confirm: CONFIRM })).status).toBe(400);
+    expect(state.orders).toHaveLength(0);
+  });
+
+  it("sin reconfirmar la identidad: 403 y no crea la orden", async () => {
+    const res = await call("POST", "/backups/delete", { stamp: "2026-11-04_0515" });
+    expect(res.status).toBe(403);
+    expect(state.orders).toHaveLength(0);
+  });
+});
+
 describe("POST /system/backups/run", () => {
   it("crea una orden de copia y la audita; la segunda mientras haya una pendiente da 409", async () => {
     const first = await call("POST", "/backups/run");
