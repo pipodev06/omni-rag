@@ -116,13 +116,13 @@ export async function checkContainers(): Promise<Problem[]> {
   >`
     WITH last AS (
       SELECT DISTINCT ON (name) name, state, health, mem_bytes, mem_limit, oom_killed, cpu_limit, at
-        FROM container_samples WHERE own AND at > now() - interval '3 minutes'
+        FROM container_samples WHERE at > now() - interval '3 minutes'
        ORDER BY name, at DESC
     ), recent AS (
       SELECT name, avg(cpu_cores) FILTER (WHERE at > now() - interval '10 minutes') AS cpu_avg,
              count(*) FILTER (WHERE at > now() - interval '10 minutes')::int AS cpu_n,
              coalesce(max(restarts) - min(restarts), 0)::int AS restarts_delta
-        FROM container_samples WHERE own AND at > now() - interval '15 minutes'
+        FROM container_samples WHERE at > now() - interval '15 minutes'
        GROUP BY name
     )
     SELECT l.name, l.state, l.health, l.mem_bytes::float8 AS mem_bytes, l.mem_limit::float8 AS mem_limit, l.oom_killed, l.cpu_limit,

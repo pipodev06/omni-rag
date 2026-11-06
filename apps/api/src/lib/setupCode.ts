@@ -15,6 +15,7 @@ import { randomInt, timingSafeEqual } from "node:crypto";
 const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // sin 0/O ni 1/I
 
 let current: string | null = null;
+let reminder: NodeJS.Timeout | null = null;
 
 function generate(): string {
   const pick = () => Array.from({ length: 4 }, () => ALPHABET[randomInt(ALPHABET.length)]).join("");
@@ -34,6 +35,13 @@ export function reprintSetupCode(log: (msg: string) => void = console.log): void
   if (current) log(`[setup] la configuración inicial sigue pendiente. Código de un solo uso: ${current}`);
 }
 
+/** Repite el código cada `everyMs` hasta que se use (clearSetupCode para el temporizador). */
+export function remindSetupCode(everyMs = 10 * 60_000): void {
+  if (reminder) clearInterval(reminder);
+  reminder = setInterval(() => reprintSetupCode(), everyMs);
+  reminder.unref();
+}
+
 const normalize = (s: string) => s.trim().toUpperCase().replace(/[\s-]/g, "");
 
 /** ¿Es el código vigente? Comparación en tiempo constante. */
@@ -47,4 +55,6 @@ export function checkSetupCode(input: string): boolean {
 /** Ya se usó: no vale para nada más. */
 export function clearSetupCode(): void {
   current = null;
+  if (reminder) clearInterval(reminder);
+  reminder = null;
 }

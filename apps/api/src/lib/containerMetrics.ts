@@ -109,9 +109,7 @@ export async function readContainers(): Promise<{ host: HostInfo; samples: Sampl
         running ? docker<Stats>(`/containers/${c.Id}/stats?stream=false`).catch(() => null) : null,
         docker<Inspected>(`/containers/${c.Id}/json`).catch(() => null),
       ]);
-      // Sin tope, Docker informa como límite la RAM del servidor.
-      const reportedLimit = stats?.memory_stats.limit ?? 0;
-      const memLimit = inspected ? inspected.HostConfig.Memory || null : reportedLimit > 0 && reportedLimit < host.memBytes * 0.99 ? reportedLimit : null;
+      const memLimit = inspected?.HostConfig.Memory || null;
       return {
         name: displayName(c),
         image: c.Image,
@@ -142,7 +140,6 @@ export async function collectContainerMetrics(): Promise<{ containers: number } 
       INSERT INTO container_samples ${tx(
         samples.map((s) => ({
           name: s.name,
-          own: true, // columna de cuando también se medían los contenedores ajenos
           image: s.image,
           state: s.state,
           health: s.health,

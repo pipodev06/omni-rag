@@ -5,7 +5,7 @@ import { config } from "../config.js";
 import { sqlOwner } from "../db/client.js";
 import { audit } from "../lib/audit.js";
 import { HttpError, badRequest } from "../lib/errors.js";
-import { configuredProviders, getProvider, isConfigured, parseModelRef, probeProvider } from "../lib/llmProviders.js";
+import { configuredProviders, getProvider, isConfigured, probeProvider, refConfigured } from "../lib/llmProviders.js";
 import { notifyChange } from "../lib/changeNotice.js";
 import { captureMailer, emailEnabled, sendEmail, smtpErrorMessage, verifyEmail } from "../lib/mailer.js";
 import { ConfirmSchema, hasTotp, reauthenticate, type Confirm } from "../lib/reauth.js";
@@ -38,7 +38,7 @@ systemRoutes.get("/resources", async (c) => {
     sqlOwner<{ at: Date; info: HostInfo }[]>`SELECT at, info FROM host_snapshot WHERE id = 1`,
     sqlOwner<
       {
-        name: string; own: boolean; image: string; state: string; health: string | null; at: Date;
+        name: string; image: string; state: string; health: string | null; at: Date;
         cpu_cores: number; cpu_limit: number | null; cpu_shares: number | null; mem_bytes: number; mem_limit: number | null;
         restarts: number | null; oom_killed: boolean;
         mem_peak_24h: number | null; mem_peak_7d: number | null; cpu_avg_24h: number | null; cpu_p95_24h: number | null; cpu_max_24h: number | null;
@@ -59,11 +59,11 @@ systemRoutes.get("/resources", async (c) => {
           FROM container_samples WHERE at > now() - interval '7 days' AND state = 'running'
          GROUP BY name
       )
-      SELECT l.name, l.own, l.image, l.state, l.health, l.at, l.cpu_cores, l.cpu_limit, l.cpu_shares,
+      SELECT l.name, l.image, l.state, l.health, l.at, l.cpu_cores, l.cpu_limit, l.cpu_shares,
              l.mem_bytes::float8 AS mem_bytes, l.mem_limit::float8 AS mem_limit, l.restarts, l.oom_killed,
              a.mem_peak_24h, a.mem_peak_7d, a.cpu_avg_24h, a.cpu_p95_24h, a.cpu_max_24h, coalesce(a.first_at, l.at) AS first_at
         FROM last l LEFT JOIN agg a USING (name)
-       ORDER BY l.own DESC, l.name`,
+       ORDER BY l.name`,
     sqlOwner<{ key: string }[]>`SELECT key FROM alert_state WHERE key LIKE 'container:%'`,
   ]);
 
@@ -85,7 +85,6 @@ systemRoutes.get("/resources", async (c) => {
     autotune: autotuneValues(),
     containers: containers.map((r) => ({
       name: r.name,
-      own: r.own,
       image: r.image,
       state: r.state,
       health: r.health,
@@ -144,15 +143,14 @@ systemRoutes.get("/alerts", async (c) => {
 
 /** Copias de seguridad: lo que guardó el worker en su última lectura (cada 5 minutos) y las alertas de copias abiertas. */
 systemRoutes.get("/backups", async (c) => {
-  const [[snap], alerts] = await Promise.all([
+  const [[snap], alerts, deleted] = await Promise.all([
     sqlOwner<{ at: Date; info: BackupInfo }[]>`SELECT at, info FROM backup_snapshot WHERE id = 1`,
     sqlOwner<{ key: string; since: Date; message: string }[]>`SELECT key, since, message FROM alert_state WHERE key IN ('backup', 'backup-b2', 'backup-offsite')`,
+    // Copias borradas después de la foto del worker (tiene hasta 5 minutos): ya no se muestran.
+    sqlOwner<{ stamp: string }[]>`
+      SELECT payload->>'stamp' AS stamp FROM backup_requests
+       WHERE kind = 'delete' AND ok AND finished_at >= (SELECT at FROM backup_snapshot WHERE id = 1)`,
   ]);
-  // Las copias borradas después de la foto del worker (tiene hasta 5 minutos) ya no se muestran.
-  const deleted = snap
-    ? await sqlOwner<{ stamp: string }[]>`
-        SELECT payload->>'stamp' AS stamp FROM backup_requests WHERE kind = 'delete' AND ok AND finished_at >= ${snap.at}`
-    : [];
   const gone = new Set(deleted.map((d) => d.stamp));
   const info = snap?.info ? { ...snap.info, copies: snap.info.copies.filter((x) => !gone.has(x.stamp)) } : null;
   // El destino sale de los ajustes (se refrescan cada 30 s), no de la foto del worker.
@@ -173,7 +171,7 @@ systemRoutes.get("/onboarding", async (c) => {
   ]);
   // Planes con algún modelo de un proveedor sin clave: sus organizaciones no podrían preguntar con ese modelo.
   const plansWithoutKey = plans
-    .filter((p) => p.llm_models.length === 0 || p.llm_models.some((m) => { const pr = getProvider(parseModelRef(m).providerId); return !pr || !isConfigured(pr); }))
+    .filter((p) => p.llm_models.length === 0 || !p.llm_models.every(refConfigured))
     .map((p) => p.name);
   return c.json({
     llm: configuredProviders().length > 0,

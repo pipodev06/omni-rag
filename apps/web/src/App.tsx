@@ -49,7 +49,8 @@ function Protected({ children, allow = true }: { children: ReactNode; allow?: bo
 /** Pantalla de login (o la configuración inicial, si aún no hay usuarios); con sesión iniciada lleva a la página que se quería ver. */
 function LoginRoute() {
   const { data, isLoading } = useSession();
-  const setup = useQuery({ queryKey: ["setup"], queryFn: () => api.get<SetupStatus>("/setup"), enabled: !isLoading && !data, staleTime: Infinity });
+  // En paralelo con la sesión (es pública y barata): así el login no espera dos viajes seguidos.
+  const setup = useQuery({ queryKey: ["setup"], queryFn: () => api.get<SetupStatus>("/setup"), staleTime: Infinity });
   const from = (useLocation().state as { from?: string } | null)?.from;
   if (isLoading || (!data && setup.isLoading)) return <FullScreenLoader />;
   // El dueño de la plataforma aterriza en el selector de organizaciones; el resto, en el chat.

@@ -379,10 +379,15 @@ do_delete() { # AAAA-MM-DD_HHMM
   n=0
   for dir in "$DEST" "$(offsite_dir)"; do
     [ -d "$dir" ] || continue
-    for f in "$dir/db_$st.dump" "$dir/db_$st.dump.enc" "$dir/db_$st.dump.fallida" "$dir/uploads_$st.tgz" "$dir/uploads_$st.tgz.enc"; do
+    # Los mismos nombres que la retención (BACKUP_NAMES y los .fallida), con la fecha de esta copia.
+    # set -f: que el shell no expanda los «?» de los patrones contra archivos de la carpeta actual.
+    set -f
+    for pat in $BACKUP_NAMES db_????-??-??_????.dump.fallida; do
+      f="$dir/$(printf '%s' "$pat" | sed "s/????-??-??_????/$st/")"
       [ -f "$f" ] || continue
       rm -f "$f" && n=$((n + 1))
     done
+    set +f
   done
   if [ "$n" -eq 0 ]; then REQ_MSG="No se encontró la copia $st"; return 0; fi
   REQ_OK=true; REQ_MSG="Copia $st borrada ($n archivo(s)). En Backblaze B2 se conserva hasta caducar"
