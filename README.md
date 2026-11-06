@@ -190,7 +190,7 @@ omni-rag/
 │   │   │   └── worker.ts     # arranque del worker de ingesta
 │   │   └── test/             # pruebas unitarias y de integración (RLS)
 │   └── web/                  # interfaz React (shadcn/ui + Tailwind)
-├── deploy/                   # Caddyfile y script de copias de seguridad
+├── deploy/                   # scripts de copias y secretos (van en la imagen omni-rag-ops), autotune y perfiles
 ├── scripts/smoke-test.mjs    # prueba de punta a punta contra un sistema en marcha
 └── docs/                     # documentación
 ```

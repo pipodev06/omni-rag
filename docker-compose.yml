@@ -17,12 +17,14 @@ services:
   # Primer arranque: genera las contraseñas internas y la clave de las sesiones si no están en el .env (ver
   # deploy/init-secrets.sh) y termina. Los demás servicios esperan a que acabe.
   init:
-    image: pgvector/pgvector:pg17
+    image: ghcr.io/pipodev06/omni-rag-ops:${OMNI_RAG_VERSION:-latest}
+    build: &ops-build
+      context: .
+      dockerfile: deploy/ops.Dockerfile
     restart: "no"
     entrypoint: ["sh", "/init-secrets.sh"]
     network_mode: none
     volumes:
-      - ./deploy/init-secrets.sh:/init-secrets.sh:ro
       - secrets:/secrets
 
   # Base de datos: PostgreSQL 17 con la extensión pgvector.
@@ -240,7 +242,8 @@ services:
   # Los horarios y demás ajustes de copias se pueden fijar en el .env o en Sistema → Copias. Las variables llegan vacías
   # si no están en el .env (solo mandan si no están vacías) y los valores por defecto viven en deploy/backup.sh.
   backup:
-    image: pgvector/pgvector:pg17
+    image: ghcr.io/pipodev06/omni-rag-ops:${OMNI_RAG_VERSION:-latest}
+    build: *ops-build
     restart: unless-stopped
     entrypoint: ["sh", "/backup.sh"]
     environment:
@@ -255,15 +258,14 @@ services:
       BACKUP_DESTINATION: ${BACKUP_DESTINATION:-}
       BACKUP_ENCRYPTION_PASSPHRASE: ${BACKUP_ENCRYPTION_PASSPHRASE:-}
     volumes:
-      - ./deploy/backup.sh:/backup.sh:ro
       - secrets:/secrets:ro
       - uploads:/uploads:ro
       - ./backups:/backups
       # Carpeta externa (disco, NAS, carpeta sincronizada). Solo se usa con BACKUP_OFFSITE=true.
-      - ${BACKUP_OFFSITE_DIR:-./backups-offsite}:/offsite
+      - ${BACKUP_OFFSITE_DIR:-backups-offsite}:/offsite
       # Discos o carpetas entre los que se puede elegir el destino desde Sistema → Copias (BACKUP_TARGETS_DIR).
       # Sin definirla es una carpeta vacía del proyecto y la pantalla no ofrece cambiar de destino.
-      - ${BACKUP_TARGETS_DIR:-./backups-targets}:/targets
+      - ${BACKUP_TARGETS_DIR:-backups-targets}:/targets
     depends_on:
       db:
         condition: service_healthy
@@ -278,7 +280,8 @@ services:
   # BACKUP_ENCRYPTION_PASSPHRASE (sin cifrar no sube nada).
   # Las claves de B2 pueden ir en el .env o guardarse en Sistema → Copias (llegan por /backup-config).
   backup-b2:
-    image: rclone/rclone:1.69.3
+    image: ghcr.io/pipodev06/omni-rag-ops:${OMNI_RAG_VERSION:-latest}
+    build: *ops-build
     restart: unless-stopped
     dns: *dns
     entrypoint: ["sh", "/b2-sync.sh"]
@@ -300,10 +303,9 @@ services:
       BACKUP_DESTINATION: ${BACKUP_DESTINATION:-}
       B2_KEEP_DAYS: ${B2_KEEP_DAYS:-}
     volumes:
-      - ./deploy/b2-sync.sh:/b2-sync.sh:ro
       - uploads:/uploads:ro
-      - ${BACKUP_OFFSITE_DIR:-./backups-offsite}:/offsite:ro
-      - ${BACKUP_TARGETS_DIR:-./backups-targets}:/targets:ro
+      - ${BACKUP_OFFSITE_DIR:-backups-offsite}:/offsite:ro
+      - ${BACKUP_TARGETS_DIR:-backups-targets}:/targets:ro
       # Ajustes guardados en Sistema → Copias (los escribe el worker); se releen cada minuto.
       - backup-config:/backup-config:ro
       # Estado de la última subida (sin secretos) para la pantalla Sistema → Copias.
@@ -320,8 +322,10 @@ services:
       - "80:80"
       - "443:443"
       - "443:443/udp"
+    configs:
+      - source: caddyfile
+        target: /etc/caddy/Caddyfile
     volumes:
-      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
     depends_on:
@@ -344,7 +348,26 @@ networks:
   docker:
     internal: true
 
+# Configuración de Caddy (perfil https), aquí mismo para no depender de archivos fuera del compose.
+configs:
+  caddyfile:
+    content: |
+      {$$DOMAIN} {
+        encode zstd gzip
+        header {
+          Strict-Transport-Security "max-age=31536000; includeSubDomains"
+          -Server
+        }
+        reverse_proxy web:80 {
+          # Las respuestas del chat y los avisos en tiempo real llegan en streaming.
+          flush_interval -1
+        }
+      }
+
 volumes:
+  # Sin BACKUP_OFFSITE_DIR / BACKUP_TARGETS_DIR: volúmenes vacíos (no crean carpetas junto al compose).
+  backups-offsite:
+  backups-targets:
   # Contraseñas internas y clave de sesiones generadas en el primer arranque (no van en las copias: guárdalas aparte).
   secrets:
   backup-config:
