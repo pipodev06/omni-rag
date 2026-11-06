@@ -48,15 +48,29 @@ sudo ufw allow OpenSSH && sudo ufw allow 80 && sudo ufw allow 443 && sudo ufw en
 
 En tu proveedor de dominio, crea un registro **A** `rag.tuempresa.com → IP del VPS` (y **AAAA** si tienes IPv6). Espera a que resuelva: `ping rag.tuempresa.com`.
 
-### 3. Código y configuración
+### 3. Carpeta del servicio y configuración
+
+No hace falta clonar el repositorio: todas las imágenes vienen hechas (`omni-rag-api`, `omni-rag-web` y `omni-rag-ops`, la de los secretos y las copias). La carpeta queda como la de cualquier otro servicio:
 
 ```bash
-git clone <tu-repositorio> omni-rag && cd omni-rag
-cp .env.example .env
-nano .env
+mkdir -p ~/docker/rag && cd ~/docker/rag
+curl -fsSLO https://raw.githubusercontent.com/pipodev06/omni-rag/main/docker-compose.yml
+# Opcional: red de tu proxy y datos en carpetas (edítalo: nombre de la red, quita lo que no uses)
+curl -fsSL https://raw.githubusercontent.com/pipodev06/omni-rag/main/docker-compose.override.example.yml -o docker-compose.override.yml
 ```
 
-En el servidor solo hace falta lo que la web no puede cambiar:
+```
+rag/
+├── docker-compose.yml            # el de GitHub, sin tocar
+├── docker-compose.override.yml   # lo propio de este servidor (red del proxy, datos en ./data)
+├── .env                          # opcional: lo que no quieres que se cambie desde la web
+├── data/                         # base de datos, archivos, modelos, secretos (con el override)
+└── backups/                      # copias locales
+```
+
+**Actualizar:** vuelve a descargar `docker-compose.yml` (por si cambió) y `docker compose pull && docker compose up -d`, o el botón *Update* de Dockge. Las herramientas del repositorio que corren fuera de Docker (`deploy/autotune.sh`, `deploy/perfil.sh`) se descargan igual cuando hagan falta. Un clon del repositorio también sirve (`git pull` para actualizar).
+
+Si necesitas un `.env`, en el servidor solo hace falta lo que la web no puede cambiar:
 
 ```
 DOMAIN=rag.tuempresa.com
@@ -132,7 +146,7 @@ openssl enc -d -aes-256-cbc -pbkdf2 -in db_AAAA-MM-DD_HHMM.dump.enc -out db.dump
 
 - **Linux (USB o NAS):** monta el disco de forma permanente con su UUID en `/etc/fstab` (opción `nofail`, para que el servidor arranque aunque el disco no esté), por ejemplo en `/mnt/usb1`, y pon `BACKUP_TARGETS_DIR=/mnt` en el `.env`. Crea dentro del disco la carpeta de las copias (`/mnt/usb1/omni`) o deja que la pantalla la cree.
 - **Windows (Docker Desktop):** `BACKUP_TARGETS_DIR=D:/` (la unidad del USB o del disco; debe estar compartida con Docker Desktop en *Settings → Resources → File sharing*). Los destinos son las carpetas de esa unidad.
-- Aplica con `docker compose up -d`. Si no la defines, `./backups-targets` queda vacía y la pantalla explica que falta la variable.
+- Aplica con `docker compose up -d`. Si no la defines, el destino es un volumen vacío y la pantalla explica qué poner.
 - **No montes la unidad entera:** apunta `BACKUP_TARGETS_DIR` a una carpeta **dedicada** (por ejemplo `/mnt/usb1/omni-copias`, no `/mnt` ni `D:/`). El servicio solo ofrece como destino lo que hay dentro de esa carpeta, pero el contenedor puede leer y escribir en todo lo que montes: cuanto menos montes, menos puede dañar un fallo o una orden mal formada.
 - Docker puede no ver un disco montado **después** de arrancar el servicio `backup`: tras conectar o desconectar un disco, `docker compose restart backup` si la pantalla no lo detecta (la lista de destinos se recalcula cada 5 minutos, y al pedir un cambio de destino).
 

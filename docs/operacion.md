@@ -14,9 +14,9 @@ curl localhost:8000/api/health       # estado de dependencias
 
 ### Imágenes
 
-Las imágenes propias (`ghcr.io/pipodev06/omni-rag-api`, que usan la API y el worker, y `omni-rag-web`) las construye y publica el CI de GitHub al subir cambios a `main` (`:latest`) o una etiqueta `v1.2.3` (`:1.2.3`). El servidor las descarga como cualquier otra imagen (beszel, Immich…): si un `docker image prune -a` las borra, `docker compose pull` las vuelve a bajar. Para fijar una versión, `OMNI_RAG_VERSION=1.2.3` en el `.env`.
+Las imágenes propias (`ghcr.io/pipodev06/omni-rag-api`, que usan la API y el worker, `omni-rag-web` y `omni-rag-ops`, la de `init`, `backup` y `backup-b2`) las construye y publica el CI de GitHub al subir cambios a `main` (`:latest`) o una etiqueta `v1.2.3` (`:1.2.3`). El servidor las descarga como cualquier otra imagen (beszel, Immich…): si un `docker image prune -a` las borra, `docker compose pull` las vuelve a bajar. Para fijar una versión, `OMNI_RAG_VERSION=1.2.3` en el `.env`.
 
-`docker compose up -d --build` sigue construyéndolas en la propia máquina (desarrollo, o un servidor que no llega a GHCR; ver también `deploy/build.sh`). La carpeta del repositorio sigue haciendo falta en el servidor: de ella salen el `docker-compose.yml` y los scripts de copias de `deploy/`.
+`docker compose up -d --build` sigue construyéndolas en la propia máquina (desarrollo, o un servidor que no llega a GHCR; ver también `deploy/build.sh`). El servidor no necesita el repositorio: los scripts de secretos y copias van dentro de `omni-rag-ops` y la configuración de Caddy, dentro del propio `docker-compose.yml`. Basta la carpeta con `docker-compose.yml`, el override y los datos ([produccion.md](produccion.md#3-carpeta-del-servicio-y-configuración)).
 
 ### Dónde viven los datos
 

@@ -8,7 +8,7 @@
 #
 #   sh deploy/build.sh
 #
-# Les pone los nombres que dice docker-compose.yml (ghcr.io/pipodev06/omni-rag-api y omni-rag-web, con la versión
+# Les pone los nombres que dice docker-compose.yml (ghcr.io/pipodev06/omni-rag-api, omni-rag-web y omni-rag-ops, con la versión
 # de OMNI_RAG_VERSION); al existir ya, «docker compose up -d» no las descarga ni las vuelve a construir.
 # El worker usa la misma imagen que la API.
 #
@@ -31,10 +31,12 @@ ARGS="--build-arg PNPM_NETWORK_CONCURRENCY=$PNPM_NETWORK_CONCURRENCY --build-arg
 
 API_IMAGE="$(docker compose config --images | grep /omni-rag-api: | head -n 1)"
 WEB_IMAGE="$(docker compose config --images | grep /omni-rag-web: | head -n 1)"
+OPS_IMAGE="$(docker compose config --images | grep /omni-rag-ops: | head -n 1)"
 
 # shellcheck disable=SC2086
 docker build --network host $ARGS -f apps/api/Dockerfile -t "$API_IMAGE" .
 # shellcheck disable=SC2086
 docker build --network host $ARGS -f apps/web/Dockerfile -t "$WEB_IMAGE" .
+docker build --network host -f deploy/ops.Dockerfile -t "$OPS_IMAGE" .
 
 docker compose up -d
