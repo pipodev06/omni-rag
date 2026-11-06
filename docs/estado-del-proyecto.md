@@ -6,6 +6,7 @@ Actualizado el 2026-11-05. Fase: **cierre**.
 
 - El CI publica las imágenes en GHCR (`omni-rag-api`, que usan la API y el worker, y `omni-rag-web`): `:latest` desde `main` y `:X.Y.Z` desde etiquetas `vX.Y.Z`. El compose las descarga (`OMNI_RAG_VERSION`) y sigue pudiendo construirlas con `--build`.
 - `docker-compose.override.example.yml` trae, además de la red del proxy, los datos en carpetas `./data` para servidores que se limpian con `prune`. Guía de mudanza en [operacion.md](operacion.md#pasar-los-datos-a-carpetas).
+- `scripts/import-env-settings.ts`: copia a la base los ajustes de la pantalla fijados en el `.env` para poder editarlos allí ([variables.md](variables.md)). Probado con tests unitarios; no en el servidor.
 
 ## Hecho en el cierre (2026-11-04)
 

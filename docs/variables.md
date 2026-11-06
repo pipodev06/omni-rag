@@ -8,6 +8,14 @@ Todas se definen en el archivo `.env` (cópialo de `.env.example`, que trae cada
 
 **Secretos:** `POSTGRES_PASSWORD`, `APP_DB_PASSWORD`, `JWT_SECRET`, las `*_API_KEY`, `SMTP_PASSWORD`, `BACKUP_ENCRYPTION_PASSPHRASE`, `B2_APPLICATION_KEY` y `SEED_ADMIN_PASSWORD` no se comparten ni se suben a git. Guárdalas también en un gestor de contraseñas: las copias de seguridad **no** incluyen el `.env`.
 
+**Pasar al panel lo que está en el `.env`.** Los ajustes de *Sistema → Configuración* y *Copias* que estén escritos en el `.env` mandan y salen bloqueados en la pantalla. Para editarlos allí sin perder su valor:
+
+```bash
+docker compose exec api node dist/scripts/import-env-settings.js
+```
+
+Copia a la base el valor actual de cada uno (los secretos, cifrados), lo deja en la auditoría y muestra las claves copiadas (nunca valores) con los comandos para quitarlas del `.env` y aplicar (`docker compose up -d`). Hasta quitar esas líneas no cambia nada. Lo que solo vive en el `.env` (contraseñas de la base, `JWT_SECRET`, `BACKUP_ENCRYPTION_PASSPHRASE`, puertos, `EMBEDDING_*`…) no está en la pantalla y no se toca.
+
 ## Base de datos y acceso
 
 | Variable | Por defecto | Qué hace | Aplica |
@@ -123,7 +131,7 @@ Límites de CPU y memoria de los servicios pesados, para no ahogar a otros conte
 
 ## Retención, copias de seguridad y alertas
 
-Los ajustes de copias (`BACKUP_*`, salvo `BACKUP_OFFSITE_DIR`, `BACKUP_TARGETS_DIR` y `BACKUP_ENCRYPTION_PASSPHRASE`) y de Backblaze (`B2_*`) también se pueden cambiar en **Sistema → Copias**, sin reiniciar. **Lo que está escrito (no vacío) en el `.env` manda** y queda bloqueado en la pantalla; para editarlo allí, quita la línea del `.env` y ejecuta `docker compose up -d`. Los valores por defecto de la tabla son los de `deploy/backup.sh` y `deploy/b2-sync.sh`.
+Los ajustes de copias (`BACKUP_*`, salvo `BACKUP_OFFSITE_DIR`, `BACKUP_TARGETS_DIR` y `BACKUP_ENCRYPTION_PASSPHRASE`) y de Backblaze (`B2_*`) también se pueden cambiar en **Sistema → Copias**, sin reiniciar. **Lo que está escrito (no vacío) en el `.env` manda** y queda bloqueado en la pantalla; para editarlo allí sin perder su valor, usa `import-env-settings.js` (arriba). Los valores por defecto de la tabla son los de `deploy/backup.sh` y `deploy/b2-sync.sh`.
 
 | Variable | Por defecto | Qué hace | Aplica |
 |---|---|---|---|
