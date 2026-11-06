@@ -23,6 +23,12 @@ const GB = 1024 ** 3;
 const REMIND_AFTER_MS = 24 * 3600 * 1000;
 /** Tras arrancar el worker, la primera muestra de los contenedores tarda hasta un minuto en llegar. */
 const METRICS_GRACE_SECONDS = 180;
+/**
+ * Tras encender el servidor (o arrancar el worker) no se avisa de una copia antigua durante una hora: si estuvo apagado
+ * a la hora fijada, el servicio de copias hace la que falta al arrancar y tarda unos minutos. Si esa copia falla, se
+ * avisa al momento.
+ */
+const BACKUP_GRACE_SECONDS = 3600;
 
 /** Poco espacio libre en el disco donde se guardan los archivos subidos. */
 export async function checkDisk(dir = config.STORAGE_DIR): Promise<Problem | null> {
@@ -44,21 +50,25 @@ export async function checkQueue(): Promise<Problem | null> {
 }
 
 /** La última copia de seguridad es demasiado antigua. Si la carpeta no está montada en el worker, no se comprueba. */
-export async function checkBackups(dir = BACKUP_DIR, now = Date.now()): Promise<Problem | null> {
+export async function checkBackups(dir = BACKUP_DIR, now = Date.now(), uptimeSeconds = process.uptime()): Promise<Problem | null> {
   const names = await readdir(dir).catch(() => null);
   if (!names) return null;
   const dumps = names.filter((n) => n.startsWith("db_") && n.endsWith(".dump"));
   let newest = 0;
   for (const n of dumps) newest = Math.max(newest, (await stat(join(dir, n))).mtimeMs);
   const hours = (now - newest) / 3_600_000;
+  const status = await readJson<LocalStatus>(join(dir, ".estado.json"));
   if (newest === 0 || hours > setting("ALERT_BACKUP_HOURS")) {
+    const startedAt = now - uptimeSeconds * 1000;
+    const failedSinceStart = status?.ok === false && Date.parse(status.attemptAt) >= startedAt;
+    if (failedSinceStart) return { key: "backup", message: `Falló la última copia de seguridad: ${status.error}. Revisa «docker compose logs backup».` };
     return {
       key: "backup",
       message: newest === 0 ? "No hay ninguna copia de seguridad de la base de datos." : `La última copia de seguridad tiene ${Math.round(hours)} horas (máximo ${setting("ALERT_BACKUP_HOURS")}). Revisa «docker compose logs backup».`,
+      hold: uptimeSeconds < BACKUP_GRACE_SECONDS,
     };
   }
   // Hay una copia reciente, pero el último intento falló (p. ej. no llegó a la carpeta externa).
-  const status = await readJson<LocalStatus>(join(dir, ".estado.json"));
   if (status && status.ok === false) return { key: "backup", message: `Falló la última copia de seguridad: ${status.error}. Revisa «docker compose logs backup».` };
   return null;
 }
