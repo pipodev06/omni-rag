@@ -563,7 +563,57 @@ describe.concurrent("deploy/backup.sh: orden «Cambiar destino» (do_destination
   }, T);
 });
 
-const CREDS = ["export B2_BUCKET=" + SQ + "mibucket" + SQ, "export B2_KEY_ID=" + SQ + "kid" + SQ, "export B2_APPLICATION_KEY=" + SQ + "secreta" + SQ];
+describe.concurrent("deploy/backup.sh: orden «Borrar copia» (do_delete)", { skip: !hasGnuSh }, () => {
+  const del = async (sb: Sandbox, stamp: string) => {
+    const r = await sb.fn(`do_delete "${stamp}" || true\nprintf 'RESULT:%s|%s\\n' "$REQ_OK" "$REQ_MSG"`);
+    const m = r.out.match(/RESULT:(true|false)\|(.*)/);
+    if (!m) throw new Error(`sin resultado: ${r.out}`);
+    return { ok: m[1] === "true", msg: m[2]! };
+  };
+  async function twoCopies() {
+    const sb = await sandbox();
+    for (const d of ["backups", "offsite"]) {
+      await sb.write(`${d}/db_2026-11-01_0300.dump${d === "offsite" ? ".enc" : ""}`, "viejo");
+      await sb.write(`${d}/uploads_2026-11-01_0300.tgz${d === "offsite" ? ".enc" : ""}`, "viejo");
+    }
+    await sb.write("backups/db_2026-11-05_0300.dump", "nuevo");
+    await sb.write("backups/db_2026-11-01_0300.xlsx", "ajeno");
+    await sb.age("backups/db_2026-11-01_0300.dump", 4);
+    return sb;
+  }
+
+  it("borra la base y los archivos de esa fecha en ./backups y en la carpeta externa, nada más", async () => {
+    const sb = await twoCopies();
+    const r = await del(sb, "2026-11-01_0300");
+    expect(r.ok, r.msg).toBe(true);
+    expect(r.msg).toMatch(/4 archivo/);
+    expect(await sb.ls("backups")).toEqual(["db_2026-11-01_0300.xlsx", "db_2026-11-05_0300.dump"]);
+    expect(await sb.ls("offsite")).toEqual([]);
+  }, T);
+
+  it("la copia más reciente no se borra", async () => {
+    const sb = await twoCopies();
+    const r = await del(sb, "2026-11-05_0300");
+    expect(r.ok).toBe(false);
+    expect(r.msg).toMatch(/más reciente/);
+    expect(await sb.exists("backups", "db_2026-11-05_0300.dump")).toBe(true);
+  }, T);
+
+  it.each(["../../etc", "2026-11-01_0300 *", "*", ""])("fecha no válida %j: no borra nada", async (bad) => {
+    const sb = await twoCopies();
+    const r = await del(sb, bad);
+    expect(r.ok).toBe(false);
+    expect(await sb.ls("backups")).toHaveLength(4);
+  }, T);
+
+  it("una fecha que no existe lo dice y no borra nada", async () => {
+    const sb = await twoCopies();
+    const r = await del(sb, "2020-01-01_0000");
+    expect(r).toMatchObject({ ok: false, msg: expect.stringMatching(/No se encontró/) });
+  }, T);
+});
+
+const CREDS =["export B2_BUCKET=" + SQ + "mibucket" + SQ, "export B2_KEY_ID=" + SQ + "kid" + SQ, "export B2_APPLICATION_KEY=" + SQ + "secreta" + SQ];
 const confFile = (sb: Sandbox) => ({ B2_CONFIG_FILE: `${sb.px}/config/b2.env` });
 const b2State = (sb: Sandbox) => sb.json<{ ok: boolean; error: string; checkedAt: string }>("status", "b2.json");
 

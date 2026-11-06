@@ -111,7 +111,7 @@ describe("writeBackupConfig (b2.env para los scripts)", () => {
   const sourced = (file: string, vars: string[]) =>
     vars.map((v) => execFileSync("sh", ["-c", `. "$0"; printf %s "$${v}"`, file.replaceAll("\\", "/")], { encoding: "utf8" }));
 
-  it("no hace nada si la carpeta no existe (sin el perfil backblaze) y no la crea", async () => {
+  it("no hace nada si la carpeta no existe (no está montada) y no la crea", async () => {
     const base = await tmp();
     const { writeBackupConfig } = await withSettings([["B2_BUCKET", "x"]]);
     await expect(writeBackupConfig(join(base, "no-existe"))).resolves.toBeUndefined();
@@ -247,29 +247,35 @@ describe("monitor: Backblaze B2", () => {
   it("avisa con un fallo reciente", async () => {
     const dir = await tmp();
     await json(dir, "b2.json", status({ checkedAt: ago(1) }));
-    const p = await checkB2(dir);
+    const p = await checkB2(dir, Date.now(), true);
     expect(p?.key).toBe("backup-b2");
     expect(p?.message).toContain("faltan los datos");
   });
 
-  it("no avisa con un estado viejo (se quitó el perfil backblaze): 26 h con hora fija, 2 ciclos sin ella", async () => {
+  it("no avisa con un estado viejo (backup-b2 parado): 26 h con hora fija, 2 ciclos sin ella", async () => {
     const dir = await tmp();
     await json(dir, "b2.json", status({ checkedAt: ago(27), at: "04:00" }));
-    expect(await checkB2(dir)).toBeNull();
+    expect(await checkB2(dir, Date.now(), true)).toBeNull();
     await json(dir, "b2.json", status({ checkedAt: ago(25), at: "04:00" }));
-    expect((await checkB2(dir))?.key).toBe("backup-b2");
+    expect((await checkB2(dir, Date.now(), true))?.key).toBe("backup-b2");
     // Sin hora fija y cada 24 h: el margen es de 48 h.
     await json(dir, "b2.json", status({ checkedAt: ago(30), intervalHours: 24 }));
-    expect((await checkB2(dir))?.key).toBe("backup-b2");
+    expect((await checkB2(dir, Date.now(), true))?.key).toBe("backup-b2");
     await json(dir, "b2.json", status({ checkedAt: ago(49), intervalHours: 24 }));
-    expect(await checkB2(dir)).toBeNull();
+    expect(await checkB2(dir, Date.now(), true)).toBeNull();
+  });
+
+  it("sin bucket ni claves B2 es opcional: no avisa aunque el estado diga que faltan los datos", async () => {
+    const dir = await tmp();
+    await json(dir, "b2.json", status({ checkedAt: ago(1) }));
+    expect(await checkB2(dir, Date.now(), false)).toBeNull();
   });
 
   it("no avisa con ok=true ni sin archivo", async () => {
     const dir = await tmp();
-    expect(await checkB2(dir)).toBeNull();
+    expect(await checkB2(dir, Date.now(), true)).toBeNull();
     await json(dir, "b2.json", status({ ok: true, error: "" }));
-    expect(await checkB2(dir)).toBeNull();
+    expect(await checkB2(dir, Date.now(), true)).toBeNull();
   });
 });
 

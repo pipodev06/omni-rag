@@ -18,24 +18,26 @@ interface Props {
   onCancel: () => void;
   /** El usuario tiene la verificación en dos pasos activa: se pide también el código. */
   totp: boolean;
+  /** Qué se va a hacer, si conviene recordarlo (p. ej. al borrar algo). */
+  action?: string;
   /** Envía la acción con `confirm`; si falla con REAUTH_*, el mensaje se muestra aquí y el modal sigue abierto. Quien llama lo cierra al terminar bien. */
   onConfirm: (confirm: Confirm) => Promise<unknown>;
 }
 
 const REAUTH_REQUIRED_TEXT = "Confirma tu identidad para continuar";
 
-export function ReauthDialog({ open, onCancel, totp, onConfirm }: Props) {
+export function ReauthDialog({ open, onCancel, totp, action, onConfirm }: Props) {
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onCancel()}>
       <DialogContent className="sm:max-w-sm">
         {/* Se desmonta al cerrar: cada apertura empieza vacía. */}
-        <ReauthForm totp={totp} onCancel={onCancel} onConfirm={onConfirm} />
+        <ReauthForm totp={totp} action={action} onCancel={onCancel} onConfirm={onConfirm} />
       </DialogContent>
     </Dialog>
   );
 }
 
-function ReauthForm({ totp, onCancel, onConfirm }: Omit<Props, "open">) {
+function ReauthForm({ totp, action, onCancel, onConfirm }: Omit<Props, "open">) {
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -62,7 +64,10 @@ function ReauthForm({ totp, onCancel, onConfirm }: Omit<Props, "open">) {
     <form onSubmit={submit} className="space-y-4">
       <DialogHeader>
         <DialogTitle>Confirma tu identidad</DialogTitle>
-        <DialogDescription>{totp ? "Escribe tu contraseña y el código de verificación." : "Escribe tu contraseña."}</DialogDescription>
+        <DialogDescription>
+          {action && `${action} `}
+          {totp ? "Escribe tu contraseña y el código de verificación." : "Escribe tu contraseña."}
+        </DialogDescription>
       </DialogHeader>
       <div className="grid items-start gap-3">
         <div className="space-y-1.5">

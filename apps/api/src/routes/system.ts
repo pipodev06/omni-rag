@@ -9,7 +9,7 @@ import { configuredProviders, getProvider, isConfigured, probeProvider } from ".
 import { notifyChange } from "../lib/changeNotice.js";
 import { captureMailer, emailEnabled, sendEmail, smtpErrorMessage, verifyEmail } from "../lib/mailer.js";
 import { ConfirmSchema, hasTotp, reauthenticate, type Confirm } from "../lib/reauth.js";
-import { applySettings, backupDestination, SettingsError, setting, settingsView } from "../lib/settings.js";
+import { applySettings, b2Configured, backupDestination, SettingsError, setting, settingsView } from "../lib/settings.js";
 import { parse } from "../lib/validate.js";
 import type { HostInfo } from "../lib/containerMetrics.js";
 import type { BackupInfo } from "../lib/backupStatus.js";
@@ -148,8 +148,15 @@ systemRoutes.get("/backups", async (c) => {
     sqlOwner<{ at: Date; info: BackupInfo }[]>`SELECT at, info FROM backup_snapshot WHERE id = 1`,
     sqlOwner<{ key: string; since: Date; message: string }[]>`SELECT key, since, message FROM alert_state WHERE key IN ('backup', 'backup-b2', 'backup-offsite')`,
   ]);
-  // El destino sale de los ajustes (se refrescan cada 30 s), no de la foto del worker, que tiene hasta 5 minutos.
-  return c.json({ readAt: snap?.at ?? null, info: snap?.info ? { ...snap.info, destination: backupDestination() } : null, alerts });
+  // Las copias borradas después de la foto del worker (tiene hasta 5 minutos) ya no se muestran.
+  const deleted = snap
+    ? await sqlOwner<{ stamp: string }[]>`
+        SELECT payload->>'stamp' AS stamp FROM backup_requests WHERE kind = 'delete' AND ok AND finished_at >= ${snap.at}`
+    : [];
+  const gone = new Set(deleted.map((d) => d.stamp));
+  const info = snap?.info ? { ...snap.info, copies: snap.info.copies.filter((x) => !gone.has(x.stamp)) } : null;
+  // El destino sale de los ajustes (se refrescan cada 30 s), no de la foto del worker.
+  return c.json({ readAt: snap?.at ?? null, info: info ? { ...info, destination: backupDestination(), b2Configured: b2Configured() } : null, alerts });
 });
 
 // --- Ajustes editables (Sistema → Configuración) ---------------------------------------------------------------
@@ -239,7 +246,7 @@ const MANUAL_COOLDOWN_MIN = 15;
  * (`backup_requests_una_abierta`, migración 021) admite una sola fila con `finished_at IS NULL`, así que dos clics
  * simultáneos no pueden crear dos.
  */
-async function requestBackupOrder(c: Context<AppEnv>, kind: "backup" | "destination", payload: object): Promise<{ id: number }> {
+async function requestBackupOrder(c: Context<AppEnv>, kind: "backup" | "destination" | "delete", payload: object): Promise<{ id: number }> {
   await sqlOwner`
     UPDATE backup_requests SET started_at = coalesce(started_at, now()), finished_at = now(), ok = false, message = 'caducada'
      WHERE finished_at IS NULL AND created_at < now() - ${`${STALE_HOURS} hours`}::interval`;
@@ -277,6 +284,21 @@ systemRoutes.post("/backups/destination", async (c) => {
   const order = await requestBackupOrder(c, "destination", body);
   await audit(c, "backup.destination_requested", { targetType: "backup_request", targetId: String(order.id), details: { path: body.path, moveExisting: body.moveExisting } });
   void notifyChange({ send, previousRecipients, newRecipients: "", what: ["BACKUP_DESTINATION"], by: c.get("user").username });
+  return c.json(order);
+});
+
+/** Fecha y hora de una copia tal como va en sus archivos: db_2026-11-06_0340.dump → 2026-11-06_0340. */
+const DeleteBody = z.object({ stamp: z.string().regex(/^\d{4}-\d{2}-\d{2}_\d{4}$/), confirm: ConfirmSchema.optional() });
+
+/**
+ * Borra una copia (base y archivos de esa fecha) de ./backups y de la carpeta externa. La borra el servicio de copias,
+ * que es quien tiene la carpeta; la API nunca la monta. La copia más reciente no se puede borrar. En B2 sigue hasta caducar.
+ */
+systemRoutes.post("/backups/delete", async (c) => {
+  const { stamp, confirm } = parse(DeleteBody, await c.req.json().catch(() => ({})));
+  await reconfirm(c, confirm);
+  const order = await requestBackupOrder(c, "delete", { stamp });
+  await audit(c, "backup.delete_requested", { targetType: "backup_request", targetId: String(order.id), details: { stamp } });
   return c.json(order);
 });
 

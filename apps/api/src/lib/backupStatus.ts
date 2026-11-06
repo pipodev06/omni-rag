@@ -10,7 +10,7 @@ import { b2Configured, backupSettingsForScripts } from "./settings.js";
  * API lo lea sin montar la carpeta de copias.
  *
  * En sentido contrario, `writeBackupConfig()` deja en `/backup-config/b2.env` los ajustes de copias y de B2 editados en la
- * pantalla (con las claves descifradas), para que los scripts de copia los lean; la carpeta solo la monta el perfil backblaze.
+ * pantalla (con las claves descifradas), para que los scripts de copia los lean.
  */
 
 export const BACKUP_DIR = process.env.BACKUP_DIR ?? "/backups";

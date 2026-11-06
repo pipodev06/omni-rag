@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarClock, CloudUpload, DatabaseBackup, FolderInput, HardDrive, Loader2, Play, ShieldCheck, TriangleAlert } from "lucide-react";
+import { CalendarClock, CloudUpload, DatabaseBackup, FolderInput, HardDrive, Loader2, Play, ShieldCheck, Trash2, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage, formatBytes, formatDate, timeAgo } from "@/api";
 import { EmptyState, TableCard } from "@/components/common";
 import { DestinationDialog, type BackupTargets } from "@/components/system/DestinationDialog";
-import { SettingsGroups } from "@/components/system/SettingsForm";
+import { ReauthDialog, type Confirm } from "@/components/system/ReauthDialog";
+import { SettingsGroups, useReauthTotp } from "@/components/system/SettingsForm";
 import { OpenAlerts, Tag, Tile, type OpenAlert } from "@/components/system/shared";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -21,6 +22,8 @@ interface Backups {
     local: { attemptAt: string; ok: boolean; error: string; counts: string; at: string; intervalHours: number; nextAt: string; offsite: boolean; encrypted: boolean; keepDays: number } | null;
     targets: BackupTargets | null;
     destination: string;
+    /** Bucket y claves de B2 guardados (en la pantalla o en el entorno). Sin ellos B2 está «no configurado», no fallando. */
+    b2Configured: boolean;
     b2: { checkedAt: string; ok: boolean; error: string; lastOkAt: string; at: string; intervalHours: number; nextAt: string; syncUploads: boolean; keepDays: number } | null;
   } | null;
   alerts: OpenAlert[];
@@ -36,8 +39,8 @@ const schedule = (at: string, hours: number) => (at ? `Diaria a las ${at}` : `Ca
 
 interface BackupRequest {
   id: number;
-  kind: "backup" | "destination";
-  payload: { path?: string; moveExisting?: boolean } | null;
+  kind: "backup" | "destination" | "delete";
+  payload: { path?: string; moveExisting?: boolean; stamp?: string } | null;
   requestedBy: string | null;
   createdAt: string;
   startedAt: string | null;
@@ -50,7 +53,7 @@ const requestState = (r: BackupRequest): { tone: "ok" | "bad" | "warn" | "muted"
   r.finishedAt ? (r.ok ? { tone: "ok", label: "Correcta" } : { tone: "bad", label: "Falló" }) : r.startedAt ? { tone: "warn", label: "En curso" } : { tone: "muted", label: "En cola" };
 
 const requestTitle = (r: BackupRequest) =>
-  r.kind === "backup" ? "Copia manual" : `Cambio de destino${r.payload?.path ? ` a «${r.payload.path}»` : " a la carpeta clásica"}${r.payload?.moveExisting ? " (moviendo las copias)" : ""}`;
+  r.kind === "backup" ? "Copia manual" : r.kind === "delete" ? `Borrar la copia ${r.payload?.stamp ?? ""}` : `Cambio de destino${r.payload?.path ? ` a «${r.payload.path}»` : " a la carpeta clásica"}${r.payload?.moveExisting ? " (moviendo las copias)" : ""}`;
 
 /** Órdenes enviadas al servicio de copias; se consulta cada 5 s mientras alguna no haya terminado. */
 function useBackupRequests() {
@@ -113,6 +116,16 @@ export function BackupsTab() {
   const { data, isLoading } = useQuery({ queryKey: ["system", "backups"], queryFn: () => api.get<Backups>("/system/backups"), refetchInterval: 60_000 });
   const requests = useBackupRequests();
   const [destOpen, setDestOpen] = useState(false);
+  const totp = useReauthTotp();
+  const [toDelete, setToDelete] = useState<{ stamp: string; at: string } | null>(null);
+  const remove = useMutation({
+    mutationFn: ({ stamp, confirm }: { stamp: string; confirm: Confirm }) => api.post<{ id: number }>("/system/backups/delete", { stamp, confirm }),
+    onSuccess: () => {
+      setToDelete(null);
+      toast.success("Orden enviada. La copia se borra en menos de un minuto.");
+      return qc.invalidateQueries({ queryKey: ["system", "backups", "requests"] });
+    },
+  });
   const run = useMutation({
     mutationFn: () => api.post<{ id: number }>("/system/backups/run"),
     onSuccess: () => {
@@ -160,7 +173,7 @@ export function BackupsTab() {
         <div className="mb-4 flex shrink-0 items-start gap-2 rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm">
           <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" />
           <p className="text-muted-foreground">
-            No se puede cambiar el destino desde aquí: falta <span className="font-mono text-xs">BACKUP_TARGETS_DIR</span> en el .env del servidor (la carpeta del anfitrión con los discos permitidos) o el servicio de copias aún no ha leído los destinos. Define la variable y recrea los contenedores con «docker compose up -d».
+            Para elegir aquí otro disco o carpeta, el servidor debe indicar una vez qué carpeta pueden usar las copias, porque un contenedor solo ve las carpetas que se le dan al arrancar (por seguridad, nunca el disco entero). Escribe en el archivo de entorno <span className="font-mono text-xs">BACKUP_TARGETS_DIR=/mnt</span> (o la carpeta donde se montan tus discos, p. ej. <span className="font-mono text-xs">/media/usuario</span>) y aplica con «docker compose up -d». Desde ese momento, los discos y carpetas de dentro se eligen con «Cambiar destino». Si ya lo hiciste, espera un minuto: el servicio de copias revisa los destinos cada 5 minutos.
           </p>
         </div>
       )}
@@ -180,7 +193,14 @@ export function BackupsTab() {
         <span className="flex items-center gap-2 font-medium">
           <CloudUpload className="size-4 text-muted-foreground" /> Backblaze B2
         </span>
-        {b2 ? (
+        {!info.b2Configured ? (
+          <>
+            <Tag tone="muted">No configurado</Tag>
+            <span className="text-muted-foreground">
+              Opcional, pero recomendado: guarda una copia cifrada fuera del servidor por si se pierde el disco. Se configura en «Backblaze B2», más abajo, y necesita la copia externa activa y una frase de cifrado (docs/produccion.md).
+            </span>
+          </>
+        ) : b2 ? (
           <>
             <Tag tone={b2.ok ? "ok" : "bad"}>{b2.ok ? "Funciona" : "Falla"}</Tag>
             {!b2.ok && <span className="text-destructive">{b2.error}</span>}
@@ -197,7 +217,7 @@ export function BackupsTab() {
             </span>
           </>
         ) : (
-          <span className="text-muted-foreground">Desactivado. Se activa con el perfil «backblaze» (docs/produccion.md → Copias de seguridad).</span>
+          <span className="text-muted-foreground">Configurado. El servicio backup-b2 aún no anotó ningún intento; si no cambia en unos minutos, revisa «docker compose logs backup-b2».</span>
         )}
       </div>
 
@@ -213,16 +233,32 @@ export function BackupsTab() {
                 <TableHead className="pl-4">Fecha</TableHead>
                 <TableHead className="hidden sm:table-cell">Archivo</TableHead>
                 <TableHead className="text-right">Base de datos</TableHead>
-                <TableHead className="pr-4 text-right">Archivos subidos</TableHead>
+                <TableHead className="text-right">Archivos subidos</TableHead>
+                <TableHead className="w-12 pr-4">
+                  <span className="sr-only">Acciones</span>
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {info.copies.map((c) => (
+              {info.copies.map((c, i) => (
                 <TableRow key={c.stamp}>
                   <TableCell className="pl-4 font-mono text-xs whitespace-nowrap tabular-nums">{formatDate(c.at)}</TableCell>
                   <TableCell className="hidden font-mono text-xs text-muted-foreground sm:table-cell">db_{c.stamp}.dump</TableCell>
                   <TableCell className="text-right font-mono text-xs tabular-nums">{formatBytes(c.dbBytes)}</TableCell>
-                  <TableCell className="pr-4 text-right font-mono text-xs tabular-nums">{c.uploadsBytes === null ? "—" : formatBytes(c.uploadsBytes)}</TableCell>
+                  <TableCell className="text-right font-mono text-xs tabular-nums">{c.uploadsBytes === null ? "—" : formatBytes(c.uploadsBytes)}</TableCell>
+                  <TableCell className="pr-4 text-right">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="size-8 text-muted-foreground hover:text-destructive"
+                      aria-label={`Eliminar la copia del ${formatDate(c.at)}`}
+                      title={i === 0 ? "La copia más reciente no se puede eliminar" : "Eliminar esta copia"}
+                      disabled={i === 0 || requests.pending}
+                      onClick={() => setToDelete({ stamp: c.stamp, at: c.at })}
+                    >
+                      <Trash2 />
+                    </Button>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -232,6 +268,13 @@ export function BackupsTab() {
       {info.failed > 0 && <p className="mb-4 shrink-0 text-xs text-muted-foreground">{info.failed} copia(s) fallida(s) apartada(s) como «.dump.fallida»; se borran a los {local?.keepDays ?? 7} días.</p>}
 
       <SettingsGroups ids={["backup", "b2"]} />
+      <ReauthDialog
+        open={toDelete !== null}
+        onCancel={() => setToDelete(null)}
+        totp={totp}
+        action={toDelete ? `Vas a eliminar la copia del ${formatDate(toDelete.at)} de este servidor y de la carpeta externa (en Backblaze B2 se conserva hasta caducar).` : undefined}
+        onConfirm={(confirm) => remove.mutateAsync({ stamp: toDelete!.stamp, confirm })}
+      />
       {targets && <DestinationDialog open={destOpen} onOpenChange={setDestOpen} targets={targets} current={destination} />}
     </div>
   );
