@@ -28,7 +28,11 @@ const SetupBody = z.object({
 setupRoutes.post("/", async (c) => {
   const body = parse(SetupBody, await c.req.json().catch(() => ({})));
   if (!(await setupPending())) throw new HttpError(409, "Omni RAG ya está configurado. Inicia sesión.");
-  if (!checkSetupCode(body.code)) throw new HttpError(403, "Código incorrecto. Míralo en los registros del servidor: docker compose logs api");
+  if (!checkSetupCode(body.code)) {
+    // Sin el código intentado: solo quién lo intentó.
+    console.warn(`[setup] código de configuración incorrecto desde ${clientIp(c) ?? "IP desconocida"}`);
+    throw new HttpError(403, "Código incorrecto. Míralo en los registros del servidor: docker compose logs api");
+  }
   const admin = { username: body.username, email: body.email ?? null, password: body.password };
   const problem = initialAdminProblem(admin);
   if (problem) throw badRequest(problem);

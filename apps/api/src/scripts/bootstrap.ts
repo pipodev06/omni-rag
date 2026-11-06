@@ -20,9 +20,16 @@ export interface CreatedAdmin {
   name: string;
 }
 
+/**
+ * Mínimo del primer superadministrador: puede quedar sin 2FA (en local no se exige), y sin segundo factor NIST
+ * 800-63B rev. 4 pide 15 caracteres. El resto de usuarios sigue con el mínimo general.
+ */
+export const INITIAL_ADMIN_MIN_PASSWORD = 15;
+
 /** Problema de un usuario/contraseña para el primer superadministrador, o null si vale. */
 export function initialAdminProblem(a: InitialAdmin): string | null {
   if (!USERNAME_RE.test(a.username)) return "El usuario debe tener 3-40 caracteres: minúsculas, números, punto, guion o guion bajo.";
+  if (a.password.length < INITIAL_ADMIN_MIN_PASSWORD) return `La contraseña del superadministrador debe tener al menos ${INITIAL_ADMIN_MIN_PASSWORD} caracteres.`;
   return passwordProblem(a.password) ?? weakSeedPassword(process.env.DOMAIN?.trim() ?? "", a.password);
 }
 

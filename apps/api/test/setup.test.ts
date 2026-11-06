@@ -45,16 +45,15 @@ beforeEach(async () => {
 });
 
 describe("código de un solo uso", () => {
-  it("se escribe en los registros, no distingue mayúsculas ni guiones y caduca tras 5 fallos", async () => {
+  it("se escribe en los registros, no distingue mayúsculas ni guiones y los fallos no lo cambian (nadie puede bloquear la configuración)", async () => {
     const m = await import("../src/lib/setupCode.js");
     const logs: string[] = [];
     const code = m.announceSetupCode((l) => logs.push(l));
     expect(code).toMatch(/^[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}$/);
     expect(logs.join("")).toContain(code);
+    for (let i = 0; i < 20; i++) expect(m.checkSetupCode("MALO-MALO-MALO")).toBe(false);
     expect(m.checkSetupCode(code.toLowerCase().replaceAll("-", " "))).toBe(true);
-    for (let i = 0; i < 5; i++) expect(m.checkSetupCode("MALO-MALO-MALO", (l) => logs.push(l))).toBe(false);
-    expect(m.checkSetupCode(code)).toBe(false); // ya cambió
-    expect(logs).toHaveLength(2);
+    expect(logs).toHaveLength(1);
   });
 
   it("sin código anunciado nada vale", async () => {
@@ -99,6 +98,7 @@ describe("POST /api/setup", () => {
     const code = (await import("../src/lib/setupCode.js")).announceSetupCode(quiet);
     expect((await call({ ...GOOD, username: "a", code })).status).toBe(400);
     expect((await call({ ...GOOD, password: "corta", code })).status).toBe(400);
+    expect((await call({ ...GOOD, password: "Catorce-letra1", code })).status).toBe(400); // 14: el superadmin pide 15
     expect((await call({ ...GOOD, email: "no-es-correo", code })).status).toBe(400);
     expect((await call({ ...GOOD, code })).status).toBe(200);
   });
