@@ -61,13 +61,14 @@ export interface ValidToken {
   username: string;
   email: string | null;
   name: string;
+  isSuperadmin: boolean;
 }
 
 /** Comprueba un token: existe, no se usó, no caducó y el usuario/organización están activos. */
 export async function findValidToken(token: string): Promise<ValidToken | null> {
   if (!token || token.length > 200) return null;
   const [row] = await sqlOwner<ValidToken[]>`
-    SELECT t.id, t.kind, t.user_id AS "userId", t.tenant_id AS "tenantId", u.username, u.email, u.name
+    SELECT t.id, t.kind, t.user_id AS "userId", t.tenant_id AS "tenantId", u.username, u.email, u.name, u.is_superadmin AS "isSuperadmin"
       FROM user_tokens t
       JOIN users u ON u.id = t.user_id
       JOIN tenants o ON o.id = t.tenant_id

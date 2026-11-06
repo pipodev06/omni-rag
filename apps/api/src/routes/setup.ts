@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import type { AppEnv } from "../auth/middleware.js";
+import { SUPERADMIN_MIN_PASSWORD } from "../auth/password.js";
 import { auditLog } from "../lib/audit.js";
 import { badRequest, HttpError } from "../lib/errors.js";
 import { clientIp } from "../lib/request.js";
@@ -16,7 +17,8 @@ import { startSession } from "./auth.js";
  */
 export const setupRoutes = new Hono<AppEnv>();
 
-setupRoutes.get("/", async (c) => c.json({ pending: await setupPending() }));
+// minPassword: la web muestra y exige el mismo mínimo que la API (una sola fuente).
+setupRoutes.get("/", async (c) => c.json({ pending: await setupPending(), minPassword: SUPERADMIN_MIN_PASSWORD }));
 
 const SetupBody = z.object({
   code: z.string().trim().min(1).max(40),
@@ -28,11 +30,7 @@ const SetupBody = z.object({
 setupRoutes.post("/", async (c) => {
   const body = parse(SetupBody, await c.req.json().catch(() => ({})));
   if (!(await setupPending())) throw new HttpError(409, "Omni RAG ya está configurado. Inicia sesión.");
-  if (!checkSetupCode(body.code)) {
-    // Sin el código intentado: solo quién lo intentó.
-    console.warn(`[setup] código de configuración incorrecto desde ${clientIp(c) ?? "IP desconocida"}`);
-    throw new HttpError(403, "Código incorrecto. Míralo en los registros del servidor: docker compose logs api");
-  }
+  if (!checkSetupCode(body.code)) throw new HttpError(403, "Código incorrecto. Míralo en los registros del servidor: docker compose logs --since 10m api");
   const admin = { username: body.username, email: body.email ?? null, password: body.password };
   const problem = initialAdminProblem(admin);
   if (problem) throw badRequest(problem);
