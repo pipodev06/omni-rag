@@ -55,16 +55,25 @@ No hace falta clonar el repositorio: todas las imágenes vienen hechas (`omni-ra
 ```bash
 mkdir -p ~/docker/rag && cd ~/docker/rag
 curl -fsSLO https://raw.githubusercontent.com/pipodev06/omni-rag/main/docker-compose.yml
-# Opcional: red de tu proxy y datos en carpetas (edítalo: nombre de la red, quita lo que no uses)
-curl -fsSL https://raw.githubusercontent.com/pipodev06/omni-rag/main/docker-compose.override.example.yml -o docker-compose.override.yml
+```
+
+Si tu proxy corre en Docker (Nginx Proxy Manager, Traefik…), conecta la web a su red. Pega estas líneas en el propio `docker-compose.yml` o déjalas aparte en un `docker-compose.override.yml` (así, al actualizar, reemplazas el compose sin volver a pegarlas):
+
+```yaml
+services:
+  web:
+    networks: [default, proxy]
+networks:
+  proxy:
+    external: true
 ```
 
 ```
 rag/
-├── docker-compose.yml            # el de GitHub, sin tocar
-├── docker-compose.override.yml   # lo propio de este servidor (red del proxy, datos en ./data)
+├── docker-compose.yml            # el de GitHub (más la red del proxy, si la pegaste aquí)
+├── docker-compose.override.yml   # opcional: la red del proxy, aparte
 ├── .env                          # opcional: lo que no quieres que se cambie desde la web
-├── data/                         # base de datos, archivos, modelos, secretos (con el override)
+├── data/                         # base de datos, archivos, modelos y secretos (se crea sola)
 └── backups/                      # copias locales
 ```
 
@@ -78,7 +87,7 @@ COMPOSE_PROFILES=https          # vacío si ya tienes otro proxy (ver más abajo
 WEB_BIND=127.0.0.1
 ```
 
-Las contraseñas internas y `JWT_SECRET` se generan solas en el primer arranque (volumen `secrets` o `./data/secretos`); guarda esa carpeta en un lugar seguro. El superadministrador se crea en la **configuración inicial** de la web con el código que sale en `docker compose logs api`, y las claves de los modelos, el correo y las copias se configuran en *Sistema*. Qué es imprescindible y qué se recomienda: [configuracion-inicial.md](configuracion-inicial.md).
+Las contraseñas internas y `JWT_SECRET` se generan solas en el primer arranque (`./data/secretos`); guarda esa carpeta en un lugar seguro. El superadministrador se crea en la **configuración inicial** de la web con el código que sale en `docker compose logs api`, y las claves de los modelos, el correo y las copias se configuran en *Sistema*. Qué es imprescindible y qué se recomienda: [configuracion-inicial.md](configuracion-inicial.md).
 
 Si migras desde tu equipo con un `.env` que ya trae contraseñas, no copies las de desarrollo: déjalas vacías en el servidor y se generarán nuevas.
 

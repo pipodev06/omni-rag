@@ -17,7 +17,7 @@ Casi todo se cambia en la web, en **Sistema → Configuración** y **Sistema →
 |---|---|---|
 | **Clave de un proveedor de modelos de lenguaje** | *Sistema → Configuración → Modelos de lenguaje* | Sin ella no hay respuestas: el chat busca en los documentos, pero no puede redactar. Groq y Google (AI Studio) tienen capa gratuita; también OpenRouter, OpenAI, DeepSeek o un servidor propio compatible con OpenAI (Ollama, vLLM). |
 | **Modelos de los planes con ese proveedor** | *Organizaciones → Planes* | Cada organización pregunta con los modelos de su plan. El plan inicial «Estándar» trae modelos gratuitos de OpenRouter. Si tu clave es de otro proveedor, escribe sus modelos con prefijo (`groq:…`, `google:…`; al guardar se comprueba que existan) o cambia el *Proveedor por defecto*. El primero de la lista es el principal; los siguientes, respaldos si falla o se satura. |
-| **Guardar los secretos generados** | Volumen `secrets` o `./data/secretos` | Ahí están las contraseñas de la base y `JWT_SECRET`. No van en las copias de seguridad. Sin `JWT_SECRET` no se pueden leer las claves de API guardadas en la pantalla ni el 2FA de los usuarios: guárdalos en un gestor de contraseñas. |
+| **Guardar los secretos generados** | `./data/secretos` | Ahí están las contraseñas de la base y `JWT_SECRET`. No van en las copias de seguridad. Sin `JWT_SECRET` no se pueden leer las claves de API guardadas en la pantalla ni el 2FA de los usuarios: guárdalos en un gestor de contraseñas. |
 | **Con dominio público: `DOMAIN` y 2FA** | `.env` (`DOMAIN=rag.tuempresa.com`) y *Mi cuenta* | `DOMAIN` activa las protecciones de producción (cookie segura, enlaces `https://`, secretos fuertes). Con un dominio real el superadministrador debe activar la verificación en dos pasos. Ver [produccion.md](produccion.md). |
 
 ## 3. Lo recomendado
@@ -27,7 +27,7 @@ Casi todo se cambia en la web, en **Sistema → Configuración** y **Sistema →
 | **Correo saliente (SMTP)** | *Sistema → Configuración → Correo* | Invitaciones, recuperación de contraseña y avisos. Sin correo todo funciona, pero el administrador copia los enlaces a mano. Con «Enviar prueba» se comprueba al momento. |
 | **Correo de alertas** | *Sistema → Configuración → Alertas* | El monitor revisa cada 5 minutos disco, cola, copias y modelos; sin destinatario solo se ve en *Sistema → Alertas*. |
 | **Copia fuera del servidor** | *Sistema → Copias* | La copia diaria ya se hace en el servidor (`./backups`), pero si se pierde el disco se pierde con él. Activa la *Copia externa* (otro disco con `BACKUP_TARGETS_DIR`) y/o **Backblaze B2**. Ambas cifran con `BACKUP_ENCRYPTION_PASSPHRASE`, que va en el `.env` (si estuviera en la base, la llave viajaría dentro de la copia que protege). |
-| **Datos en carpetas (servidor)** | `docker-compose.override.yml` | Con los datos en `./data` ningún `docker prune` puede borrarlos. Ver [operacion.md](operacion.md#dónde-viven-los-datos). |
+| **Guardar `./data/secretos` aparte** | Gestor de contraseñas o disco externo | Los datos ya viven en `./data` (ningún `docker prune` los borra), pero los secretos no van en las copias. Ver [operacion.md](operacion.md#dónde-viven-los-datos). |
 
 ## 4. Valores por defecto, qué hacen y cuándo cambiarlos
 

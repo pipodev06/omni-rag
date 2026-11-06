@@ -20,7 +20,7 @@ Copia a la base el valor actual de cada uno (los secretos, cifrados), lo deja en
 
 | Variable | Por defecto | Qué hace | Aplica |
 |---|---|---|---|
-| `POSTGRES_PASSWORD` | generada en el primer arranque | Contraseña del usuario `rag_owner` de PostgreSQL. Vacía = la que genera el servicio `init` en `/secrets` (volumen `secrets` o `./data/secretos`). Se rota con `sh deploy/rotate-db-password.sh` (solo si está escrita en el `.env`) | Ver [README, regla 3](../README.md#3-las-contraseñas-de-la-base-de-datos-tienen-un-paso-extra) |
+| `POSTGRES_PASSWORD` | generada en el primer arranque | Contraseña del usuario `rag_owner` de PostgreSQL. Vacía = la que genera el servicio `init` en `/secrets` (`./data/secretos`). Se rota con `sh deploy/rotate-db-password.sh` (solo si está escrita en el `.env`) | Ver [README, regla 3](../README.md#3-las-contraseñas-de-la-base-de-datos-tienen-un-paso-extra) |
 | `APP_DB_PASSWORD` | generada en el primer arranque | Contraseña del usuario `rag_app` (el que usa la aplicación, sujeto a RLS). Vacía = la generada por `init` | up (la API la aplica sola) |
 | `JWT_SECRET` | generado en el primer arranque | Firma las sesiones y cifra los secretos del 2FA y las claves guardadas en la pantalla. Vacío = el generado por `init` (64 caracteres). Si lo escribes, 32+ caracteres | up (cierra todas las sesiones y **rompe el 2FA y las claves ya guardadas**) |
 | `JWT_EXPIRES_IN` | `12h` | Duración de una sesión | up |

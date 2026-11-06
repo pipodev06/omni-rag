@@ -5,7 +5,7 @@ Actualizado el 2026-11-05. Fase: **cierre**.
 ## Hecho el 2026-11-05
 
 - El CI publica las imágenes en GHCR (`omni-rag-api`, que usan la API y el worker, y `omni-rag-web`): `:latest` desde `main` y `:X.Y.Z` desde etiquetas `vX.Y.Z`. El compose las descarga (`OMNI_RAG_VERSION`) y sigue pudiendo construirlas con `--build`.
-- `docker-compose.override.example.yml` trae, además de la red del proxy, los datos en carpetas `./data` para servidores que se limpian con `prune`. Guía de mudanza en [operacion.md](operacion.md#pasar-los-datos-a-carpetas).
+- Los datos viven en carpetas `./data` por defecto (como Immich o Nextcloud); el override de ejemplo solo trae la red del proxy y `docker-compose.volumenes.example.yml` sirve para desarrollo en Windows. El servidor solo necesita `docker-compose.yml` (imagen `omni-rag-ops` con los scripts). Mudanza desde volúmenes en [operacion.md](operacion.md#actualizar-desde-una-versión-con-volúmenes-de-docker).
 - `scripts/import-env-settings.ts`: copia a la base los ajustes de la pantalla fijados en el `.env` para poder editarlos allí ([variables.md](variables.md)). Probado con tests unitarios; no en el servidor.
 - Sistema: solo se miden los contenedores propios; Métricas y Alertas en pestañas separadas; una hora de gracia para la alerta de copia antigua al encender el servidor.
 - Copias: eliminar una copia desde la pantalla (orden «delete», la más reciente no); B2 opcional («No configurado», sin alerta) y `backup-b2` siempre en marcha, sin perfil.
@@ -24,5 +24,5 @@ Actualizado el 2026-11-05. Fase: **cierre**.
 - Probar en el navegador las pantallas Configuración y Copias, y una subida real a B2 (ver [deuda-tecnica.md](deuda-tecnica.md)). Migraciones, integración con la base y scripts en sus contenedores ya están probados.
 - Probar en el navegador la configuración inicial, Primeros pasos, la pestaña Alertas y el borrado de copias.
 - B2 es opcional: en el servidor, configurarlo desde Sistema → Copias cuando haya claves; `backblaze` en `COMPOSE_PROFILES` ya no hace falta.
-- En el servidor: pasar los datos de los volúmenes a `./data` ([operacion.md](operacion.md#pasar-los-datos-a-carpetas)) y desplegar con `git pull`, `docker compose pull`, `docker compose up -d`. Sin probar todavía en el servidor.
+- Validar en el servidor la instalación desde cero con la carpeta mínima y los datos en `./data` (en Windows no se puede: PostgreSQL no arranca sobre carpetas).
 - CI: pruebas, construcción y publicación de imágenes. No hay despliegue automático (CD) al servidor.

@@ -23,6 +23,7 @@ Medido con todo en marcha: ≈ 5,2 GB en reposo y ≈ 6,9 GB de pico (procesando
   processors=4
   ```
 - Usa `curl.exe` en lugar de `curl` en PowerShell.
+- PostgreSQL no arranca sobre una carpeta de un disco de Windows: antes del primer arranque, `Copy-Item docker-compose.volumenes.example.yml docker-compose.override.yml` para usar volúmenes de Docker.
 - Si aparece `ports are not available ... Intento de acceso a un socket no permitido`, el puerto está ocupado o reservado por Windows: crea un `.env` con `WEB_PORT`, `DB_PORT` o `EMBEDDINGS_PORT` distintos.
 
 ## 2. Arrancar sin configurar nada
@@ -34,7 +35,7 @@ docker compose logs api | grep -A2 "CONFIGURACIÓN INICIAL"   # el código de un
 
 No hace falta `.env`. En el primer arranque:
 
-1. El servicio `init` genera las contraseñas internas de la base de datos y la clave de las sesiones (`JWT_SECRET`) y las guarda en el volumen `secrets` (o en `./data/secretos` con el override de servidor). **Guarda esa carpeta**: no va en las copias de seguridad.
+1. El servicio `init` genera las contraseñas internas de la base de datos y la clave de las sesiones (`JWT_SECRET`) y las guarda en `./data/secretos`, junto a los demás datos (`./data/postgres`, `./data/uploads`…). **Guarda esa carpeta**: no va en las copias de seguridad.
 2. La API aplica las migraciones y, como aún no hay usuarios, escribe en sus registros un **código de un solo uso**.
 3. Abre <http://localhost:8000>: en lugar del login sale la **Configuración inicial**. Escribe el código, tu usuario y tu contraseña: se crea el superadministrador (en la organización interna «Plataforma», que no es un cliente) y entras.
 4. En **Organizaciones** aparece la lista **Primeros pasos**: clave de un proveedor de modelos de lenguaje (lo único imprescindible), modelos de los planes, correo, copias fuera del servidor y la primera organización. Todo se hace en la web, en *Sistema → Configuración* y *Sistema → Copias*.

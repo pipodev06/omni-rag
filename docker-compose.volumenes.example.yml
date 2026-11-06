@@ -1,0 +1,60 @@
+# Solo para desarrollo en Windows (Docker Desktop): PostgreSQL no arranca sobre una carpeta de un disco de Windows
+# (no puede cambiar sus permisos), así que aquí los datos vuelven a volúmenes de Docker. En Linux no hace falta.
+#
+#   cp docker-compose.volumenes.example.yml docker-compose.override.yml
+#
+# Los nombres coinciden con los de las versiones anteriores (rag_pgdata, rag_uploads…): una instalación de desarrollo
+# que ya tenía datos los sigue viendo. Ojo: en volúmenes, «docker volume prune» los borra si no hay contenedores.
+services:
+  init:
+    volumes:
+      - secrets:/secrets
+      - uploads:/prepare/uploads
+      - backup-config:/prepare/copias-config
+  db:
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - secrets:/secrets:ro
+  embeddings:
+    volumes:
+      - hf-cache:/data
+  reranker:
+    volumes:
+      - hf-cache:/data
+  clamav:
+    volumes:
+      - clamav-db:/var/lib/clamav
+  api:
+    volumes:
+      - uploads:/data/uploads
+      - secrets:/secrets:ro
+  worker:
+    volumes:
+      - uploads:/data/uploads
+      - secrets:/secrets:ro
+      - backup-status:/backup-status:ro
+      - backup-config:/backup-config
+  backup:
+    volumes:
+      - secrets:/secrets:ro
+      - uploads:/uploads:ro
+  backup-b2:
+    volumes:
+      - uploads:/uploads:ro
+      - backup-config:/backup-config:ro
+      - backup-status:/status
+  caddy:
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  secrets:
+  pgdata:
+  hf-cache:
+  clamav-db:
+  uploads:
+  backup-config:
+  backup-status:
+  caddy-data:
+  caddy-config:

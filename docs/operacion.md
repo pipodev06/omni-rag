@@ -7,7 +7,7 @@ docker compose ps                    # estado de los servicios
 docker compose logs -f api worker    # registros en vivo
 docker compose restart api worker    # reiniciar tras cambiar .env
 docker compose stop                  # parar sin borrar los contenedores
-docker compose down                  # parar y borrar los contenedores (los datos se conservan)
+docker compose down                  # parar y borrar los contenedores (los datos de ./data se conservan)
 git pull && docker compose pull && docker compose up -d   # actualizar (imágenes ya hechas, sin compilar)
 curl localhost:8000/api/health       # estado de dependencias
 ```
@@ -16,26 +16,29 @@ curl localhost:8000/api/health       # estado de dependencias
 
 Las imágenes propias (`ghcr.io/pipodev06/omni-rag-api`, que usan la API y el worker, `omni-rag-web` y `omni-rag-ops`, la de `init`, `backup` y `backup-b2`) las construye y publica el CI de GitHub al subir cambios a `main` (`:latest`) o una etiqueta `v1.2.3` (`:1.2.3`). El servidor las descarga como cualquier otra imagen (beszel, Immich…): si un `docker image prune -a` las borra, `docker compose pull` las vuelve a bajar. Para fijar una versión, `OMNI_RAG_VERSION=1.2.3` en el `.env`.
 
-`docker compose up -d --build` sigue construyéndolas en la propia máquina (desarrollo, o un servidor que no llega a GHCR; ver también `deploy/build.sh`). El servidor no necesita el repositorio: los scripts de secretos y copias van dentro de `omni-rag-ops` y la configuración de Caddy, dentro del propio `docker-compose.yml`. Basta la carpeta con `docker-compose.yml`, el override y los datos ([produccion.md](produccion.md#3-carpeta-del-servicio-y-configuración)).
+`docker compose up -d --build` sigue construyéndolas en la propia máquina (desarrollo, o un servidor que no llega a GHCR; ver también `deploy/build.sh`). El servidor no necesita el repositorio: los scripts de secretos y copias van dentro de `omni-rag-ops` y la configuración de Caddy, dentro del propio `docker-compose.yml`. Basta la carpeta con `docker-compose.yml` y los datos ([produccion.md](produccion.md#3-carpeta-del-servicio-y-configuración)).
 
 ### Dónde viven los datos
 
-| Dato | Volumen de Docker (por defecto) | Carpeta (con el override) | ¿Copia de seguridad? |
-|---|---|---|---|
-| Base de datos (usuarios, documentos, vectores, conversaciones) | `rag_pgdata` | `./data/postgres` | **Sí** |
-| Archivos originales subidos | `rag_uploads` | `./data/uploads` | **Sí** |
-| Modelos de embeddings y re-ranker | `rag_hf-cache` | `./data/modelos` | No (se vuelven a descargar) |
-| Ajustes y estado de las copias externas | `rag_backup-config`, `rag_backup-status` | `./data/copias-config`, `./data/copias-estado` | No (se regeneran) |
-| Firmas del antivirus | `rag_clamav-db` | `./data/clamav` | No |
-| Copias de seguridad | — | `./backups` (siempre carpeta) | Es la copia |
+Todo en carpetas junto al `docker-compose.yml`, como en cualquier otro servicio (Immich, Nextcloud, Jellyfin): ningún `docker prune` las toca, se pare como se pare, y para mover Omni RAG de servidor basta con copiar la carpeta.
 
-Con **volúmenes de Docker** (lo que trae `docker-compose.yml`, cómodo en desarrollo y en Windows) hay un riesgo en servidores que se limpian con `prune`: si Omni RAG se queda **sin contenedores** (un `down`, o un `system prune` con todo parado), `docker volume prune -a` o `docker system prune --volumes` borran `rag_pgdata` y `rag_uploads`, y con ellos la base de datos. `docker compose stop` deja los contenedores y no hay riesgo, pero un `down` por error sí.
+| Carpeta | Contenido | ¿Copia de seguridad? |
+|---|---|---|
+| `./data/postgres` | Base de datos (usuarios, documentos, vectores, conversaciones) | **Sí** |
+| `./data/uploads` | Archivos originales subidos | **Sí** |
+| `./data/secretos` | Contraseñas internas y `JWT_SECRET` generados en el primer arranque | **No van en las copias: guárdala aparte** |
+| `./data/modelos` | Modelos de embeddings y re-ranker | No (se vuelven a descargar) |
+| `./data/copias-config`, `./data/copias-estado` | Ajustes y estado de las copias externas | No (se regeneran) |
+| `./data/clamav`, `./data/caddy` | Firmas del antivirus, certificados de Caddy (solo con esos perfiles) | No |
+| `./backups` | Copias de seguridad | Es la copia |
 
-Con **carpetas** (`./data`, como beszel o Immich) ningún `prune` puede tocarlos, se pare como se pare. Es lo recomendado en un servidor: la parte 2 de `docker-compose.override.example.yml`.
+El servicio `init` deja `./data/uploads` y `./data/copias-config` con el dueño que necesitan la API y el worker (usuario 1000): no hay que crear carpetas ni cambiar permisos a mano.
 
-### Pasar los datos a carpetas
+**Desarrollo en Windows:** PostgreSQL no arranca sobre una carpeta de un disco de Windows. Ahí se usan volúmenes de Docker: `cp docker-compose.volumenes.example.yml docker-compose.override.yml`. Con volúmenes, un `docker volume prune` con Omni RAG sin contenedores (tras un `down`) borra la base de datos.
 
-Una sola vez, en un servidor que ya tiene datos en volúmenes. Los volúmenes viejos no se borran: si algo falla, basta con quitar la parte 2 del override y volver a arrancar.
+### Actualizar desde una versión con volúmenes de Docker
+
+Las versiones anteriores guardaban los datos en volúmenes (`rag_pgdata`, `rag_uploads`…). **Antes de actualizar el `docker-compose.yml`**, pásalos a `./data`; si no, la nueva versión arranca con carpetas vacías (los volúmenes siguen intactos, pero no se ven). Otra opción es seguir con volúmenes usando `docker-compose.volumenes.example.yml` como override.
 
 ```bash
 cd ~/docker/rag                                     # la carpeta del proyecto
@@ -48,26 +51,23 @@ for par in pgdata:postgres uploads:uploads hf-cache:modelos backup-config:copias
   vol="rag_${par%%:*}"; dir="data/${par##*:}"
   docker volume inspect "$vol" >/dev/null 2>&1 || { echo "sin $vol, se salta"; continue; }
   [ -e "$dir" ] && { echo "ya existe $dir: revísalo antes de seguir"; break; }
-  docker run --rm -v "$vol":/de:ro -v "$PWD/$dir":/a alpine \
-    sh -c 'cp -a /de/. /a/ && chown "$(stat -c %u:%g /de)" /a && chmod "$(stat -c %a /de)" /a' && echo "ok $vol → $dir"
+  docker run --rm -v "$vol":/de:ro -v "$PWD/$dir":/a alpine     sh -c 'cp -a /de/. /a/ && chown "$(stat -c %u:%g /de)" /a && chmod "$(stat -c %a /de)" /a' && echo "ok $vol → $dir"
 done
 ```
 
-Después añade la parte 2 de `docker-compose.override.example.yml` a tu `docker-compose.override.yml` (si ya tienes uno con la red del proxy, copia solo los servicios de esa parte) y arranca:
+Después descarga el `docker-compose.yml` nuevo y arranca:
 
 ```bash
-docker compose config | grep -E "source: .*/data/"  # deben salir las carpetas de ./data, no los volúmenes
+docker compose config | grep -E "source: .*/data/"  # deben salir las carpetas de ./data
 docker compose up -d
 curl localhost:8000/api/health
 ```
 
-Entra y comprueba que están tus documentos y conversaciones. Cuando lleves unos días sin problemas, borra los volúmenes viejos: `docker volume rm rag_pgdata rag_uploads rag_hf-cache rag_backup-config rag_backup-status` (y `rag_clamav-db` si lo tenías).
+Entra y comprueba que están tus documentos y conversaciones. Si algo falla, vuelve al compose anterior: los volúmenes no se tocaron. Cuando lleves unos días sin problemas, bórralos: `docker volume rm rag_pgdata rag_uploads rag_hf-cache rag_backup-config rag_backup-status rag_secrets` (y `rag_clamav-db` si lo tenías).
 
 ### Omni RAG apagado en un servidor compartido
 
-Con los datos en carpetas e imágenes descargadas, Omni RAG se para como cualquier otro servicio (Stop en Dockge o `docker compose stop`) y ningún `prune` le hace daño: como mucho, `image prune -a` borra imágenes que `docker compose pull` vuelve a bajar. Los contenedores parados no arrancan solos al reiniciar el servidor.
-
-Si aún tienes los datos en volúmenes, no lo apagues con `down` (borra los contenedores y deja los volúmenes «sin uso» para un `prune`); usa `stop`, o deja los contenedores creados sin arrancar con `docker compose create --no-build`.
+Con los datos en carpetas e imágenes descargadas, Omni RAG se para como cualquier otro servicio (Stop en Dockge, `docker compose stop` o `down`) y ningún `prune` le hace daño: como mucho, `image prune -a` borra imágenes que `docker compose pull` vuelve a bajar. Los contenedores parados no arrancan solos al reiniciar el servidor.
 
 ## Copias de seguridad
 
@@ -93,14 +93,14 @@ docker compose logs backup          # ver el resultado de las copias
 
 ### Restaurar una copia
 
-Con los datos en carpetas (ver «Dónde viven los datos» arriba), en los comandos de restaurar de esta sección cambia `-v rag_uploads:/data` por `-v "$PWD/data/uploads":/data`.
+Los comandos de esta sección suponen los datos en `./data` (lo normal). Con volúmenes de Docker (desarrollo en Windows), cambia `-v "$PWD/data/uploads":/data` por `-v rag_uploads:/data`.
 
 Con el sistema parado salvo `db` (sustituye la fecha):
 
 ```bash
 docker compose stop api worker web backup
 docker compose exec -T db pg_restore -U rag_owner -d rag --clean --if-exists < backups/db_AAAA-MM-DD_HHMM.dump
-docker run --rm -v rag_uploads:/data -v "$PWD/backups":/backup alpine sh -c "rm -rf /data/* && tar xzf /backup/uploads_AAAA-MM-DD_HHMM.tgz -C /data"
+docker run --rm -v "$PWD/data/uploads":/data -v "$PWD/backups":/backup alpine sh -c "rm -rf /data/* && tar xzf /backup/uploads_AAAA-MM-DD_HHMM.tgz -C /data"
 docker compose up -d
 ```
 
@@ -132,7 +132,7 @@ Para cuando se pierde el servidor. **Las copias no incluyen el `.env`**: guarda 
 5. **Restaura la base y los archivos**:
    ```bash
    docker compose exec -T db pg_restore -U rag_owner -d rag --clean --if-exists --no-owner < restore/db.dump
-   docker run --rm -v rag_uploads:/data -v "$PWD/restore":/restore alpine sh -c "rm -rf /data/* && tar xzf /restore/uploads.tgz -C /data"
+   docker run --rm -v "$PWD/data/uploads":/data -v "$PWD/restore":/restore alpine sh -c "rm -rf /data/* && tar xzf /restore/uploads.tgz -C /data"
    ```
 6. **Arranca** con `docker compose up -d` (la API aplica las migraciones que falten) y **comprueba**: `curl http://localhost:8000/api/health`; entra con tu usuario de siempre (la contraseña del `SEED_ADMIN_*` ya no vale: se restauró la base real); confirma que el 2FA acepta tu código; abre un documento y haz una pregunta.
 7. **Borra `restore/`** (`rm -rf restore`): contiene todos los datos sin cifrar.
@@ -143,7 +143,7 @@ Para cuando se pierde el servidor. **Las copias no incluyen el `.env`**: guarda 
 ```bash
 mkdir restore-archivos
 docker compose run --rm -v "$PWD/restore-archivos:/restore" backup-b2 --restore /restore
-docker run --rm -v rag_uploads:/data -v "$PWD/restore-archivos":/restore alpine sh -c "rm -rf /data/* && cp -a /restore/. /data/"
+docker run --rm -v "$PWD/data/uploads":/data -v "$PWD/restore-archivos":/restore alpine sh -c "rm -rf /data/* && cp -a /restore/. /data/"
 rm -rf restore-archivos
 ```
 
