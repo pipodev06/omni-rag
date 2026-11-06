@@ -8,6 +8,7 @@ import { ipRateLimit } from "./lib/ipLimit.js";
 import { currentRequestId } from "./lib/logger.js";
 import { requestLog } from "./lib/requestLog.js";
 import { authRoutes } from "./routes/auth.js";
+import { setupRoutes } from "./routes/setup.js";
 import { userRoutes } from "./routes/users.js";
 import { collectionRoutes } from "./routes/collections.js";
 import { documentRoutes } from "./routes/documents.js";
@@ -34,6 +35,7 @@ export function createApp() {
   api.use("*", (c, next) => (c.req.method === "POST" && c.req.path === "/api/documents" ? next() : jsonLimit(c, next)));
   api.route("/health", healthRoutes);
   api.route("/auth", authRoutes);
+  api.route("/setup", setupRoutes);
   api.route("/users", userRoutes);
   api.route("/collections", collectionRoutes);
   api.route("/documents", documentRoutes);

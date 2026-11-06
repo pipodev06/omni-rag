@@ -38,7 +38,7 @@ const mfaLimiter = new RateLimiter(5, 15 * 60 * 1000);
 // Hash de relleno para que el tiempo de respuesta no revele si el usuario existe.
 const dummyHash = hashPassword("contraseña-de-relleno");
 
-interface SessionUser {
+export interface SessionUser {
   id: string;
   tenant_id: string;
   name: string;
@@ -53,7 +53,7 @@ const byLogin = (login: string) =>
   login.includes("@") ? sqlOwner`lower(u.email) = ${login}` : sqlOwner`lower(u.username) = ${login}`;
 
 /** Firma la sesión, pone la cookie y devuelve el cuerpo de respuesta del login. */
-async function startSession(c: Context<AppEnv>, user: SessionUser) {
+export async function startSession(c: Context<AppEnv>, user: SessionUser) {
   const token = await issueSession(c, { userId: user.id, tenantId: user.tenant_id, role: user.role });
   return {
     token, // para clientes que no usan cookies (scripts, integraciones)

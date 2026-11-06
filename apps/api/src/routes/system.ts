@@ -5,7 +5,7 @@ import { config } from "../config.js";
 import { sqlOwner } from "../db/client.js";
 import { audit } from "../lib/audit.js";
 import { HttpError, badRequest } from "../lib/errors.js";
-import { configuredProviders, getProvider, isConfigured, probeProvider } from "../lib/llmProviders.js";
+import { configuredProviders, getProvider, isConfigured, parseModelRef, probeProvider } from "../lib/llmProviders.js";
 import { notifyChange } from "../lib/changeNotice.js";
 import { captureMailer, emailEnabled, sendEmail, smtpErrorMessage, verifyEmail } from "../lib/mailer.js";
 import { ConfirmSchema, hasTotp, reauthenticate, type Confirm } from "../lib/reauth.js";
@@ -157,6 +157,32 @@ systemRoutes.get("/backups", async (c) => {
   const info = snap?.info ? { ...snap.info, copies: snap.info.copies.filter((x) => !gone.has(x.stamp)) } : null;
   // El destino sale de los ajustes (se refrescan cada 30 s), no de la foto del worker.
   return c.json({ readAt: snap?.at ?? null, info: info ? { ...info, destination: backupDestination(), b2Configured: b2Configured() } : null, alerts });
+});
+
+// --- Primeros pasos ---------------------------------------------------------------
+
+/**
+ * Qué falta tras la configuración inicial, para la lista «Primeros pasos» de Organizaciones. Solo dice si cada cosa está
+ * configurada, nunca valores. Lo imprescindible es un proveedor de modelos de lenguaje; correo y copias fuera del
+ * servidor son opcionales pero recomendados.
+ */
+systemRoutes.get("/onboarding", async (c) => {
+  const [[row], plans] = await Promise.all([
+    sqlOwner<{ n: number }[]>`SELECT count(*)::int AS n FROM tenants WHERE NOT is_platform`,
+    sqlOwner<{ name: string; llm_models: string[] }[]>`SELECT name, llm_models FROM plans ORDER BY is_default DESC, name`,
+  ]);
+  // Planes con algún modelo de un proveedor sin clave: sus organizaciones no podrían preguntar con ese modelo.
+  const plansWithoutKey = plans
+    .filter((p) => p.llm_models.length === 0 || p.llm_models.some((m) => { const pr = getProvider(parseModelRef(m).providerId); return !pr || !isConfigured(pr); }))
+    .map((p) => p.name);
+  return c.json({
+    llm: configuredProviders().length > 0,
+    plansWithoutKey,
+    email: emailEnabled(),
+    alertEmail: setting("ALERT_EMAIL") !== "",
+    b2: b2Configured(),
+    tenants: row?.n ?? 0,
+  });
 });
 
 // --- Ajustes editables (Sistema → Configuración) ---------------------------------------------------------------

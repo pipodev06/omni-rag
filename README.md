@@ -29,18 +29,17 @@ Pregunta ─▶ embedding local ─▶ búsqueda híbrida (solo en lo que el usu
 
 ## Inicio rápido
 
-Requisitos: **Docker** con Docker Compose v2, CPU x86-64, una clave gratuita de [OpenRouter](https://openrouter.ai/keys) y, según el tamaño que necesites, entre 6 y 16 GB de RAM (ver [Elige el tamaño](#elige-el-tamaño-de-tu-servidor)).
+Requisitos: **Docker** con Docker Compose v2, CPU x86-64, la clave de un proveedor de modelos de lenguaje (Groq, Google AI Studio, OpenRouter… hay capas gratuitas) y, según el tamaño que necesites, entre 6 y 16 GB de RAM (ver [Elige el tamaño](#elige-el-tamaño-de-tu-servidor)).
 
 ```bash
 git clone https://github.com/pipodev06/omni-rag.git && cd omni-rag
-cp .env.example .env
-#   Edita .env: contraseñas, JWT_SECRET, SEED_ADMIN_USERNAME/PASSWORD y la clave de un proveedor de LLM (p. ej. OPENROUTER_API_KEY)
-docker compose up -d --build
+docker compose up -d
+docker compose logs api | grep -A2 "CONFIGURACIÓN INICIAL"   # código de un solo uso
 ```
 
-Opcional, antes del `up`: aplica un perfil de tamaño con `bash deploy/perfil.sh mediano` (ver abajo).
+No hace falta `.env`: las contraseñas internas se generan solas. Abre **http://localhost:8000**, escribe el código y crea tu superadministrador; después, en *Organizaciones → Primeros pasos*, pon la clave del proveedor de modelos y crea la primera organización. Qué valores importan y por qué: **[docs/configuracion-inicial.md](docs/configuracion-inicial.md)**.
 
-Abre **http://localhost:8000** e inicia sesión con `SEED_ADMIN_USERNAME` / `SEED_ADMIN_PASSWORD`.
+Opcional: aplica un perfil de tamaño con `bash deploy/perfil.sh mediano` (ver abajo).
 
 > El primer arranque tarda unos minutos: se descargan las imágenes (~3 GB, sobre todo Docling) y el modelo de embeddings (~1 GB).
 > Comprueba el estado con `curl http://localhost:8000/api/health`.

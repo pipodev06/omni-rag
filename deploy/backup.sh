@@ -24,6 +24,9 @@ STATUS="$DEST/.estado.json"
 SETTINGS=/tmp/settings.tsv
 TAB=$(printf '\t')
 export PGCONNECT_TIMEOUT=10
+# Sin POSTGRES_PASSWORD en el archivo de entorno, la contraseña de rag_owner es la que generó el servicio «init».
+# Se lee aquí (no en el entrypoint) para que también valga con «docker compose exec backup sh /backup.sh --once».
+if [ -z "${PGPASSWORD:-}" ] && [ -r /secrets/postgres_password ]; then PGPASSWORD=$(cat /secrets/postgres_password); export PGPASSWORD; fi
 mkdir -p "$DEST"
 : > "$SETTINGS"
 
