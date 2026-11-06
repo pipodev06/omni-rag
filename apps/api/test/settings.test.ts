@@ -27,12 +27,18 @@ function makeDb() {
     }
     if (q.startsWith("INSERT INTO settings")) {
       const key = vals[0] as string;
-      if (q.includes("?::jsonb")) rows.set(key, { value: JSON.parse(vals[1] as string), secret: null });
-      else rows.set(key, { value: null, secret: vals[1] as string });
+      const v = vals[1];
+      // Como postgres.js: sql.json(x) guarda x tal cual; un texto suelto en una columna jsonb se vuelve a convertir y queda
+      // como texto JSON (el fallo de la doble conversión), así que se guarda el texto sin interpretarlo.
+      if (isJson(v)) rows.set(key, { value: v.json, secret: null });
+      else if (q.includes("?::jsonb")) rows.set(key, { value: v, secret: null });
+      else rows.set(key, { value: null, secret: v as string });
       return Promise.resolve([]);
     }
     throw new Error(`consulta no prevista: ${q}`);
   };
+  const isJson = (v: unknown): v is { json: unknown } => typeof v === "object" && v !== null && "json" in v;
+  Object.assign(run, { json: (json: unknown) => ({ json }) });
   const sql = Object.assign(run, {
     begin: async (fn: (tx: typeof run) => Promise<void>) => {
       calls.begin++;
@@ -42,7 +48,7 @@ function makeDb() {
   return { rows, calls, sql };
 }
 
-const TOUCHED = ["ALERT_BACKUP_HOURS", "ALERT_DISK_FREE_PERCENT", "BACKUP_KEEP_DAYS", "BACKUP_DESTINATION", "B2_BUCKET", "SMTP_HOST", "SMTP_PASSWORD", "HISTORY_MESSAGES", "B2_KEY_ID", "B2_APPLICATION_KEY"];
+const TOUCHED = ["BACKUP_AT", "SMTP_SECURE", "WEB_SEARCH_PROVIDER", "ALERT_BACKUP_HOURS", "ALERT_DISK_FREE_PERCENT", "BACKUP_KEEP_DAYS", "BACKUP_DESTINATION", "B2_BUCKET", "SMTP_HOST", "SMTP_PASSWORD", "HISTORY_MESSAGES", "B2_KEY_ID", "B2_APPLICATION_KEY"];
 const saved: Record<string, string | undefined> = {};
 
 beforeEach(() => {
@@ -511,6 +517,22 @@ describe("importEnvSettings: pasar lo fijado en el entorno a la base", () => {
     expect(field(s.settingsView(), "HISTORY_MESSAGES").lockedByEnv).toBe(false);
   });
 
+  it("guarda textos, horas, números y sí/no como valores JSON, sin convertirlos dos veces", async () => {
+    const s = await fresh({ SMTP_HOST: "smtp.ejemplo.com", BACKUP_AT: "03:00", HISTORY_MESSAGES: "9", SMTP_SECURE: "false" });
+    await s.refreshSettings();
+    await s.importEnvSettings("Consola del servidor");
+    expect(s.db.rows.get("SMTP_HOST")).toEqual({ value: "smtp.ejemplo.com", secret: null });
+    expect(s.db.rows.get("BACKUP_AT")).toEqual({ value: "03:00", secret: null });
+    expect(s.db.rows.get("HISTORY_MESSAGES")).toEqual({ value: 9, secret: null });
+    expect(s.db.rows.get("SMTP_SECURE")).toEqual({ value: false, secret: null });
+
+    // Sin el .env, manda la fila: el mismo valor, no «"smtp.ejemplo.com"» con comillas.
+    for (const k of ["SMTP_HOST", "BACKUP_AT", "HISTORY_MESSAGES", "SMTP_SECURE"]) delete process.env[k];
+    expect(s.setting("SMTP_HOST")).toBe("smtp.ejemplo.com");
+    expect(s.setting("HISTORY_MESSAGES")).toBe(9);
+    expect(s.setting("SMTP_SECURE")).toBe(false);
+  });
+
   it("no copia lo que no pasaría la validación de la pantalla y lo devuelve aparte", async () => {
     const s = await fresh({ BACKUP_KEEP_DAYS: "muchos", HISTORY_MESSAGES: "9" });
     await s.refreshSettings();
@@ -518,5 +540,19 @@ describe("importEnvSettings: pasar lo fijado en el entorno a la base", () => {
     expect(r.invalid).toContain("BACKUP_KEEP_DAYS");
     expect(r.imported).toContain("HISTORY_MESSAGES");
     expect(s.db.rows.has("BACKUP_KEEP_DAYS")).toBe(false);
+  });
+});
+
+describe("applySettings: lo guardado desde la pantalla se lee igual", () => {
+  it("un texto se guarda sin comillas dentro y se lee tal cual", async () => {
+    const s = await fresh();
+    delete process.env.WEB_SEARCH_PROVIDER;
+    delete process.env.HISTORY_MESSAGES;
+    await s.refreshSettings();
+    await s.applySettings({ WEB_SEARCH_PROVIDER: "tavily", HISTORY_MESSAGES: 4 }, "root");
+    expect(s.db.rows.get("WEB_SEARCH_PROVIDER")).toEqual({ value: "tavily", secret: null });
+    expect(s.db.rows.get("HISTORY_MESSAGES")).toEqual({ value: 4, secret: null });
+    expect(s.setting("WEB_SEARCH_PROVIDER")).toBe("tavily");
+    expect(s.setting("HISTORY_MESSAGES")).toBe(4);
   });
 });

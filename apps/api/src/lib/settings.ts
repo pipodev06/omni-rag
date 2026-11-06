@@ -1,4 +1,4 @@
-import type { TransactionSql } from "postgres";
+import type { JSONValue, TransactionSql } from "postgres";
 import { z } from "zod";
 import { config, DEFAULTS, type Config } from "../config.js";
 import { sqlOwner } from "../db/client.js";
@@ -411,8 +411,10 @@ async function upsert(tx: TransactionSql, def: Def, value: unknown, by: string):
       INSERT INTO settings (key, value, secret, updated_at, updated_by) VALUES (${def.key}, NULL, ${seal(SECRET_INFO, value as string, def.key)}, now(), ${by})
       ON CONFLICT (key) DO UPDATE SET value = NULL, secret = EXCLUDED.secret, updated_at = now(), updated_by = EXCLUDED.updated_by`;
   } else {
+    // tx.json: el driver ya convierte a JSON. Con JSON.stringify(...)::jsonb se convertía dos veces y la fila quedaba
+    // como texto JSON con comillas dentro ("\"tavily\"", "9"): ver migración 022.
     await tx`
-      INSERT INTO settings (key, value, secret, updated_at, updated_by) VALUES (${def.key}, ${JSON.stringify(value)}::jsonb, NULL, now(), ${by})
+      INSERT INTO settings (key, value, secret, updated_at, updated_by) VALUES (${def.key}, ${tx.json(value as JSONValue)}, NULL, now(), ${by})
       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, secret = NULL, updated_at = now(), updated_by = EXCLUDED.updated_by`;
   }
 }
