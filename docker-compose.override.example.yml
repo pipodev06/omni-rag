@@ -1,61 +1,18 @@
-# Ajustes de un servidor con otros servicios Docker (como beszel, Immich, Jellyfin…). Dos partes independientes;
-# quita la que no necesites. Es local del servidor (está en .gitignore):
+# Opcional: conectar la web a la red Docker de un proxy que ya corre en el servidor (Nginx Proxy Manager, Traefik,
+# Caddy propio…) para que lo alcance por nombre: rag-web-1:80. Sin esto, un proxy que está solo en su red da 502
+# («rag-web-1 could not be resolved»). Cambia «proxy» por el nombre real de esa red (docker network ls).
 #
-#   cp docker-compose.override.example.yml docker-compose.override.yml
+# Dos formas, las dos valen:
+#   - Override: cp docker-compose.override.example.yml docker-compose.override.yml (al actualizar, reemplazas solo el
+#     docker-compose.yml y esto se mantiene).
+#   - Un solo archivo: pega estas líneas en el propio docker-compose.yml (al actualizar, vuelve a pegarlas).
 #
-# Usa siempre «docker compose up -d» a secas (Dockge también lo hace): con «-f docker-compose.yml» explícito compose
-# ignora este archivo.
+# El docker-compose.yml oficial no trae esta red porque haría fallar el arranque a quien no tenga una red «proxy».
 services:
-  # ── 1. Red del proxy ──────────────────────────────────────────────────────────────────────────────────────────────
-  # Conecta la web a la red Docker de un proxy que ya corre en el servidor (Nginx Proxy Manager, Traefik, Caddy
-  # propio…) para que la alcance por nombre: rag-web-1:80. Sin esto, un proxy que está solo en su red da 502
-  # («rag-web-1 could not be resolved»). Cambia «proxy» por el nombre real de esa red (docker network ls).
   web:
     networks:
       - default
       - proxy
-
-  # ── 2. Datos en carpetas (./data) en vez de volúmenes de Docker ───────────────────────────────────────────────────
-  # Así ningún «docker volume prune» ni «system prune --volumes» puede borrarlos, aunque Omni RAG esté apagado o sin
-  # contenedores. Instalación nueva: antes del primer arranque crea las dos carpetas que escribe el usuario node:
-  #   mkdir -p data/uploads data/copias-config && sudo chown 1000:1000 data/uploads data/copias-config
-  # Si ya tienes datos en los volúmenes, primero muévelos: docs/operacion.md → «Pasar los datos a carpetas».
-  # ./data/secretos guarda las contraseñas internas generadas en el primer arranque: no va en las copias, guárdala aparte.
-  init:
-    volumes:
-      - ./data/secretos:/secrets
-  db:
-    volumes:
-      - ./data/postgres:/var/lib/postgresql/data
-      - ./data/secretos:/secrets:ro
-  embeddings:
-    volumes:
-      - ./data/modelos:/data
-  reranker:
-    volumes:
-      - ./data/modelos:/data
-  clamav:
-    volumes:
-      - ./data/clamav:/var/lib/clamav
-  api:
-    volumes:
-      - ./data/uploads:/data/uploads
-      - ./data/secretos:/secrets:ro
-  worker:
-    volumes:
-      - ./data/uploads:/data/uploads
-      - ./data/secretos:/secrets:ro
-      - ./data/copias-estado:/backup-status:ro
-      - ./data/copias-config:/backup-config
-  backup:
-    volumes:
-      - ./data/secretos:/secrets:ro
-      - ./data/uploads:/uploads:ro
-  backup-b2:
-    volumes:
-      - ./data/uploads:/uploads:ro
-      - ./data/copias-config:/backup-config:ro
-      - ./data/copias-estado:/status
 
 networks:
   proxy:

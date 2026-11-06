@@ -5,7 +5,7 @@
 # antes que los demás y termina; si los archivos ya están, no cambia nada. Una variable escrita en el archivo de
 # entorno siempre manda sobre ellos.
 #
-# Se guardan en el volumen «secrets» (o en ./data/secretos con el override). No van en las copias de seguridad:
+# Se guardan en ./data/secretos. No van en las copias de seguridad:
 # guarda esa carpeta (o sus tres valores) en un lugar seguro, porque sin JWT_SECRET no se pueden leer las claves de API
 # guardadas en la pantalla ni el 2FA de los usuarios.
 # =====================================================================
@@ -24,3 +24,10 @@ done
 chown 1000:1000 "$DIR/postgres_password" "$DIR/app_db_password" "$DIR/jwt_secret" 2>/dev/null || true
 chmod 0400 "$DIR/postgres_password" "$DIR/app_db_password" "$DIR/jwt_secret"
 echo "[init] secretos listos"
+
+# Carpetas de ./data que escribe el usuario node (archivos subidos, ajustes de copias): Docker las crea como root al
+# montarlas por primera vez. Solo se cambia la carpeta de arriba, y solo si no es ya de node (no recorre los archivos).
+for d in /prepare/*; do
+  [ -d "$d" ] || continue
+  [ "$(stat -c %u "$d")" = 1000 ] || { chown 1000:1000 "$d" && echo "[init] $(basename "$d"): dueño node"; }
+done

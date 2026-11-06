@@ -25,7 +25,10 @@ services:
     entrypoint: ["sh", "/init-secrets.sh"]
     network_mode: none
     volumes:
-      - secrets:/secrets
+      - ./data/secretos:/secrets
+      # Carpetas que escribe el usuario node (API y worker): init las deja con su dueño (Docker las crea como root).
+      - ./data/uploads:/prepare/uploads
+      - ./data/copias-config:/prepare/copias-config
 
   # Base de datos: PostgreSQL 17 con la extensión pgvector.
   db:
@@ -38,8 +41,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
       POSTGRES_DB: rag
     volumes:
-      - pgdata:/var/lib/postgresql/data
-      - secrets:/secrets:ro
+      - ./data/postgres:/var/lib/postgresql/data
+      - ./data/secretos:/secrets:ro
     depends_on:
       init:
         condition: service_completed_successfully
@@ -64,7 +67,7 @@ services:
     cpu_shares: ${EMBEDDINGS_CPU_SHARES:-1024}
     mem_limit: ${EMBEDDINGS_MEM_LIMIT:-0}
     volumes:
-      - hf-cache:/data # el modelo se descarga una sola vez
+      - ./data/modelos:/data # el modelo se descarga una sola vez
     ports:
       - "127.0.0.1:${EMBEDDINGS_PORT:-18080}:80"
 
@@ -81,7 +84,7 @@ services:
     cpu_shares: ${RERANKER_CPU_SHARES:-1024}
     mem_limit: ${RERANKER_MEM_LIMIT:-0}
     volumes:
-      - hf-cache:/data
+      - ./data/modelos:/data
     deploy:
       replicas: ${RERANKER_REPLICAS:-1}
 
@@ -125,7 +128,7 @@ services:
       CLAMD_CONF_StreamMaxLength: ${CLAMAV_MAX_SIZE:-100M}
       CLAMD_CONF_MaxFileSize: ${CLAMAV_MAX_SIZE:-100M}
     volumes:
-      - clamav-db:/var/lib/clamav
+      - ./data/clamav:/var/lib/clamav
     healthcheck:
       test: ["CMD", "clamdcheck.sh"]
       interval: 30s
@@ -160,8 +163,8 @@ services:
       # Métricas de los contenedores (pantalla Sistema). Solo el worker llega al proxy (red «docker»); vacío = sin métricas.
       DOCKER_PROXY_URL: ${DOCKER_PROXY_URL-http://docker-proxy:2375}
     volumes:
-      - uploads:/data/uploads
-      - secrets:/secrets:ro
+      - ./data/uploads:/data/uploads
+      - ./data/secretos:/secrets:ro
     security_opt: ["no-new-privileges:true"]
     cap_drop: [ALL]
     depends_on:
@@ -183,14 +186,14 @@ services:
     env_file: *env-file
     environment: *backend-env
     volumes:
-      - uploads:/data/uploads
-      - secrets:/secrets:ro
+      - ./data/uploads:/data/uploads
+      - ./data/secretos:/secrets:ro
       # Solo lectura: el monitor comprueba que las copias de seguridad sean recientes.
       - ./backups:/backups:ro
       # Solo lectura: estado de la subida a B2 (pantalla Sistema → Copias).
-      - backup-status:/backup-status:ro
+      - ./data/copias-estado:/backup-status:ro
       # Escribe el archivo de ajustes de B2 con lo guardado en Sistema → Copias (lo lee backup-b2).
-      - backup-config:/backup-config
+      - ./data/copias-config:/backup-config
     security_opt: ["no-new-privileges:true"]
     cap_drop: [ALL]
     networks: [default, ingest, docker]
@@ -258,8 +261,8 @@ services:
       BACKUP_DESTINATION: ${BACKUP_DESTINATION:-}
       BACKUP_ENCRYPTION_PASSPHRASE: ${BACKUP_ENCRYPTION_PASSPHRASE:-}
     volumes:
-      - secrets:/secrets:ro
-      - uploads:/uploads:ro
+      - ./data/secretos:/secrets:ro
+      - ./data/uploads:/uploads:ro
       - ./backups:/backups
       # Carpeta externa (disco, NAS, carpeta sincronizada). Solo se usa con BACKUP_OFFSITE=true.
       - ${BACKUP_OFFSITE_DIR:-backups-offsite}:/offsite
@@ -285,7 +288,7 @@ services:
     restart: unless-stopped
     dns: *dns
     entrypoint: ["sh", "/b2-sync.sh"]
-    # Después del worker: así el volumen backup-config nace con el dueño de la imagen de la API (node) y el worker puede escribir en él.
+    # Después del worker, que escribe en ./data/copias-config los ajustes de B2 guardados en la pantalla.
     depends_on:
       - worker
     environment:
@@ -303,13 +306,13 @@ services:
       BACKUP_DESTINATION: ${BACKUP_DESTINATION:-}
       B2_KEEP_DAYS: ${B2_KEEP_DAYS:-}
     volumes:
-      - uploads:/uploads:ro
+      - ./data/uploads:/uploads:ro
       - ${BACKUP_OFFSITE_DIR:-backups-offsite}:/offsite:ro
       - ${BACKUP_TARGETS_DIR:-backups-targets}:/targets:ro
       # Ajustes guardados en Sistema → Copias (los escribe el worker); se releen cada minuto.
-      - backup-config:/backup-config:ro
+      - ./data/copias-config:/backup-config:ro
       # Estado de la última subida (sin secretos) para la pantalla Sistema → Copias.
-      - backup-status:/status
+      - ./data/copias-estado:/status
 
   # HTTPS automático (Let's Encrypt). Solo con COMPOSE_PROFILES=https y DOMAIN definido.
   caddy:
@@ -326,8 +329,8 @@ services:
       - source: caddyfile
         target: /etc/caddy/Caddyfile
     volumes:
-      - caddy-data:/data
-      - caddy-config:/config
+      - ./data/caddy/data:/data
+      - ./data/caddy/config:/config
     depends_on:
       - web
 
@@ -365,16 +368,8 @@ configs:
       }
 
 volumes:
-  # Sin BACKUP_OFFSITE_DIR / BACKUP_TARGETS_DIR: volúmenes vacíos (no crean carpetas junto al compose).
+  # Los datos viven en ./data (carpetas junto a este archivo, como en cualquier otro servicio): ningún «docker prune»
+  # los toca. Estos dos son solo los destinos por defecto de la copia externa, vacíos mientras no se configuren
+  # BACKUP_OFFSITE_DIR / BACKUP_TARGETS_DIR. En Windows (desarrollo): docker-compose.volumenes.example.yml.
   backups-offsite:
   backups-targets:
-  # Contraseñas internas y clave de sesiones generadas en el primer arranque (no van en las copias: guárdalas aparte).
-  secrets:
-  backup-config:
-  backup-status:
-  caddy-data:
-  caddy-config:
-  pgdata:
-  clamav-db:
-  hf-cache:
-  uploads:
