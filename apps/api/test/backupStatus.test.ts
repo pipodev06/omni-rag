@@ -222,6 +222,22 @@ describe("monitor: copias locales", () => {
     await dump(dir2, "db_2026-11-02_0300.dump", 37);
     expect((await checkBackups(dir2))?.message).toContain("máximo 36");
   });
+
+  it("recién encendido: una copia antigua espera una hora (la del arranque está en camino); después sí avisa", async () => {
+    const dir = await tmp();
+    await dump(dir, "db_2026-10-28_0300.dump", 24 * 7);
+    expect(await checkBackups(dir, Date.now(), 120)).toMatchObject({ key: "backup", hold: true });
+    expect(await checkBackups(dir, Date.now(), 2 * 3600)).toMatchObject({ key: "backup", hold: false });
+  });
+
+  it("recién encendido: si la copia del arranque falla, avisa al momento con el error", async () => {
+    const dir = await tmp();
+    await dump(dir, "db_2026-10-28_0300.dump", 24 * 7);
+    await json(dir, ".estado.json", { attemptAt: new Date().toISOString(), ok: false, error: "disco lleno" });
+    const p = await checkBackups(dir, Date.now(), 300);
+    expect(p?.hold).toBeUndefined();
+    expect(p?.message).toContain("disco lleno");
+  });
 });
 
 describe("monitor: Backblaze B2", () => {

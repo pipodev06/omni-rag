@@ -680,7 +680,8 @@ Las alertas de contenedores llevan su nombre (`container:docling:mem`) para sabe
 El superadministrador tiene **Sistema** en el menú:
 
 - **Recursos** (`/sistema/recursos`): RAM y núcleos del servidor, versiones del stack y, por contenedor, el consumo actual, el pico de RAM de 7 días y el p95 de CPU de 24 horas frente a su tope. La columna **Autotune** muestra lo que dejó `deploy/autotune.sh` en el `.env` y avisa con «Sin aplicar» si no coincide con lo que Docker aplica (falta `docker compose up -d`). El **Diagnóstico** marca «RAM justa» o «CPU justa» (por encima del 85 %) y «Le sobra RAM» (el pico de 7 días no llega al 35 % del tope); con menos de 24 horas de datos lo indica. Así se comprueba si el autotune reparte bien.
-- **Métricas y alertas** (`/sistema/metricas`): gráficos de RAM y CPU de un contenedor (1 hora, 24 horas o 7 días) frente a su tope, las alertas abiertas y el historial de alertas.
+- **Métricas** (`/sistema/metricas`): gráficos de RAM y CPU de un contenedor de Omni RAG (1 hora, 24 horas o 7 días) frente a su tope. Los demás servicios del servidor no se miden.
+- **Alertas** (`/sistema/alertas`): las alertas abiertas y el historial de todas (copias, disco, cola, modelos y contenedores).
 
 El worker toma una muestra por contenedor cada minuto a través de `docker-proxy`, un proxy del socket de Docker con lista blanca: solo responde a las consultas de consumo, topes y reinicios (ninguna otra ruta ni método), vive en una red interna sin salida a internet y solo atiende al worker. Las muestras se guardan `METRICS_RETENTION_DAYS` días (14). Para desactivarlo, deja `DOCKER_PROXY_URL=` vacío en el `.env`.
 

@@ -170,7 +170,7 @@ function ResourcesTab() {
       <div className="mb-4 grid shrink-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Tile icon={Server} label="Servidor" value={data.host ? `${formatBytes(data.host.memBytes)} · ${data.host.cpus} núcl.` : "—"} hint={data.host ? `Kernel ${data.host.kernel}` : undefined} />
         <Tile icon={MemoryStick} label="RAM con tope (Omni RAG)" value={formatBytes(memAssigned)} hint={`${data.host ? `${Math.round((memAssigned / data.host.memBytes) * 100)} % del servidor · ` : ""}${unlimited} contenedor(es) sin tope`} />
-        <Tile icon={HardDrive} label="RAM en uso (todo el servidor)" value={formatBytes(memUsed)} hint={data.host ? `${Math.round((memUsed / data.host.memBytes) * 100)} % del total` : undefined} />
+        <Tile icon={HardDrive} label="RAM en uso (Omni RAG)" value={formatBytes(memUsed)} hint={data.host ? `${Math.round((memUsed / data.host.memBytes) * 100)} % del total` : undefined} />
         <Tile icon={Cpu} label="CPU en uso" value={`${cores(cpuUsed)} núcl.`} hint={data.sampledAt ? `Muestra ${timeAgo(data.sampledAt)}` : undefined} />
       </div>
       <dl className="mb-4 flex shrink-0 flex-wrap gap-x-5 gap-y-1 text-xs">
@@ -202,7 +202,7 @@ function ResourcesTab() {
                   <TableCell className="pl-4">
                     <p className="font-medium">{c.name}</p>
                     <p className="max-w-56 truncate font-mono text-xs text-muted-foreground" title={c.image}>
-                      {c.own ? c.image : `Otro proyecto · ${c.image}`}
+                      {c.image}
                     </p>
                   </TableCell>
                   <TableCell>
@@ -266,7 +266,6 @@ const EVENTS: Record<Alerts["events"][number]["event"], { label: string; tone: k
 
 function MetricsTab() {
   const resources = useQuery({ queryKey: ["system", "resources"], queryFn: () => api.get<Resources>("/system/resources"), refetchInterval: 60_000 });
-  const alerts = useQuery({ queryKey: ["system", "alerts"], queryFn: () => api.get<Alerts>("/system/alerts"), refetchInterval: 60_000 });
   const names = resources.data?.containers.map((c) => c.name) ?? [];
   // Por defecto, el primer contenedor con una alerta abierta; si no hay, el primero de la lista.
   const firstWithAlert = resources.data?.containers.find((c) => c.alerts.length > 0)?.name;
@@ -321,10 +320,17 @@ function MetricsTab() {
           <p className="text-sm text-muted-foreground lg:col-span-2">Sin muestras de «{name}» en este periodo.</p>
         )}
       </div>
+    </>
+  );
+}
 
-      {alerts.data && <OpenAlerts alerts={alerts.data.open} />}
-
-      {alerts.data && alerts.data.events.length === 0 ? (
+function AlertsTab() {
+  const alerts = useQuery({ queryKey: ["system", "alerts"], queryFn: () => api.get<Alerts>("/system/alerts"), refetchInterval: 60_000 });
+  if (alerts.isLoading || !alerts.data) return <Skeleton className="h-64 w-full" />;
+  return (
+    <>
+      <OpenAlerts alerts={alerts.data.open} />
+      {alerts.data.events.length === 0 ? (
         <EmptyState icon={BellRing} title="Sin alertas registradas" description="Cuando el monitor detecte un problema (cada 5 minutos) aparecerá aquí, con el contenedor afectado." />
       ) : (
         <TableCard>
@@ -338,7 +344,7 @@ function MetricsTab() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {(alerts.data?.events ?? []).map((e) => {
+              {alerts.data.events.map((e) => {
                 const d = describeKey(e.key);
                 return (
                   <TableRow key={e.id}>
@@ -362,17 +368,18 @@ function MetricsTab() {
   );
 }
 
-const TABS = { recursos: "Recursos", metricas: "Métricas y alertas", copias: "Copias", configuracion: "Configuración" } as const;
+const TABS = { recursos: "Recursos", metricas: "Métricas", alertas: "Alertas", copias: "Copias", configuracion: "Configuración" } as const;
+type Tab = keyof typeof TABS;
 
 export function SystemPage() {
   const { tab } = useParams();
   const navigate = useNavigate();
-  const current = tab === "metricas" || tab === "copias" || tab === "configuracion" ? tab : "recursos";
+  const current: Tab = tab && tab in TABS ? (tab as Tab) : "recursos";
   return (
     <Page fill>
       <PageHeader
         title="Sistema"
-        description="Recursos del servidor y de cada contenedor: lo que el autotune asignó (topes de CPU y RAM) frente a lo que consumen, con picos de 24 horas y 7 días, el historial de alertas del monitor y el estado de las copias de seguridad (locales, carpeta externa y Backblaze B2) y la configuración editable del sistema (alertas, correo, límites, modelos, búsqueda y copias), salvo lo que esté fijado en el archivo de entorno del servidor. El worker toma una muestra por minuto a través de un proxy de Docker que solo responde a consultas de consumo."
+        description="Recursos del servidor y de cada contenedor de Omni RAG (los demás servicios del servidor no se miden): lo que el autotune asignó (topes de CPU y RAM) frente a lo que consumen, con picos de 24 horas y 7 días, el historial de alertas del monitor (copias, disco, cola, modelos y contenedores) y el estado de las copias de seguridad (locales, carpeta externa y Backblaze B2) y la configuración editable del sistema (alertas, correo, límites, modelos, búsqueda y copias), salvo lo que esté fijado en el archivo de entorno del servidor. El worker toma una muestra por minuto a través de un proxy de Docker que solo responde a consultas de consumo."
       />
       <Tabs value={current} onValueChange={(v) => navigate(`/sistema/${v}`)} className="mb-4 shrink-0">
         <TabsList>
@@ -383,7 +390,7 @@ export function SystemPage() {
           ))}
         </TabsList>
       </Tabs>
-      {current === "metricas" ? <MetricsTab /> : current === "copias" ? <BackupsTab /> : current === "configuracion" ? <ConfigTab /> : <ResourcesTab />}
+      {current === "metricas" ? <MetricsTab /> : current === "alertas" ? <AlertsTab /> : current === "copias" ? <BackupsTab /> : current === "configuracion" ? <ConfigTab /> : <ResourcesTab />}
     </Page>
   );
 }

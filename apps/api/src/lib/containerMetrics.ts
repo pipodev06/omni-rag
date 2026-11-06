@@ -6,8 +6,9 @@ import { sqlOwner } from "../db/client.js";
  * Consumo de los contenedores para la pantalla Sistema. El worker llama a `collectContainerMetrics()` cada minuto: lee
  * Docker a través del proxy con lista blanca (servicio docker-proxy: solo GET a /info, /containers/json y
  * /containers/<id>/stats|json) y
- * guarda una muestra por contenedor en `container_samples`. Los contenedores de este proyecto se inspeccionan (topes,
- * reinicios); de los demás del servidor solo se lee el consumo, para no leer su configuración.
+ * guarda una muestra por contenedor de este proyecto en `container_samples` (consumo, topes y reinicios). Los demás
+ * contenedores del servidor no se miden ni se inspeccionan: Omni RAG solo vigila lo suyo. Del servidor solo lee el total
+ * de RAM y núcleos (/info).
  */
 
 interface ListedContainer {
@@ -41,7 +42,6 @@ export interface HostInfo {
 
 export interface Sample {
   name: string;
-  own: boolean;
   image: string;
   state: string;
   health: string | null;
@@ -103,19 +103,17 @@ export async function readContainers(): Promise<{ host: HostInfo; samples: Sampl
   const project = self?.Labels[PROJECT_LABEL] ?? "rag";
 
   const samples = await Promise.all(
-    list.map(async (c): Promise<Sample> => {
-      const own = c.Labels[PROJECT_LABEL] === project;
+    list.filter((c) => c.Labels[PROJECT_LABEL] === project).map(async (c): Promise<Sample> => {
       const running = c.State === "running";
       const [stats, inspected] = await Promise.all([
         running ? docker<Stats>(`/containers/${c.Id}/stats?stream=false`).catch(() => null) : null,
-        own ? docker<Inspected>(`/containers/${c.Id}/json`).catch(() => null) : null,
+        docker<Inspected>(`/containers/${c.Id}/json`).catch(() => null),
       ]);
       // Sin tope, Docker informa como límite la RAM del servidor.
       const reportedLimit = stats?.memory_stats.limit ?? 0;
       const memLimit = inspected ? inspected.HostConfig.Memory || null : reportedLimit > 0 && reportedLimit < host.memBytes * 0.99 ? reportedLimit : null;
       return {
         name: displayName(c),
-        own,
         image: c.Image,
         state: c.State,
         health: inspected?.State.Health?.Status ?? null,
@@ -144,7 +142,7 @@ export async function collectContainerMetrics(): Promise<{ containers: number } 
       INSERT INTO container_samples ${tx(
         samples.map((s) => ({
           name: s.name,
-          own: s.own,
+          own: true, // columna de cuando también se medían los contenedores ajenos
           image: s.image,
           state: s.state,
           health: s.health,
