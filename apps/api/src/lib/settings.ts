@@ -1,3 +1,4 @@
+import type { TransactionSql } from "postgres";
 import { z } from "zod";
 import { config, DEFAULTS, type Config } from "../config.js";
 import { sqlOwner } from "../db/client.js";
@@ -395,22 +396,57 @@ export async function applySettings(values: SettingsInput, by: string, beforeWri
   await beforeWrite?.();
   await sqlOwner.begin(async (tx) => {
     for (const { def, value } of ops) {
-      if (value === null) {
-        await tx`DELETE FROM settings WHERE key = ${def.key}`;
-      } else if (def.type === "secret") {
-        await tx`
-          INSERT INTO settings (key, value, secret, updated_at, updated_by) VALUES (${def.key}, NULL, ${seal(SECRET_INFO, value as string, def.key)}, now(), ${by})
-          ON CONFLICT (key) DO UPDATE SET value = NULL, secret = EXCLUDED.secret, updated_at = now(), updated_by = EXCLUDED.updated_by`;
-      } else {
-        await tx`
-          INSERT INTO settings (key, value, secret, updated_at, updated_by) VALUES (${def.key}, ${JSON.stringify(value)}::jsonb, NULL, now(), ${by})
-          ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, secret = NULL, updated_at = now(), updated_by = EXCLUDED.updated_by`;
-      }
+      if (value === null) await tx`DELETE FROM settings WHERE key = ${def.key}`;
+      else await upsert(tx, def, value, by);
     }
     for (const key of cleared) await tx`DELETE FROM settings WHERE key = ${key}`;
   });
   await refreshSettings();
   return { keys: ops.map((o) => o.def.key), cleared };
+}
+
+async function upsert(tx: TransactionSql, def: Def, value: unknown, by: string): Promise<void> {
+  if (def.type === "secret") {
+    await tx`
+      INSERT INTO settings (key, value, secret, updated_at, updated_by) VALUES (${def.key}, NULL, ${seal(SECRET_INFO, value as string, def.key)}, now(), ${by})
+      ON CONFLICT (key) DO UPDATE SET value = NULL, secret = EXCLUDED.secret, updated_at = now(), updated_by = EXCLUDED.updated_by`;
+  } else {
+    await tx`
+      INSERT INTO settings (key, value, secret, updated_at, updated_by) VALUES (${def.key}, ${JSON.stringify(value)}::jsonb, NULL, now(), ${by})
+      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, secret = NULL, updated_at = now(), updated_by = EXCLUDED.updated_by`;
+  }
+}
+
+// --- Pasar lo fijado en el .env a la base ---------------------------------------------------------------
+
+export interface EnvImportResult {
+  /** Claves copiadas a la base (nunca valores). */
+  imported: string[];
+  /** Claves cuyo valor del .env no pasa la validación de la pantalla: no se copian y deben quedarse en el .env. */
+  invalid: string[];
+}
+
+/**
+ * Copia a la tabla `settings` cada ajuste del catálogo que está fijado en el entorno, con su valor efectivo de ahora
+ * (los secretos, cifrados). Mientras la variable siga en el .env nada cambia; al quitarla, manda la fila y el ajuste se
+ * puede editar en la pantalla. Todo o nada. Lo usa scripts/import-env-settings.ts desde la consola del servidor.
+ */
+export async function importEnvSettings(by: string): Promise<EnvImportResult> {
+  const ops: { def: Def; value: unknown }[] = [];
+  const invalid: string[] = [];
+  for (const def of DEFS.values()) {
+    if (envRaw(def.key) === undefined) continue;
+    const value = effective(def);
+    if (validator(def).safeParse(value).success) ops.push({ def, value });
+    else invalid.push(def.key);
+  }
+  if (ops.length > 0) {
+    await sqlOwner.begin(async (tx) => {
+      for (const { def, value } of ops) await upsert(tx, def, value, by);
+    });
+    await refreshSettings();
+  }
+  return { imported: ops.map((o) => o.def.key), invalid };
 }
 
 // --- Archivo para los scripts de copia ---------------------------------------------------------------

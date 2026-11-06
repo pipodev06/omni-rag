@@ -491,3 +491,32 @@ describe("b2Configured: bucket y las dos claves con valor efectivo", () => {
     expect(s.b2Configured()).toBe(true);
   });
 });
+
+describe("importEnvSettings: pasar lo fijado en el entorno a la base", () => {
+  it("copia el valor efectivo (secretos cifrados) y, al quitar la variable, manda la fila con el mismo valor", async () => {
+    const s = await fresh({ HISTORY_MESSAGES: "9", BACKUP_KEEP_DAYS: "21", SMTP_PASSWORD: "clave-smtp" });
+    await s.refreshSettings();
+    const r = await s.importEnvSettings("Consola del servidor");
+    expect(r.imported).toEqual(expect.arrayContaining(["HISTORY_MESSAGES", "BACKUP_KEEP_DAYS", "SMTP_PASSWORD"]));
+    expect(r.invalid).toEqual([]);
+    expect(s.db.rows.get("HISTORY_MESSAGES")).toEqual({ value: 9, secret: null });
+    expect(s.db.rows.get("BACKUP_KEEP_DAYS")).toEqual({ value: 21, secret: null });
+    const secret = s.db.rows.get("SMTP_PASSWORD")!;
+    expect(secret.value).toBeNull();
+    expect(s.box.open("settings-secret", secret.secret!, "SMTP_PASSWORD")).toBe("clave-smtp");
+    expect(s.db.calls.begin).toBe(1);
+
+    delete process.env.HISTORY_MESSAGES;
+    expect(s.setting("HISTORY_MESSAGES")).toBe(9);
+    expect(field(s.settingsView(), "HISTORY_MESSAGES").lockedByEnv).toBe(false);
+  });
+
+  it("no copia lo que no pasaría la validación de la pantalla y lo devuelve aparte", async () => {
+    const s = await fresh({ BACKUP_KEEP_DAYS: "muchos", HISTORY_MESSAGES: "9" });
+    await s.refreshSettings();
+    const r = await s.importEnvSettings("x");
+    expect(r.invalid).toContain("BACKUP_KEEP_DAYS");
+    expect(r.imported).toContain("HISTORY_MESSAGES");
+    expect(s.db.rows.has("BACKUP_KEEP_DAYS")).toBe(false);
+  });
+});
