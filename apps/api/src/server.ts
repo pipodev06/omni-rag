@@ -4,7 +4,8 @@ import { createApp } from "./app.js";
 import { closeDb } from "./db/client.js";
 import { migrate } from "./db/migrate.js";
 import { getBoss, stopBoss } from "./queue.js";
-import { ensureInitialAdmin } from "./scripts/bootstrap.js";
+import { ensureInitialAdmin, setupPending } from "./scripts/bootstrap.js";
+import { announceSetupCode } from "./lib/setupCode.js";
 import { installLogger } from "./lib/logger.js";
 import { startSettingsRefresh } from "./lib/settings.js";
 
@@ -13,6 +14,8 @@ installLogger();
 async function main() {
   await migrate();
   await ensureInitialAdmin();
+  // Sin usuarios: la web muestra la configuración inicial, que pide este código (sale en los registros).
+  if (await setupPending()) announceSetupCode();
   await startSettingsRefresh();
   await getBoss(); // prepara la cola para poder encolar documentos
 

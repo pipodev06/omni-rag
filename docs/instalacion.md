@@ -22,40 +22,34 @@ Medido con todo en marcha: ≈ 5,2 GB en reposo y ≈ 6,9 GB de pico (procesando
   swap=4GB
   processors=4
   ```
-- En PowerShell: `Copy-Item .env.example .env` y `notepad .env`. Para generar secretos: `[Convert]::ToBase64String((1..48 | ForEach-Object { Get-Random -Max 256 }))`. Usa `curl.exe` en lugar de `curl`.
-- Si aparece `ports are not available ... Intento de acceso a un socket no permitido`, el puerto está ocupado o reservado por Windows: cambia `WEB_PORT`, `DB_PORT`, o `EMBEDDINGS_PORT` en `.env`.
+- Usa `curl.exe` en lugar de `curl` en PowerShell.
+- Si aparece `ports are not available ... Intento de acceso a un socket no permitido`, el puerto está ocupado o reservado por Windows: crea un `.env` con `WEB_PORT`, `DB_PORT` o `EMBEDDINGS_PORT` distintos.
 
-## 2. Configuración (`.env`)
-
-```bash
-cp .env.example .env
-```
-
-Edita `.env` y cambia al menos:
-
-| Variable | Qué poner |
-|---|---|
-| `POSTGRES_PASSWORD` | Contraseña larga y aleatoria (dueño de la base de datos) |
-| `APP_DB_PASSWORD` | Otra contraseña distinta (usuario `rag_app` de la aplicación) |
-| `JWT_SECRET` | Secreto aleatorio de 32 caracteres o más |
-| `SEED_ADMIN_USERNAME` / `SEED_ADMIN_PASSWORD` | Tu cuenta de superadministrador (contraseña de 10 caracteres o más). `SEED_ADMIN_EMAIL` es opcional; si no defines el usuario, se toma la parte del email anterior a `@` |
-| `OPENROUTER_API_KEY` | Tu clave de OpenRouter (siguiente apartado) |
-
-Para generar secretos:
+## 2. Arrancar sin configurar nada
 
 ```bash
-openssl rand -base64 48
+docker compose up -d
+docker compose logs api | grep -A2 "CONFIGURACIÓN INICIAL"   # el código de un solo uso
 ```
 
-> ⚠️ Cambia `POSTGRES_PASSWORD` **antes** del primer arranque. Después, PostgreSQL ya la tiene guardada en el volumen y cambiarla en `.env` no tiene efecto (ver [operacion.md](operacion.md#cambiar-contraseñas-de-la-base-de-datos)).
+No hace falta `.env`. En el primer arranque:
 
-El resto de variables están explicadas en `.env.example` y tienen valores por defecto razonables.
+1. El servicio `init` genera las contraseñas internas de la base de datos y la clave de las sesiones (`JWT_SECRET`) y las guarda en el volumen `secrets` (o en `./data/secretos` con el override de servidor). **Guarda esa carpeta**: no va en las copias de seguridad.
+2. La API aplica las migraciones y, como aún no hay usuarios, escribe en sus registros un **código de un solo uso**.
+3. Abre <http://localhost:8000>: en lugar del login sale la **Configuración inicial**. Escribe el código, tu usuario y tu contraseña: se crea el superadministrador (en la organización interna «Plataforma», que no es un cliente) y entras.
+4. En **Organizaciones** aparece la lista **Primeros pasos**: clave de un proveedor de modelos de lenguaje (lo único imprescindible), modelos de los planes, correo, copias fuera del servidor y la primera organización. Todo se hace en la web, en *Sistema → Configuración* y *Sistema → Copias*.
+
+Qué valores son imprescindibles, cuáles se recomiendan y por qué tienen el valor por defecto que tienen: **[configuracion-inicial.md](configuracion-inicial.md)**.
+
+**El `.env` es opcional.** Sirve para fijar valores (lo escrito ahí manda y sale bloqueado en la pantalla) y para lo que no está en la pantalla: dominio, puertos, recursos, modelo de embeddings. Se crea con `cp .env.example .env`. Una instalación automatizada puede crear el superadministrador con `SEED_ADMIN_USERNAME` y `SEED_ADMIN_PASSWORD` en vez de la pantalla.
+
+> Una instalación anterior que ya tenía `POSTGRES_PASSWORD`, `APP_DB_PASSWORD` y `JWT_SECRET` en el `.env` sigue igual: lo escrito manda sobre lo generado. No las borres del `.env`: la base seguiría con las antiguas.
 
 ## 3. Clave y privacidad en OpenRouter
 
 > OpenRouter es el proveedor de LLM por defecto. Si prefieres Groq, Google, OpenAI, DeepSeek o un servidor propio (o varios a la vez, con respaldo entre ellos), mira [operacion.md → Proveedores de LLM](operacion.md#proveedores-de-llm-openrouter-groq-google-openai-deepseek-servidor-propio).
 
-1. Crea una cuenta en <https://openrouter.ai> y una clave en <https://openrouter.ai/keys>. Pégala en `OPENROUTER_API_KEY`.
+1. Crea una cuenta en <https://openrouter.ai> y una clave en <https://openrouter.ai/keys>. Pégala en *Sistema → Configuración → Modelos de lenguaje* (o en `OPENROUTER_API_KEY` del `.env`).
 2. **Límite diario:** sin compras, los modelos gratuitos admiten **50 peticiones al día** para toda la cuenta. Con una compra única de **10 USD** en créditos sube a **1.000 al día** de forma permanente, y los modelos `:free` no gastan esos créditos. Para uso con clientes es prácticamente imprescindible.
 3. **Privacidad:** en <https://openrouter.ai/settings/privacy> se configura qué proveedores se pueden usar. Muchos modelos gratuitos solo están disponibles si se permiten proveedores que pueden **registrar o usar los textos enviados**. Si los bloqueas, verás errores del tipo *"No endpoints found matching your data policy"*.
    - En cada pregunta se envían al LLM **fragmentos de los documentos** del cliente.
@@ -66,7 +60,9 @@ El resto de variables están explicadas en `.env.example` y tienen valores por d
    curl -s https://openrouter.ai/api/v1/models | grep -o '"id":"[^"]*:free"'
    ```
 
-## 4. Arrancar
+## 4. Construir las imágenes en la propia máquina (opcional)
+
+`docker compose up -d` descarga las imágenes ya hechas (`ghcr.io/pipodev06/omni-rag-*`). Para construirlas desde el código (desarrollo o una máquina sin acceso a GHCR):
 
 ```bash
 docker compose up -d --build
@@ -88,7 +84,7 @@ Los contenedores ya salen con Cloudflare y Google por defecto (`DNS_PRIMARY`, `D
 
 Al arrancar, la API:
 1. aplica las migraciones de la base de datos (crea tablas, políticas y el usuario `rag_app`);
-2. si no hay usuarios, crea tu superadministrador en la organización interna «Plataforma» (no es un cliente y no se puede borrar).
+2. si no hay usuarios, escribe el código de la configuración inicial en sus registros (o, con `SEED_ADMIN_*` en el `.env`, crea directamente el superadministrador).
 
 El servicio de embeddings descarga el modelo (~1 GB) la primera vez. Comprueba que todo responde:
 
@@ -99,8 +95,8 @@ curl http://localhost:8000/api/health
 
 ## 5. Primeros pasos en la interfaz
 
-1. Abre <http://localhost:8000> y entra con `SEED_ADMIN_USERNAME` / `SEED_ADMIN_PASSWORD`.
-2. **Mi cuenta:** cambia la contraseña inicial.
+1. Abre <http://localhost:8000> y completa la configuración inicial (apartado 2).
+2. **Organizaciones → Primeros pasos:** escribe la clave de un proveedor de modelos y revisa los modelos del plan.
 3. **Organizaciones:** crea una organización por cliente (también la tuya para probar), con el nombre que quieras y su administrador. Pásale sus credenciales. Entras en cualquiera con «Entrar como soporte»; tu cuenta no pertenece a ninguna.
 4. Como administrador de cada organización (o entrando como soporte):
    - **Documentos → + Nueva colección** (ya existe una llamada *General*).

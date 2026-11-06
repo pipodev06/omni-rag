@@ -9,7 +9,8 @@ import { PlanDialog, PlansTab, usePlans } from "@/components/platform/PlansTab";
 import { switchOrganization, useCurrentUser } from "@/hooks/useSession";
 import { startDownload } from "@/lib/download";
 import { cn } from "@/lib/utils";
-import { EmptyState, Page, PageHeader, TableCard } from "@/components/common";
+import { Page, PageHeader, TableCard } from "@/components/common";
+import { FirstSteps } from "@/components/FirstSteps";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -467,7 +468,7 @@ export function PlatformPage() {
       ) : isLoading ? (
         <Skeleton className="h-64 w-full" />
       ) : tenants.length === 0 ? (
-        <EmptyState icon={Building2} title="Sin organizaciones" />
+        <FirstSteps onCreateOrg={() => setNewOpen(true)} onOpenPlans={() => setTab("plans")} />
       ) : (
         <TableCard>
           <Table>

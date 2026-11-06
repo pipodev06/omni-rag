@@ -15,8 +15,8 @@ Internet ──443──▶ caddy (HTTPS) ──▶ web (nginx) ──▶ api / 
 | `WEB_BIND` | `0.0.0.0` | `127.0.0.1` (solo se entra por HTTPS) |
 | `COOKIE_SECURE` | `auto` | `auto` (se activa sola por HTTPS) |
 | `APP_PUBLIC_URL` | *(vacío → http://localhost:8000)* | *(vacío → https://DOMAIN)* |
-| `SMTP_*` | vacío o Mailpit | tu proveedor de correo |
-| Contraseñas, `JWT_SECRET` | de prueba | **nuevas y aleatorias** |
+| `SMTP_*` | vacío o Mailpit | tu proveedor de correo (o en *Sistema → Configuración*) |
+| Contraseñas, `JWT_SECRET` | vacías (se generan solas) | vacías (se generan solas en el servidor) |
 
 ## Paso a paso
 
@@ -56,23 +56,17 @@ cp .env.example .env
 nano .env
 ```
 
-Rellena como mínimo:
+En el servidor solo hace falta lo que la web no puede cambiar:
 
 ```
-POSTGRES_PASSWORD=<openssl rand -base64 32>
-APP_DB_PASSWORD=<otro distinto>
-JWT_SECRET=<openssl rand -base64 48>
-SEED_ADMIN_USERNAME=tu-usuario
-SEED_ADMIN_EMAIL=tu@email.com   # opcional
-SEED_ADMIN_PASSWORD=<contraseña fuerte>
-OPENROUTER_API_KEY=sk-or-v1-...
-
 DOMAIN=rag.tuempresa.com
-COMPOSE_PROFILES=https
+COMPOSE_PROFILES=https          # vacío si ya tienes otro proxy (ver más abajo)
 WEB_BIND=127.0.0.1
 ```
 
-Si migras desde tu equipo, puedes copiar tu `.env` local y cambiar solo esas líneas, pero **genera secretos nuevos** para producción.
+Las contraseñas internas y `JWT_SECRET` se generan solas en el primer arranque (volumen `secrets` o `./data/secretos`); guarda esa carpeta en un lugar seguro. El superadministrador se crea en la **configuración inicial** de la web con el código que sale en `docker compose logs api`, y las claves de los modelos, el correo y las copias se configuran en *Sistema*. Qué es imprescindible y qué se recomienda: [configuracion-inicial.md](configuracion-inicial.md).
+
+Si migras desde tu equipo con un `.env` que ya trae contraseñas, no copies las de desarrollo: déjalas vacías en el servidor y se generarán nuevas.
 
 ### 4. Correo (recomendado)
 
@@ -112,7 +106,7 @@ docker compose up -d --build
 docker compose logs -f caddy     # verás cómo obtiene el certificado
 ```
 
-Abre `https://rag.tuempresa.com`, entra con `SEED_ADMIN_USERNAME` y **cambia la contraseña** en *Mi cuenta*.
+Abre `https://rag.tuempresa.com` y completa la **configuración inicial** con el código de `docker compose logs api`. Después, activa la verificación en dos pasos en *Mi cuenta* (con dominio real es obligatoria) y sigue los *Primeros pasos* de Organizaciones.
 
 ### 6. Copias de seguridad fuera del servidor
 

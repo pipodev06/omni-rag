@@ -1,9 +1,9 @@
 # =====================================================================
-# RAG multi-cliente — todo el sistema con un solo comando:
-#     cp .env.example .env   (y edítalo)
-#     docker compose up -d --build
-# Luego abre http://localhost:8000
-# Ver docs/instalacion.md para más detalles.
+# Omni RAG — todo el sistema con un solo comando, sin configurar nada antes:
+#     docker compose up -d
+# Luego abre http://localhost:8000 y sigue la configuración inicial (el código de un solo uso sale en
+# «docker compose logs api»). El archivo .env es opcional: solo para fijar valores (ver .env.example).
+# Ver docs/instalacion.md y docs/configuracion-inicial.md.
 # =====================================================================
 name: rag
 
@@ -14,16 +14,33 @@ x-dns: &dns
   - ${DNS_SECONDARY:-8.8.8.8}
 
 services:
+  # Primer arranque: genera las contraseñas internas y la clave de las sesiones si no están en el .env (ver
+  # deploy/init-secrets.sh) y termina. Los demás servicios esperan a que acabe.
+  init:
+    image: pgvector/pgvector:pg17
+    restart: "no"
+    entrypoint: ["sh", "/init-secrets.sh"]
+    network_mode: none
+    volumes:
+      - ./deploy/init-secrets.sh:/init-secrets.sh:ro
+      - secrets:/secrets
+
   # Base de datos: PostgreSQL 17 con la extensión pgvector.
   db:
     image: pgvector/pgvector:pg17
     restart: unless-stopped
+    # La contraseña de rag_owner sale del .env o, si no está, de la generada por «init». Solo cuenta al crear la base.
+    entrypoint: ["sh", "-c", "export POSTGRES_PASSWORD=\"$${POSTGRES_PASSWORD:-$$(cat /secrets/postgres_password)}\"; exec docker-entrypoint.sh postgres"]
     environment:
       POSTGRES_USER: rag_owner
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
       POSTGRES_DB: rag
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - secrets:/secrets:ro
+    depends_on:
+      init:
+        condition: service_completed_successfully
     ports:
       - "127.0.0.1:${DB_PORT:-15432}:5432" # solo accesible desde esta máquina
     healthcheck:
@@ -123,10 +140,15 @@ services:
       dockerfile: apps/api/Dockerfile
     restart: unless-stopped
     dns: *dns
-    env_file: .env
+    env_file: &env-file
+      - path: .env
+        required: false # opcional: sin él vale todo por defecto y los secretos los genera «init»
     environment: &backend-env
-      DATABASE_URL: postgres://rag_owner:${POSTGRES_PASSWORD}@db:5432/rag
-      APP_DATABASE_URL: postgres://rag_app:${APP_DB_PASSWORD}@db:5432/rag
+      # Vacías a propósito: la API las arma con POSTGRES_PASSWORD / APP_DB_PASSWORD del .env o, si no están, con las
+      # generadas en /secrets (config.ts). Así una URL de desarrollo del .env no se cuela en el contenedor.
+      DATABASE_URL: ""
+      APP_DATABASE_URL: ""
+      SECRETS_DIR: /secrets
       EMBEDDINGS_URL: http://embeddings:80
       DOCLING_URL: http://docling:5001
       RERANKER_URL: ${RERANKER_URL-http://reranker:80}
@@ -137,6 +159,7 @@ services:
       DOCKER_PROXY_URL: ${DOCKER_PROXY_URL-http://docker-proxy:2375}
     volumes:
       - uploads:/data/uploads
+      - secrets:/secrets:ro
     security_opt: ["no-new-privileges:true"]
     cap_drop: [ALL]
     depends_on:
@@ -155,10 +178,11 @@ services:
     command: ["node", "dist/worker.js"]
     # Peso de CPU (ver deploy/autotune.sh): la ingesta cede CPU a las búsquedas y a otros servicios si hay competencia.
     cpu_shares: ${WORKER_CPU_SHARES:-1024}
-    env_file: .env
+    env_file: *env-file
     environment: *backend-env
     volumes:
       - uploads:/data/uploads
+      - secrets:/secrets:ro
       # Solo lectura: el monitor comprueba que las copias de seguridad sean recientes.
       - ./backups:/backups:ro
       # Solo lectura: estado de la subida a B2 (pantalla Sistema → Copias).
@@ -220,7 +244,8 @@ services:
     restart: unless-stopped
     entrypoint: ["sh", "/backup.sh"]
     environment:
-      PGPASSWORD: ${POSTGRES_PASSWORD}
+      # Vacía = backup.sh usa la generada en /secrets.
+      PGPASSWORD: ${POSTGRES_PASSWORD:-}
       BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-}
       BACKUP_AT: ${BACKUP_AT:-}
       BACKUP_UPLOADS_TGZ: ${BACKUP_UPLOADS_TGZ:-}
@@ -231,6 +256,7 @@ services:
       BACKUP_ENCRYPTION_PASSPHRASE: ${BACKUP_ENCRYPTION_PASSPHRASE:-}
     volumes:
       - ./deploy/backup.sh:/backup.sh:ro
+      - secrets:/secrets:ro
       - uploads:/uploads:ro
       - ./backups:/backups
       # Carpeta externa (disco, NAS, carpeta sincronizada). Solo se usa con BACKUP_OFFSITE=true.
@@ -319,6 +345,8 @@ networks:
     internal: true
 
 volumes:
+  # Contraseñas internas y clave de sesiones generadas en el primer arranque (no van en las copias: guárdalas aparte).
+  secrets:
   backup-config:
   backup-status:
   caddy-data:

@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { z } from "zod";
 import { normalizeDbUrl } from "./lib/dburl.js";
 import { weakSecrets } from "./lib/secrets.js";
@@ -179,8 +181,41 @@ function withoutInvalidEmpty(env: NodeJS.ProcessEnv): Record<string, string | un
   return out;
 }
 
+/** Secretos que el servicio `init` genera en el primer arranque (deploy/init-secrets.sh), con su archivo. */
+const GENERATED_SECRETS = { POSTGRES_PASSWORD: "postgres_password", APP_DB_PASSWORD: "app_db_password", JWT_SECRET: "jwt_secret" } as const;
+
+/**
+ * Completa lo que falta con los secretos generados en SECRETS_DIR: una variable escrita en el entorno siempre manda. Si
+ * no hay DATABASE_URL / APP_DATABASE_URL (docker-compose las deja vacías), se arman con esas contraseñas y el host `db`.
+ * Así Omni RAG arranca sin archivo de entorno; en desarrollo, fuera de Docker, se siguen escribiendo las URL completas.
+ */
+export function withGeneratedSecrets(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const out = { ...env };
+  const dir = env.SECRETS_DIR?.trim();
+  if (dir) {
+    for (const [key, file] of Object.entries(GENERATED_SECRETS)) {
+      if (out[key]?.trim()) continue;
+      try {
+        out[key] = readFileSync(join(dir, file), "utf8").trim();
+      } catch {
+        // Sin archivo: queda vacía y la validación lo dice.
+      }
+    }
+  }
+  const url = (user: string, pass: string | undefined) => {
+    if (!pass) return undefined;
+    const u = new URL("postgres://db:5432/rag");
+    u.username = user;
+    u.password = pass; // URL la codifica: valen «/», «+» o «=»
+    return u.toString();
+  };
+  if (!out.DATABASE_URL?.trim()) out.DATABASE_URL = url("rag_owner", out.POSTGRES_PASSWORD?.trim());
+  if (!out.APP_DATABASE_URL?.trim()) out.APP_DATABASE_URL = url("rag_app", out.APP_DB_PASSWORD?.trim());
+  return out;
+}
+
 function load(): Config {
-  const parsed = schema.safeParse(withoutInvalidEmpty(process.env));
+  const parsed = schema.safeParse(withoutInvalidEmpty(withGeneratedSecrets(process.env)));
   if (!parsed.success) {
     const issues = parsed.error.issues.map((i) => `  - ${i.path.join(".")}: ${i.message}`).join("\n");
     throw new Error(`Configuración inválida:\n${issues}`);

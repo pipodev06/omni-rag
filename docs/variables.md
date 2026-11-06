@@ -20,15 +20,15 @@ Copia a la base el valor actual de cada uno (los secretos, cifrados), lo deja en
 
 | Variable | Por defecto | Qué hace | Aplica |
 |---|---|---|---|
-| `POSTGRES_PASSWORD` | — (obligatoria) | Contraseña del usuario `rag_owner` de PostgreSQL. Se rota con `sh deploy/rotate-db-password.sh` | Ver [README, regla 3](../README.md#3-las-contraseñas-de-la-base-de-datos-tienen-un-paso-extra) |
-| `APP_DB_PASSWORD` | — (obligatoria) | Contraseña del usuario `rag_app` (el que usa la aplicación, sujeto a RLS) | up (la API la aplica sola) |
-| `JWT_SECRET` | — (obligatoria, 32+ caracteres) | Firma las sesiones y cifra los secretos del 2FA. Con dominio real debe ser fuerte | up (cierra todas las sesiones y **rompe el 2FA ya guardado**) |
+| `POSTGRES_PASSWORD` | generada en el primer arranque | Contraseña del usuario `rag_owner` de PostgreSQL. Vacía = la que genera el servicio `init` en `/secrets` (volumen `secrets` o `./data/secretos`). Se rota con `sh deploy/rotate-db-password.sh` (solo si está escrita en el `.env`) | Ver [README, regla 3](../README.md#3-las-contraseñas-de-la-base-de-datos-tienen-un-paso-extra) |
+| `APP_DB_PASSWORD` | generada en el primer arranque | Contraseña del usuario `rag_app` (el que usa la aplicación, sujeto a RLS). Vacía = la generada por `init` | up (la API la aplica sola) |
+| `JWT_SECRET` | generado en el primer arranque | Firma las sesiones y cifra los secretos del 2FA y las claves guardadas en la pantalla. Vacío = el generado por `init` (64 caracteres). Si lo escribes, 32+ caracteres | up (cierra todas las sesiones y **rompe el 2FA y las claves ya guardadas**) |
 | `JWT_EXPIRES_IN` | `12h` | Duración de una sesión | up |
 | `COOKIE_SECURE` | `auto` | Cookie solo por HTTPS: `auto` (según el acceso), `true`, `false`. Con `DOMAIN` real siempre es segura | up |
 | `REQUIRE_SUPERADMIN_2FA` | `auto` | 2FA obligatorio al superadministrador: `auto` = solo con dominio real | up |
 | `REQUIRE_ADMIN_2FA` | `false` | 2FA obligatorio a todos los administradores de organización (`false` = opcional) | up |
 | `IP_RATE_LIMIT_PER_MIN` | `120` | Peticiones por minuto y por IP de quien no ha iniciado sesión (`0` = sin límite) | up |
-| `SEED_ADMIN_USERNAME`, `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD` | `admin`, `admin@example.com`, — | Primer superadministrador, que vive en la organización interna «Plataforma» (no es un cliente). El email es opcional. `SEED_TENANT_*` ya no se usan | 1.ª vez |
+| `SEED_ADMIN_USERNAME`, `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD` | vacías | Opcionales: crean el primer superadministrador al arrancar (instalaciones automáticas). Vacías, se crea en la configuración inicial de la web con el código de `docker compose logs api`. Vive en la organización interna «Plataforma» (no es un cliente). `SEED_TENANT_*` ya no se usan | 1.ª vez |
 
 ## Dominio, HTTPS y puertos
 
@@ -160,4 +160,4 @@ Los ajustes de copias (`BACKUP_*`, salvo `BACKUP_OFFSITE_DIR`, `BACKUP_TARGETS_D
 
 ## Internas (las fija `docker-compose.yml`; normalmente no se tocan)
 
-`DATABASE_URL`, `APP_DATABASE_URL` (se arman con las contraseñas de arriba), `DOCLING_URL`, `EMBEDDINGS_URL`, `STORAGE_DIR` (`/data/uploads`), `BACKUP_DIR` (`/backups`), `NODE_ENV` y `PORT` (`3001`). Solo importan si ejecutas la API fuera de Docker (ver [desarrollo.md](desarrollo.md)).
+`DATABASE_URL`, `APP_DATABASE_URL` (vacías en el compose: la API las arma con las contraseñas de arriba y el host `db`), `SECRETS_DIR` (`/secrets`, donde están los secretos generados), `DOCLING_URL`, `EMBEDDINGS_URL`, `STORAGE_DIR` (`/data/uploads`), `BACKUP_DIR` (`/backups`), `NODE_ENV` y `PORT` (`3001`). Solo importan si ejecutas la API fuera de Docker (ver [desarrollo.md](desarrollo.md)).

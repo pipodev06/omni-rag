@@ -44,7 +44,7 @@ docker compose stop
 
 # Copia cada volumen a su carpeta conservando dueños y permisos (también los de la carpeta raíz).
 mkdir -p data
-for par in pgdata:postgres uploads:uploads hf-cache:modelos backup-config:copias-config backup-status:copias-estado clamav-db:clamav; do
+for par in pgdata:postgres uploads:uploads hf-cache:modelos backup-config:copias-config backup-status:copias-estado clamav-db:clamav secrets:secretos; do
   vol="rag_${par%%:*}"; dir="data/${par##*:}"
   docker volume inspect "$vol" >/dev/null 2>&1 || { echo "sin $vol, se salta"; continue; }
   [ -e "$dir" ] && { echo "ya existe $dir: revísalo antes de seguir"; break; }

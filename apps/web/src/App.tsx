@@ -1,10 +1,13 @@
 import { lazy, Suspense, type ReactNode } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router";
+import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
+import { api } from "@/api";
 import { useSession } from "@/hooks/useSession";
 import { AppLayout } from "@/components/AppLayout";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { LoginPage } from "@/pages/LoginPage";
+import { SetupPage } from "@/pages/SetupPage";
 import { ForgotPasswordPage, LinkPage } from "@/pages/AuthLinkPages";
 
 // Cada página se descarga solo cuando se visita (carga inicial más ligera).
@@ -43,14 +46,15 @@ function Protected({ children, allow = true }: { children: ReactNode; allow?: bo
   );
 }
 
-/** Pantalla de login; con sesión iniciada lleva a la página que se quería ver. */
+/** Pantalla de login (o la configuración inicial, si aún no hay usuarios); con sesión iniciada lleva a la página que se quería ver. */
 function LoginRoute() {
   const { data, isLoading } = useSession();
+  const setup = useQuery({ queryKey: ["setup"], queryFn: () => api.get<{ pending: boolean }>("/setup"), enabled: !isLoading && !data, staleTime: Infinity });
   const from = (useLocation().state as { from?: string } | null)?.from;
-  if (isLoading) return <FullScreenLoader />;
+  if (isLoading || (!data && setup.isLoading)) return <FullScreenLoader />;
   // El dueño de la plataforma aterriza en el selector de organizaciones; el resto, en el chat.
   if (data) return <Navigate to={data.mfaSetupRequired ? "/cuenta" : from && from !== "/login" ? from : data.user.isSuperadmin ? "/organizaciones" : "/chat"} replace />;
-  return <LoginPage />;
+  return setup.data?.pending ? <SetupPage /> : <LoginPage />;
 }
 
 export function App() {
