@@ -40,7 +40,8 @@ function fakeSql() {
     }
     if (q.startsWith("SELECT key, value, secret FROM settings")) return Promise.resolve([...state.settings].map(([key, value]) => ({ key, value, secret: null })));
     if (q.startsWith("INSERT INTO settings")) {
-      state.settings.set(vals[0] as string, q.includes("?::jsonb") ? JSON.parse(vals[1] as string) : "cifrado");
+      // Valor: VALUES (clave, sql.json(valor), NULL…); secreto: VALUES (clave, NULL, cifrado…). json() de aquí devuelve el texto JSON.
+      state.settings.set(vals[0] as string, q.includes("VALUES (?, NULL, ?") ? "cifrado" : JSON.parse(vals[1] as string));
       return Promise.resolve([]);
     }
     if (q.startsWith("DELETE FROM settings")) {
