@@ -17,7 +17,6 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface Container {
   name: string;
-  own: boolean;
   image: string;
   state: string;
   health: string | null;
@@ -73,7 +72,7 @@ function diagnose(c: Container): { tone: keyof typeof TONE; label: string; title
   if (cpuRatio !== null && cpuRatio >= 0.85 && !c.alerts.includes("cpu")) out.push({ tone: "warn", label: "CPU justa", title: "El 5 % del tiempo de las últimas 24 h usó más del 85 % de su tope" });
   const enoughHistory = c.historyHours >= 24;
   if (enoughHistory && memRatio !== null && memRatio < 0.35) out.push({ tone: "muted", label: "Le sobra RAM", title: "Su pico de 7 días no llega al 35 % del tope: se le puede bajar" });
-  if (out.length === 0) out.push(c.own && !c.memLimit && !c.cpuLimit ? { tone: "muted", label: "Sin tope" } : { tone: "ok", label: "Bien" });
+  if (out.length === 0) out.push(!c.memLimit && !c.cpuLimit ? { tone: "muted", label: "Sin tope" } : { tone: "ok", label: "Bien" });
   if (!enoughHistory) out.push({ tone: "muted", label: `${c.historyHours} h de datos`, title: "Con menos de 24 h de muestras el diagnóstico aún no es fiable" });
   return out;
 }
@@ -88,7 +87,7 @@ function parseMem(v: string | null): number | null {
 
 function AutotuneCell({ c, autotune }: { c: Container; autotune: Resources["autotune"] }) {
   const a = autotune.find((x) => x.service === c.name);
-  if (!c.own || !a) return <span className="text-muted-foreground">—</span>;
+  if (!a) return <span className="text-muted-foreground">—</span>;
   const memWanted = parseMem(a.memLimit);
   const cpuWanted = a.cpus && Number(a.cpus) > 0 ? Number(a.cpus) : null;
   const sharesWanted = a.cpuShares && Number(a.cpuShares) > 0 ? Number(a.cpuShares) : null;
@@ -147,9 +146,8 @@ function NotCollecting({ collecting }: { collecting: boolean }) {
 function ResourcesTab() {
   const { data, isLoading } = useQuery({ queryKey: ["system", "resources"], queryFn: () => api.get<Resources>("/system/resources"), refetchInterval: 60_000 });
   if (isLoading || !data) return <Skeleton className="h-64 w-full" />;
-  const own = data.containers.filter((c) => c.own);
-  const memAssigned = own.reduce((s, c) => s + (c.memLimit ?? 0), 0);
-  const unlimited = own.filter((c) => !c.memLimit).length;
+  const memAssigned = data.containers.reduce((s, c) => s + (c.memLimit ?? 0), 0);
+  const unlimited = data.containers.filter((c) => !c.memLimit).length;
   const memUsed = data.containers.reduce((s, c) => s + c.memBytes, 0);
   const cpuUsed = data.containers.reduce((s, c) => s + c.cpuCores, 0);
   const st = data.stack;

@@ -3,6 +3,7 @@ import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { CheckCircle2, Circle, Plus } from "lucide-react";
 import { api } from "@/api";
+import { Tag } from "@/components/system/shared";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -25,7 +26,11 @@ function Step({ done, title, children, action, optional }: { done: boolean; titl
       <div className="min-w-0 flex-1">
         <p className="font-medium">
           {title}
-          {optional && <span className="ml-2 text-xs font-normal text-muted-foreground">Opcional</span>}
+          {optional && (
+            <span className="ml-2 align-middle">
+              <Tag tone="muted">Opcional</Tag>
+            </span>
+          )}
         </p>
         <p className="text-sm text-muted-foreground">{children}</p>
       </div>

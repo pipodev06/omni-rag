@@ -72,6 +72,12 @@ export function parseModelRef(ref: string): ModelRef {
   return { providerId: setting("LLM_DEFAULT_PROVIDER"), model: ref };
 }
 
+/** ¿El proveedor de este modelo («groq:…», o sin prefijo = el por defecto) existe y tiene clave? */
+export function refConfigured(ref: string): boolean {
+  const p = getProvider(parseModelRef(ref).providerId);
+  return p !== undefined && isConfigured(p);
+}
+
 /** Nombre con el que se guarda y se muestra el modelo usado: sin prefijo si es de OpenRouter (como siempre). */
 export const modelLabel = (providerId: string, model: string): string => (providerId === "openrouter" ? model : `${providerId}:${model}`);
 

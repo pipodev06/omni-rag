@@ -3,7 +3,7 @@ import { Link } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { Loader2, Lock, User } from "lucide-react";
 import { api, errorMessage } from "@/api";
-import { AuthLayout } from "@/components/AuthLayout";
+import { AuthLayout, FormError, IconInput } from "@/components/AuthLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -59,24 +59,16 @@ export function LoginPage() {
           <>
           <div className="space-y-2">
             <Label htmlFor="login">Usuario o correo</Label>
-            <div className="relative">
-              <User className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input id="login" className="pl-9" value={login} onChange={(e) => setLogin(e.target.value)} autoComplete="username" autoCapitalize="none" spellCheck={false} required autoFocus />
-            </div>
+            <IconInput icon={User} id="login" value={login} onChange={(e) => setLogin(e.target.value)} autoComplete="username" autoCapitalize="none" spellCheck={false} required autoFocus />
           </div>
           <div className="space-y-2">
             <Label htmlFor="password">Contraseña</Label>
-            <div className="relative">
-              <Lock className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input id="password" type="password" className="pl-9" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required />
-            </div>
+            <IconInput icon={Lock} id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required />
           </div>
           </>
           )}
           {error && (
-            <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              {error}
-            </p>
+            <FormError>{error}</FormError>
           )}
           <Button type="submit" className="w-full" disabled={busy}>
             {busy && <Loader2 className="animate-spin" />}

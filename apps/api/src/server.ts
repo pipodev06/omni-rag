@@ -4,8 +4,8 @@ import { createApp } from "./app.js";
 import { closeDb } from "./db/client.js";
 import { migrate } from "./db/migrate.js";
 import { getBoss, stopBoss } from "./queue.js";
-import { ensureInitialAdmin, setupPending } from "./scripts/bootstrap.js";
-import { announceSetupCode, clearSetupCode, reprintSetupCode } from "./lib/setupCode.js";
+import { ensureInitialAdmin } from "./scripts/bootstrap.js";
+import { announceSetupCode, remindSetupCode } from "./lib/setupCode.js";
 import { installLogger } from "./lib/logger.js";
 import { startSettingsRefresh } from "./lib/settings.js";
 
@@ -13,21 +13,11 @@ installLogger();
 
 async function main() {
   await migrate();
-  await ensureInitialAdmin();
-  // Sin usuarios: la web muestra la configuración inicial, que pide este código (sale en los registros).
-  if (await setupPending()) {
+  // Sin usuarios: la web muestra la configuración inicial, que pide este código. Sale en los registros y se repite
+  // cada 10 minutos hasta que se use, para que no se pierda entre otros registros.
+  if (await ensureInitialAdmin()) {
     announceSetupCode();
-    // Se repite cada 10 minutos mientras falte configurar, para que no se pierda entre otros registros.
-    const timer = setInterval(() => {
-      void setupPending()
-        .then((pending) => {
-          if (pending) return reprintSetupCode();
-          clearSetupCode();
-          clearInterval(timer);
-        })
-        .catch(() => {});
-    }, 10 * 60_000);
-    timer.unref();
+    remindSetupCode();
   }
   await startSettingsRefresh();
   await getBoss(); // prepara la cola para poder encolar documentos

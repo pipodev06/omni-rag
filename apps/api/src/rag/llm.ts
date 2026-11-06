@@ -1,6 +1,6 @@
 import { config } from "../config.js";
 import { HttpError } from "../lib/errors.js";
-import { configuredProviders, getProvider, isConfigured, modelLabel, parseModelRef, type LlmProvider, type ProviderKind } from "../lib/llmProviders.js";
+import { configuredProviders, getProvider, isConfigured, modelLabel, parseModelRef, refConfigured, type LlmProvider, type ProviderKind } from "../lib/llmProviders.js";
 import type { ChatMessage } from "./prompt.js";
 import { setting } from "../lib/settings.js";
 
@@ -32,7 +32,7 @@ class ModelError extends Error {
 export async function* streamChat(messages: ChatMessage[], models: string[], signal?: AbortSignal): AsyncGenerator<LlmEvent> {
   if (models.length === 0) throw new HttpError(503, "El plan de la organización no tiene modelos configurados");
   const refs = models.map(parseModelRef);
-  if (!refs.some((r) => { const p = getProvider(r.providerId); return p && isConfigured(p); })) {
+  if (!models.some(refConfigured)) {
     const needed = [...new Set(refs.map((r) => getProvider(r.providerId)?.keyVar ?? r.providerId))].join(" o ");
     throw new HttpError(503, `Falta la clave del proveedor de LLM en la configuración del servidor (${needed})`);
   }

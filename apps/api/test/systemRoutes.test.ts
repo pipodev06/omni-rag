@@ -370,7 +370,7 @@ describe("aviso por correo de un cambio de ajustes", () => {
   it("avisa a los destinatarios de ANTES del cambio con las claves, quién y cuándo, sin valores", async () => {
     state.settings.set("ALERT_EMAIL", "viejo@x.com, otro@x.com");
     await (await settings()).refreshSettings();
-    await call("PUT", "/settings", { values: { ALERT_DISK_FREE_PERCENT: 33, GROQ_API_KEY: "gsk_valor-secreto" }, confirm: CONFIRM });
+    await call("PUT", "/settings", { values: { ALERT_DISK_FREE_PERCENT: 87, GROQ_API_KEY: "gsk_valor-secreto" }, confirm: CONFIRM });
     await waitMails(2);
     const mails = sendMail.mock.calls.map((c) => c[0]);
     expect(mails.map((m) => m.to).sort()).toEqual(["otro@x.com", "viejo@x.com"]);
@@ -380,7 +380,8 @@ describe("aviso por correo de un cambio de ajustes", () => {
     expect(text).toContain("root");
     expect(text).toMatch(/\d{4}-\d{2}-\d{2}T/);
     expect(text).not.toContain("gsk_valor-secreto");
-    expect(text).not.toContain("33");
+    // 87 no puede salir en la fecha y hora del aviso (con 33 fallaba a las hh:33): el valor no viaja.
+    expect(text).not.toMatch(/\b87\b/);
   });
 
   it("si cambia el propio ALERT_EMAIL avisa al anterior y al nuevo", async () => {

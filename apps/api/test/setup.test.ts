@@ -116,14 +116,12 @@ describe("POST /api/setup", () => {
 });
 
 describe("mínimo de contraseña del superadministrador", () => {
-  it("15 para el superadmin, 10 para el resto; SEED_ADMIN_PASSWORD de 10-14 se acepta con aviso (lenient)", async () => {
+  it("15 para el superadmin, 10 para el resto", async () => {
     const { passwordProblem } = await import("../src/auth/password.js");
     const { initialAdminProblem } = await import("../src/scripts/bootstrap.js");
     expect(passwordProblem("a".repeat(12))).toBeNull();
     expect(passwordProblem("a".repeat(12), { superadmin: true })).toMatch(/15/);
     expect(passwordProblem("a".repeat(15), { superadmin: true })).toBeNull();
     expect(initialAdminProblem({ username: "admin", email: null, password: "a".repeat(12) })).toMatch(/15/);
-    expect(initialAdminProblem({ username: "admin", email: null, password: "a".repeat(12) }, { lenient: true })).toBeNull();
-    expect(initialAdminProblem({ username: "admin", email: null, password: "a".repeat(9) }, { lenient: true })).toMatch(/10/);
   });
 });
