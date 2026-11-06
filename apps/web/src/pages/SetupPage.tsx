@@ -12,8 +12,16 @@ import { Label } from "@/components/ui/label";
  * el código de un solo uso que la API escribe en sus registros y abre la sesión; después, Organizaciones muestra los
  * primeros pasos (modelos de lenguaje, correo, copias y la primera organización).
  */
-export function SetupPage() {
+/** Lo que devuelve GET /api/setup (la misma consulta que decide en App.tsx si se muestra esta página). */
+export interface SetupStatus {
+  pending: boolean;
+  /** Mínimo de la contraseña del superadministrador, el mismo que exige la API. */
+  minPassword: number;
+}
+
+export function SetupPage({ minPassword }: { minPassword: number }) {
   const qc = useQueryClient();
+  const done = () => qc.setQueryData<SetupStatus>(["setup"], (s) => ({ minPassword, ...s, pending: false }));
   const [code, setCode] = useState("");
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
@@ -31,11 +39,11 @@ export function SetupPage() {
     try {
       await api.post("/setup", { code, username, email, password });
       // Con la sesión abierta, la ruta /login lleva a Organizaciones, donde están los primeros pasos.
-      qc.setQueryData(["setup"], { pending: false });
+      done();
       await qc.refetchQueries({ queryKey: ["session"] });
     } catch (err) {
       // Otro navegador terminó la configuración antes: se pasa al login.
-      if (err instanceof ApiError && err.status === 409) qc.setQueryData(["setup"], { pending: false });
+      if (err instanceof ApiError && err.status === 409) done();
       setError(errorMessage(err));
     } finally {
       setBusy(false);
@@ -78,9 +86,9 @@ export function SetupPage() {
             <Label htmlFor="setup-password">Contraseña</Label>
             <div className="relative">
               <Lock className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input id="setup-password" type="password" className="pl-9" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" minLength={15} required />
+              <Input id="setup-password" type="password" className="pl-9" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" minLength={minPassword} required />
             </div>
-            <p className="text-xs text-muted-foreground">Mínimo 15 caracteres. Activa también la verificación en dos pasos en Mi cuenta.</p>
+            <p className="text-xs text-muted-foreground">Mínimo {minPassword} caracteres. Activa también la verificación en dos pasos en Mi cuenta.</p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="setup-repeat">Repite la contraseña</Label>

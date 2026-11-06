@@ -195,9 +195,9 @@ const ChangePasswordBody = z.object({ newPassword: z.string(), code: z.string().
  */
 authRoutes.post("/change-password", requireAuth, async (c) => {
   const body = parse(ChangePasswordBody, await c.req.json().catch(() => ({})));
-  const problem = passwordProblem(body.newPassword);
-  if (problem) throw badRequest(problem);
   const u = c.get("user");
+  const problem = passwordProblem(body.newPassword, { superadmin: u.isSuperadmin });
+  if (problem) throw badRequest(problem);
   if (u.support) throw badRequest("En modo soporte no se puede cambiar la contraseña");
   const mfa = await loadTotp(u.id);
   if (mfa?.totp_enabled_at) {
@@ -340,10 +340,12 @@ const AcceptBody = z.object({
 authRoutes.post("/link", async (c) => {
   const body = parse(AcceptBody, await c.req.json().catch(() => ({})));
   if (!tokenLimiter.hit(clientIp(c))) throw new HttpError(429, "Demasiados intentos. Espera unos minutos.");
-  const problem = passwordProblem(body.password);
-  if (problem) throw badRequest(problem);
+  const general = passwordProblem(body.password);
+  if (general) throw badRequest(general);
   const valid = await findValidToken(body.token);
   if (!valid) throw notFound("El enlace no es válido o ha caducado. Pide uno nuevo.");
+  const problem = passwordProblem(body.password, { superadmin: valid.isSuperadmin });
+  if (problem) throw badRequest(problem);
 
   const hash = await hashPassword(body.password);
   const user = await sqlOwner.begin(async (tx) => {

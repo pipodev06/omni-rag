@@ -56,6 +56,17 @@ describe("código de un solo uso", () => {
     expect(logs).toHaveLength(1);
   });
 
+  it("se vuelve a escribir el mismo código (para que no se pierda entre otros registros); usado, ya no", async () => {
+    const m = await import("../src/lib/setupCode.js");
+    const code = m.announceSetupCode(quiet);
+    const logs: string[] = [];
+    m.reprintSetupCode((l) => logs.push(l));
+    expect(logs[0]).toContain(code);
+    m.clearSetupCode();
+    m.reprintSetupCode((l) => logs.push(l));
+    expect(logs).toHaveLength(1);
+  });
+
   it("sin código anunciado nada vale", async () => {
     const m = await import("../src/lib/setupCode.js");
     expect(m.checkSetupCode("")).toBe(false);
@@ -65,9 +76,9 @@ describe("código de un solo uso", () => {
 
 describe("POST /api/setup", () => {
   it("GET dice si falta configurar", async () => {
-    expect(await (await call(undefined, "GET")).json()).toEqual({ pending: true });
+    expect(await (await call(undefined, "GET")).json()).toEqual({ pending: true, minPassword: 15 });
     state.pending = false;
-    expect(await (await call(undefined, "GET")).json()).toEqual({ pending: false });
+    expect(await (await call(undefined, "GET")).json()).toEqual({ pending: false, minPassword: 15 });
   });
 
   it("con el código crea el superadmin, abre la sesión, lo audita y el código deja de valer", async () => {
@@ -101,5 +112,18 @@ describe("POST /api/setup", () => {
     expect((await call({ ...GOOD, password: "Catorce-letra1", code })).status).toBe(400); // 14: el superadmin pide 15
     expect((await call({ ...GOOD, email: "no-es-correo", code })).status).toBe(400);
     expect((await call({ ...GOOD, code })).status).toBe(200);
+  });
+});
+
+describe("mínimo de contraseña del superadministrador", () => {
+  it("15 para el superadmin, 10 para el resto; SEED_ADMIN_PASSWORD de 10-14 se acepta con aviso (lenient)", async () => {
+    const { passwordProblem } = await import("../src/auth/password.js");
+    const { initialAdminProblem } = await import("../src/scripts/bootstrap.js");
+    expect(passwordProblem("a".repeat(12))).toBeNull();
+    expect(passwordProblem("a".repeat(12), { superadmin: true })).toMatch(/15/);
+    expect(passwordProblem("a".repeat(15), { superadmin: true })).toBeNull();
+    expect(initialAdminProblem({ username: "admin", email: null, password: "a".repeat(12) })).toMatch(/15/);
+    expect(initialAdminProblem({ username: "admin", email: null, password: "a".repeat(12) }, { lenient: true })).toBeNull();
+    expect(initialAdminProblem({ username: "admin", email: null, password: "a".repeat(9) }, { lenient: true })).toMatch(/10/);
   });
 });

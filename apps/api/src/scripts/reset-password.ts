@@ -65,8 +65,8 @@ async function main() {
     process.exit(username ? 0 : 1);
   }
 
-  const [user] = await sqlOwner<{ id: string; tenant_id: string; username: string; is_active: boolean; totp: boolean }[]>`
-    SELECT id, tenant_id, username, is_active, (totp_enabled_at IS NOT NULL) AS totp
+  const [user] = await sqlOwner<{ id: string; tenant_id: string; username: string; is_active: boolean; totp: boolean; is_superadmin: boolean }[]>`
+    SELECT id, tenant_id, username, is_active, (totp_enabled_at IS NOT NULL) AS totp, is_superadmin
       FROM users WHERE lower(username) = lower(${username}) AND support_for IS NULL`;
   if (!user) return fail(`no existe el usuario «${username}»`);
   if (!user.is_active) console.warn(`Aviso: «${user.username}» está desactivado; sigue sin poder entrar hasta activarlo.`);
@@ -82,7 +82,7 @@ async function main() {
     const confirm = await readSecret("Repite la contraseña: ", piped);
     if (password !== confirm) return fail("las contraseñas no coinciden");
   }
-  const problem = passwordProblem(password);
+  const problem = passwordProblem(password, { superadmin: user.is_superadmin });
   if (problem) return fail(problem);
 
   await sqlOwner`

@@ -1,5 +1,5 @@
 import { sqlOwner } from "../db/client.js";
-import { hashPassword, passwordProblem } from "../auth/password.js";
+import { hashPassword, passwordProblem, SUPERADMIN_MIN_PASSWORD } from "../auth/password.js";
 import { weakSeedPassword } from "../lib/secrets.js";
 import { USERNAME_RE } from "../lib/validate.js";
 
@@ -21,16 +21,12 @@ export interface CreatedAdmin {
 }
 
 /**
- * Mínimo del primer superadministrador: puede quedar sin 2FA (en local no se exige), y sin segundo factor NIST
- * 800-63B rev. 4 pide 15 caracteres. El resto de usuarios sigue con el mínimo general.
+ * Problema de un usuario/contraseña para el primer superadministrador, o null si vale. Con `lenient`, la contraseña solo
+ * necesita el mínimo general (SEED_ADMIN_PASSWORD de instalaciones anteriores a los 15 caracteres: se avisa, no se rompe).
  */
-export const INITIAL_ADMIN_MIN_PASSWORD = 15;
-
-/** Problema de un usuario/contraseña para el primer superadministrador, o null si vale. */
-export function initialAdminProblem(a: InitialAdmin): string | null {
+export function initialAdminProblem(a: InitialAdmin, opts: { lenient?: boolean } = {}): string | null {
   if (!USERNAME_RE.test(a.username)) return "El usuario debe tener 3-40 caracteres: minúsculas, números, punto, guion o guion bajo.";
-  if (a.password.length < INITIAL_ADMIN_MIN_PASSWORD) return `La contraseña del superadministrador debe tener al menos ${INITIAL_ADMIN_MIN_PASSWORD} caracteres.`;
-  return passwordProblem(a.password) ?? weakSeedPassword(process.env.DOMAIN?.trim() ?? "", a.password);
+  return passwordProblem(a.password, { superadmin: !opts.lenient }) ?? weakSeedPassword(process.env.DOMAIN?.trim() ?? "", a.password);
 }
 
 /**
@@ -78,8 +74,11 @@ export async function ensureInitialAdmin(): Promise<void> {
   const email = process.env.SEED_ADMIN_EMAIL?.trim().toLowerCase() || null;
   const username =
     process.env.SEED_ADMIN_USERNAME?.trim().toLowerCase() || email?.split("@")[0]?.replace(/[^a-z0-9._-]/g, "") || "admin";
-  const problem = initialAdminProblem({ username, email, password });
+  const problem = initialAdminProblem({ username, email, password }, { lenient: true });
   if (problem) throw new Error(`SEED_ADMIN_USERNAME / SEED_ADMIN_PASSWORD: ${problem}`);
+  if (password.length < SUPERADMIN_MIN_PASSWORD) {
+    console.warn(`[bootstrap] SEED_ADMIN_PASSWORD tiene menos de ${SUPERADMIN_MIN_PASSWORD} caracteres: se acepta, pero cámbiala en Mi cuenta (allí ya se exigen ${SUPERADMIN_MIN_PASSWORD}) y activa la verificación en dos pasos.`);
+  }
 
   const created = await createInitialAdmin({ username, email, password });
   if (created) console.log(`[bootstrap] creado el superadministrador ${username} en la organización interna «${PLATFORM_NAME}». Crea tu primera organización en Organizaciones.`);

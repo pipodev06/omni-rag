@@ -7,7 +7,7 @@ import { useSession } from "@/hooks/useSession";
 import { AppLayout } from "@/components/AppLayout";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { LoginPage } from "@/pages/LoginPage";
-import { SetupPage } from "@/pages/SetupPage";
+import { SetupPage, type SetupStatus } from "@/pages/SetupPage";
 import { ForgotPasswordPage, LinkPage } from "@/pages/AuthLinkPages";
 
 // Cada página se descarga solo cuando se visita (carga inicial más ligera).
@@ -49,12 +49,12 @@ function Protected({ children, allow = true }: { children: ReactNode; allow?: bo
 /** Pantalla de login (o la configuración inicial, si aún no hay usuarios); con sesión iniciada lleva a la página que se quería ver. */
 function LoginRoute() {
   const { data, isLoading } = useSession();
-  const setup = useQuery({ queryKey: ["setup"], queryFn: () => api.get<{ pending: boolean }>("/setup"), enabled: !isLoading && !data, staleTime: Infinity });
+  const setup = useQuery({ queryKey: ["setup"], queryFn: () => api.get<SetupStatus>("/setup"), enabled: !isLoading && !data, staleTime: Infinity });
   const from = (useLocation().state as { from?: string } | null)?.from;
   if (isLoading || (!data && setup.isLoading)) return <FullScreenLoader />;
   // El dueño de la plataforma aterriza en el selector de organizaciones; el resto, en el chat.
   if (data) return <Navigate to={data.mfaSetupRequired ? "/cuenta" : from && from !== "/login" ? from : data.user.isSuperadmin ? "/organizaciones" : "/chat"} replace />;
-  return setup.data?.pending ? <SetupPage /> : <LoginPage />;
+  return setup.data?.pending ? <SetupPage minPassword={setup.data.minPassword} /> : <LoginPage />;
 }
 
 export function App() {

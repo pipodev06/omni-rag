@@ -8,7 +8,7 @@ Casi todo se cambia en la web, en **Sistema → Configuración** y **Sistema →
 
 1. `docker compose up -d`.
 2. `docker compose logs api` muestra un **código de un solo uso** («CONFIGURACIÓN INICIAL»).
-3. Abre la web (por defecto <http://localhost:8000>): sale la **Configuración inicial**. Escribe el código y crea el superadministrador. El código impide que otra persona que llegue antes a la web se quede con el servidor; si fallas 5 veces, sale uno nuevo en los registros.
+3. Abre la web (por defecto <http://localhost:8000>): sale la **Configuración inicial**. Escribe el código y crea el superadministrador (contraseña de **15 caracteres** o más; los demás usuarios necesitan 10). El código impide que otra persona que llegue antes a la web se quede con el servidor. No cambia aunque alguien pruebe códigos malos, y se vuelve a escribir cada 10 minutos mientras falte configurar: `docker compose logs --since 10m api`.
 4. Entras en **Organizaciones**, donde la lista **Primeros pasos** marca lo que falta.
 
 ## 2. Lo que no puede faltar

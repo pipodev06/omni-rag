@@ -28,7 +28,7 @@ Copia a la base el valor actual de cada uno (los secretos, cifrados), lo deja en
 | `REQUIRE_SUPERADMIN_2FA` | `auto` | 2FA obligatorio al superadministrador: `auto` = solo con dominio real | up |
 | `REQUIRE_ADMIN_2FA` | `false` | 2FA obligatorio a todos los administradores de organización (`false` = opcional) | up |
 | `IP_RATE_LIMIT_PER_MIN` | `120` | Peticiones por minuto y por IP de quien no ha iniciado sesión (`0` = sin límite) | up |
-| `SEED_ADMIN_USERNAME`, `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD` | vacías | Opcionales: crean el primer superadministrador al arrancar (instalaciones automáticas). Vacías, se crea en la configuración inicial de la web con el código de `docker compose logs api`. Vive en la organización interna «Plataforma» (no es un cliente). `SEED_TENANT_*` ya no se usan | 1.ª vez |
+| `SEED_ADMIN_USERNAME`, `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD` | vacías | Opcionales: crean el primer superadministrador al arrancar (instalaciones automáticas). Vacías, se crea en la configuración inicial de la web con el código de `docker compose logs api`. Vive en la organización interna «Plataforma» (no es un cliente). La contraseña del superadministrador necesita **15 caracteres** (en la pantalla inicial, al cambiarla y al restablecerla); una `SEED_ADMIN_PASSWORD` de 10 a 14 de instalaciones anteriores se acepta con un aviso en los registros. `SEED_TENANT_*` ya no se usan | 1.ª vez |
 
 ## Dominio, HTTPS y puertos
 
