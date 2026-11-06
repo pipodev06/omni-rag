@@ -78,8 +78,9 @@ export function SetupPage() {
             <Label htmlFor="setup-password">Contraseña</Label>
             <div className="relative">
               <Lock className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input id="setup-password" type="password" className="pl-9" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" required />
+              <Input id="setup-password" type="password" className="pl-9" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" minLength={15} required />
             </div>
+            <p className="text-xs text-muted-foreground">Mínimo 15 caracteres. Activa también la verificación en dos pasos en Mi cuenta.</p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="setup-repeat">Repite la contraseña</Label>
