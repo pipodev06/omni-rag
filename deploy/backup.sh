@@ -1,9 +1,10 @@
 #!/bin/sh
 # =====================================================================
 # Copias de seguridad automáticas: base de datos (pg_dump) y archivos subidos.
-#   - Cada BACKUP_INTERVAL_HOURS horas (por defecto 24), o a una hora fija todos los días con BACKUP_AT=03:00
-#     (hora de BACKUP_TZ; por defecto Lima, UTC-5). Con BACKUP_AT, al arrancar el contenedor solo se hace copia si
-#     la última tiene más de 24 h (el servidor estuvo apagado o parado a esa hora).
+#   - Todos los días a la hora BACKUP_AT (por defecto 03:00, hora de BACKUP_TZ; por defecto Lima, UTC-5). Al arrancar
+#     el contenedor solo se hace copia si la última tiene más de 24 h (el servidor estuvo apagado o parado a esa hora).
+#   - Con BACKUP_INTERVAL_HOURS distinto de 24, una copia cada N horas contadas desde la última (BACKUP_AT no se usa).
+#     Reiniciar el contenedor no adelanta la copia.
 #   - Se conservan BACKUP_KEEP_DAYS días (por defecto 7).
 #   - Se guardan en la carpeta ./backups del proyecto.
 # Copia inmediata:  docker compose exec backup sh /backup.sh --once
@@ -82,7 +83,9 @@ load_settings() {
   set_bool UPLOADS_TGZ BACKUP_UPLOADS_TGZ "${BACKUP_UPLOADS_TGZ:-}" true
   set_bool OFFSITE_ON BACKUP_OFFSITE "${BACKUP_OFFSITE:-}" false
   raw BACKUP_AT "${BACKUP_AT:-}"
-  if valid_at "$PICKED" || [ -z "$PICKED" ]; then AT="$PICKED"; else bad BACKUP_AT; AT=""; fi
+  if valid_at "$PICKED"; then AT="$PICKED"; elif [ -z "$PICKED" ]; then AT="03:00"; else bad BACKUP_AT; AT="03:00"; fi
+  # Un intervalo distinto de 24 h manda sobre la hora fija: una copia cada N horas.
+  [ "$INTERVAL_HOURS" = 24 ] || AT=""
   raw BACKUP_TZ "${BACKUP_TZ:-}"
   case "$PICKED" in
     '') TZ_EFF="<-05>5" ;;
@@ -110,12 +113,11 @@ ident_of() { $TMO stat -L -c '%d:%i' "$1" 2>/dev/null || true; }
 same_thing() { a=$(ident_of "$1"); b=$(ident_of "$2"); [ -z "$a" ] || [ -z "$b" ] || [ "$a" = "$b" ]; }
 
 # Lista de destinos permitidos para la pantalla: /backups/.destinos.json (hasta 2 niveles, máx. 100).
-# «available» es false si /targets está vacío y en el mismo disco que /backups (BACKUP_TARGETS_DIR sin definir).
+# «available» es true solo si hay alguna carpeta que elegir: sin BACKUP_TARGETS_DIR, /targets es un volumen vacío.
 scan_targets() {
   avail=false; list=""
   if [ -d "$TARGETS" ]; then
-    back_dev=$(dev_of "$DEST"); root_dev=$(dev_of "$TARGETS")
-    [ "$root_dev" = "$back_dev" ] || avail=true
+    back_dev=$(dev_of "$DEST")
     dirs=$($TMO find "$TARGETS" -mindepth 1 -maxdepth 2 -type d ! -path '*/.*' ! -path '*/$*' ! -path '*/System Volume Information*' ! -path '*/lost+found*' 2>/dev/null | sort | head -n 100 || true)
     while IFS= read -r d; do
       [ -n "$d" ] || continue
@@ -463,6 +465,9 @@ until pg_isready -h db -U rag_owner -d rag >/dev/null 2>&1; do sleep 2; done
 psql_q -c "UPDATE backup_requests SET finished_at = now(), ok = false, message = 'Interrumpida: el servicio de copias se reinició' WHERE started_at IS NOT NULL AND finished_at IS NULL" >/dev/null 2>&1 || true
 
 load_settings
+# El intervalo cuenta desde la copia más reciente que hay en la carpeta: reiniciar el contenedor no hace otra copia.
+NEWEST=$(ls -t "$DEST"/db_*.dump 2>/dev/null | head -n 1 || true)
+[ -z "$NEWEST" ] || LAST_RUN=$(stat -c %Y "$NEWEST" 2>/dev/null || echo 0)
 if [ -n "$AT" ]; then
   # Si el servidor no estaba en marcha a la hora fijada, la copia de ese día se hace ahora.
   if [ -z "$(find "$DEST" -maxdepth 1 -name 'db_*.dump' -mmin -1440 2>/dev/null)" ]; then

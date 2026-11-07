@@ -1,14 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarClock, CloudUpload, DatabaseBackup, FolderInput, HardDrive, Loader2, Play, ShieldCheck, Trash2, TriangleAlert } from "lucide-react";
+import { ArchiveRestore, CalendarClock, ChevronDown, CloudUpload, DatabaseBackup, FolderInput, HardDrive, Loader2, Play, Settings2, ShieldCheck, Trash2, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage, formatBytes, formatDate, timeAgo } from "@/api";
+import { cn } from "@/lib/utils";
 import { EmptyState, TableCard } from "@/components/common";
 import { DestinationDialog, type BackupTargets } from "@/components/system/DestinationDialog";
 import { ReauthDialog, type Confirm } from "@/components/system/ReauthDialog";
+import { RestoreDialog, type RestoreCopy } from "@/components/system/RestoreDialog";
 import { SettingsGroups, useReauthTotp } from "@/components/system/SettingsForm";
 import { OpenAlerts, Tag, Tile, type OpenAlert } from "@/components/system/shared";
 import { Button } from "@/components/ui/button";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
@@ -118,6 +121,8 @@ export function BackupsTab() {
   const [destOpen, setDestOpen] = useState(false);
   const totp = useReauthTotp();
   const [toDelete, setToDelete] = useState<{ stamp: string; at: string } | null>(null);
+  const [toRestore, setToRestore] = useState<RestoreCopy | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const remove = useMutation({
     mutationFn: ({ stamp, confirm }: { stamp: string; confirm: Confirm }) => api.post<{ id: number }>("/system/backups/delete", { stamp, confirm }),
     onSuccess: () => {
@@ -156,6 +161,8 @@ export function BackupsTab() {
   const destination = info.destination ?? "";
   const offsite = local ? (local.offsite ? (local.encrypted ? "Carpeta externa · cifrada" : "Carpeta externa · SIN cifrar") : "Solo en el servidor") : "—";
   const busy = run.isPending || requests.pending;
+  // Sin copia externa (B2 la necesita) todas las copias viven en el mismo disco que los datos.
+  const onlyHere = local !== null && !local.offsite;
 
   return (
     <div className="relative min-h-0 flex-1 overflow-y-auto">
@@ -186,8 +193,68 @@ export function BackupsTab() {
           hint={local ? (local.ok ? (describeCounts(local.counts) ?? "Restaurada en una base de prueba") : local.error) : "backup.sh aún no anotó ningún intento"}
         />
         <Tile icon={CalendarClock} label="Próxima copia" value={local?.nextAt ? formatDate(local.nextAt) : "—"} hint={local ? `${schedule(local.at, local.intervalHours)} · se guardan ${local.keepDays} días` : undefined} />
-        <Tile icon={HardDrive} label="Fuera del servidor" value={offsite} hint={`${info.copies.length} copia(s) · ${formatBytes(info.totalBytes)} en ./backups`} />
+        <Tile
+          icon={HardDrive}
+          label="Fuera del servidor"
+          value={offsite}
+          warn={onlyHere}
+          hint={onlyHere ? "Si se pierde el disco, se pierden también las copias. Activa la copia externa o Backblaze B2 en «Ajustes»." : `${info.copies.length} copia(s) · ${formatBytes(info.totalBytes)} en ./backups`}
+        />
       </div>
+
+      {info.copies.length === 0 ? (
+        <EmptyState icon={DatabaseBackup} title="No hay copias en ./backups" description="Pulsa «Hacer copia ahora» para crear la primera." className="mb-4" />
+      ) : (
+        <TableCard className="mb-4 max-h-80">
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="pl-4">Fecha</TableHead>
+                <TableHead className="hidden sm:table-cell">Archivo</TableHead>
+                <TableHead className="text-right">Base de datos</TableHead>
+                <TableHead className="text-right">Archivos subidos</TableHead>
+                <TableHead className="w-24 pr-4">
+                  <span className="sr-only">Acciones</span>
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {info.copies.map((c, i) => (
+                <TableRow key={c.stamp}>
+                  <TableCell className="pl-4 font-mono text-xs whitespace-nowrap tabular-nums">{formatDate(c.at)}</TableCell>
+                  <TableCell className="hidden font-mono text-xs text-muted-foreground sm:table-cell">db_{c.stamp}.dump</TableCell>
+                  <TableCell className="text-right font-mono text-xs tabular-nums">{formatBytes(c.dbBytes)}</TableCell>
+                  <TableCell className="text-right font-mono text-xs tabular-nums">{c.uploadsBytes === null ? "—" : formatBytes(c.uploadsBytes)}</TableCell>
+                  <TableCell className="pr-4 text-right whitespace-nowrap">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="size-8 text-muted-foreground hover:text-foreground"
+                      aria-label={`Cómo restaurar la copia del ${formatDate(c.at)}`}
+                      title="Cómo restaurar esta copia"
+                      onClick={() => setToRestore({ stamp: c.stamp, at: c.at, hasUploads: c.uploadsBytes !== null })}
+                    >
+                      <ArchiveRestore />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="size-8 text-muted-foreground hover:text-destructive"
+                      aria-label={`Eliminar la copia del ${formatDate(c.at)}`}
+                      title={i === 0 ? "La copia más reciente no se puede eliminar" : "Eliminar esta copia"}
+                      disabled={i === 0 || requests.pending}
+                      onClick={() => setToDelete({ stamp: c.stamp, at: c.at })}
+                    >
+                      <Trash2 />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableCard>
+      )}
+      {info.failed > 0 && <p className="mb-4 shrink-0 text-xs text-muted-foreground">{info.failed} copia(s) fallida(s) apartada(s) como «.dump.fallida»; se borran a los {local?.keepDays ?? 7} días.</p>}
 
       <div className="mb-4 flex shrink-0 flex-wrap items-center gap-x-5 gap-y-1 rounded-xl border bg-card p-4 text-sm">
         <span className="flex items-center gap-2 font-medium">
@@ -197,7 +264,7 @@ export function BackupsTab() {
           <>
             <Tag tone="muted">No configurado</Tag>
             <span className="text-muted-foreground">
-              Opcional, pero recomendado: guarda una copia cifrada fuera del servidor por si se pierde el disco. Se configura en «Backblaze B2», más abajo, y necesita la copia externa activa y una frase de cifrado (docs/produccion.md).
+              Opcional, pero recomendado: guarda una copia cifrada fuera del servidor por si se pierde el disco. Se configura en «Ajustes de copias y Backblaze B2», más abajo, y necesita la copia externa activa y una frase de cifrado (docs/produccion.md).
             </span>
           </>
         ) : b2 ? (
@@ -223,51 +290,18 @@ export function BackupsTab() {
 
       {requests.data && requests.data.requests.length > 0 && <RequestsTable requests={requests.data.requests} />}
 
-      {info.copies.length === 0 ? (
-        <EmptyState icon={DatabaseBackup} title="No hay copias en ./backups" description="Pulsa «Hacer copia ahora» para crear la primera." className="mb-4" />
-      ) : (
-        <TableCard className="mb-4 max-h-80">
-          <Table>
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="pl-4">Fecha</TableHead>
-                <TableHead className="hidden sm:table-cell">Archivo</TableHead>
-                <TableHead className="text-right">Base de datos</TableHead>
-                <TableHead className="text-right">Archivos subidos</TableHead>
-                <TableHead className="w-12 pr-4">
-                  <span className="sr-only">Acciones</span>
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {info.copies.map((c, i) => (
-                <TableRow key={c.stamp}>
-                  <TableCell className="pl-4 font-mono text-xs whitespace-nowrap tabular-nums">{formatDate(c.at)}</TableCell>
-                  <TableCell className="hidden font-mono text-xs text-muted-foreground sm:table-cell">db_{c.stamp}.dump</TableCell>
-                  <TableCell className="text-right font-mono text-xs tabular-nums">{formatBytes(c.dbBytes)}</TableCell>
-                  <TableCell className="text-right font-mono text-xs tabular-nums">{c.uploadsBytes === null ? "—" : formatBytes(c.uploadsBytes)}</TableCell>
-                  <TableCell className="pr-4 text-right">
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="size-8 text-muted-foreground hover:text-destructive"
-                      aria-label={`Eliminar la copia del ${formatDate(c.at)}`}
-                      title={i === 0 ? "La copia más reciente no se puede eliminar" : "Eliminar esta copia"}
-                      disabled={i === 0 || requests.pending}
-                      onClick={() => setToDelete({ stamp: c.stamp, at: c.at })}
-                    >
-                      <Trash2 />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TableCard>
-      )}
-      {info.failed > 0 && <p className="mb-4 shrink-0 text-xs text-muted-foreground">{info.failed} copia(s) fallida(s) apartada(s) como «.dump.fallida»; se borran a los {local?.keepDays ?? 7} días.</p>}
-
-      <SettingsGroups ids={["backup", "b2"]} />
+      <Collapsible open={settingsOpen} onOpenChange={setSettingsOpen} className="mb-4">
+        <CollapsibleTrigger asChild>
+          <Button variant="outline" size="sm" className="gap-2">
+            <Settings2 /> Ajustes de copias y Backblaze B2
+            <ChevronDown className={cn("transition-transform", settingsOpen && "rotate-180")} />
+          </Button>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="mt-4">
+          <SettingsGroups ids={["backup", "b2"]} />
+        </CollapsibleContent>
+      </Collapsible>
+      <RestoreDialog copy={toRestore} onClose={() => setToRestore(null)} />
       <ReauthDialog
         open={toDelete !== null}
         onCancel={() => setToDelete(null)}

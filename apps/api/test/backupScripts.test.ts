@@ -276,7 +276,17 @@ describe.concurrent("deploy/backup.sh --once (copia con pg_dump y rclone falsos)
     expect(r.code, r.out).toBe(0);
     for (const k of ["BACKUP_KEEP_DAYS", "BACKUP_INTERVAL_HOURS", "BACKUP_OFFSITE", "BACKUP_AT", "BACKUP_TZ"]) expect(r.out).toContain(`valor no válido en ${k}`);
     const st = await sb.json<{ keepDays: number; intervalHours: number; offsite: boolean; at: string }>("backups", ".estado.json");
-    expect(st).toMatchObject({ keepDays: 7, intervalHours: 24, offsite: false, at: "" });
+    expect(st).toMatchObject({ keepDays: 7, intervalHours: 24, offsite: false, at: "03:00" });
+  }, T);
+
+  it("por defecto, copia diaria a las 03:00; con un intervalo distinto de 24 h no se usa la hora", async () => {
+    const daily = await sandbox();
+    expect((await daily.run("backup.sh", ["--once"], { BACKUP_UPLOADS_TGZ: "false" })).code).toBe(0);
+    expect(await daily.json<{ at: string; intervalHours: number }>("backups", ".estado.json")).toMatchObject({ at: "03:00", intervalHours: 24 });
+    const every6 = await sandbox();
+    await every6.settings({ BACKUP_INTERVAL_HOURS: "6", BACKUP_AT: "04:00" });
+    expect((await every6.run("backup.sh", ["--once"], { BACKUP_UPLOADS_TGZ: "false" })).code).toBe(0);
+    expect(await every6.json<{ at: string; intervalHours: number }>("backups", ".estado.json")).toMatchObject({ at: "", intervalHours: 6 });
   }, T);
 
   it("pg_dump falla: sin db_*.dump, ni temporales, estado con error y sin copia externa", async () => {
