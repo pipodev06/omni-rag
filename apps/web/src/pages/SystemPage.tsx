@@ -20,7 +20,6 @@ interface Container {
   state: string;
   cpuCores: number;
   cpuLimit: number | null;
-  cpuShares: number | null;
   memBytes: number;
   memLimit: number | null;
   restarts: number | null;
@@ -35,17 +34,6 @@ interface Resources {
   collecting: boolean;
   sampledAt: string | null;
   host: { cpus: number; memBytes: number; dockerVersion: string; os: string; kernel: string; arch: string } | null;
-  stack: {
-    node: string;
-    postgres: string | null;
-    pgvector: string | null;
-    embeddingModel: string;
-    rerankerModel: string | null;
-    llmProviders: string[];
-    antivirus: boolean;
-    webSearch: string | null;
-  };
-  autotune: { service: string; cpus: string | null; memLimit: string | null; cpuShares: string | null }[];
   openAlerts: number;
   containers: Container[];
 }
@@ -57,7 +45,7 @@ interface Alerts {
 
 const cores = (n: number) => n.toLocaleString("es", { maximumFractionDigits: 2, minimumFractionDigits: n < 10 ? 2 : 0 });
 
-/** Lectura de los datos para contrastar con el autotune: ¿el tope se queda corto, sobra o está bien? */
+/** Lectura de los datos: ¿el tope se queda corto, sobra o está bien? Sin tope, solo se avisa de lo que falla. */
 function diagnose(c: Container): { tone: keyof typeof TONE; label: string; title?: string }[] {
   if (c.state !== "running") return [{ tone: "bad", label: c.state === "exited" ? "Parado" : c.state }];
   const out: { tone: keyof typeof TONE; label: string; title?: string }[] = c.alerts.map((a) => ({ tone: "bad", label: SIGNALS[a] ?? a }));
@@ -71,35 +59,6 @@ function diagnose(c: Container): { tone: keyof typeof TONE; label: string; title
   if (out.length === 0) out.push(!c.memLimit && !c.cpuLimit ? { tone: "muted", label: "Sin tope" } : { tone: "ok", label: "Bien" });
   if (!enoughHistory) out.push({ tone: "muted", label: `${c.historyHours} h de datos`, title: "Con menos de 24 h de muestras el diagnóstico aún no es fiable" });
   return out;
-}
-
-/** «3g», «3072m», «1.5» → bytes o núcleos, para comparar lo que fijó el autotune con lo que aplica Docker. */
-function parseMem(v: string | null): number | null {
-  const m = v?.trim().toLowerCase().match(/^(\d+(?:\.\d+)?)\s*([bkmg]?)b?$/);
-  if (!m) return null;
-  const n = Number(m[1]) * { "": 1, b: 1, k: 1024, m: 1024 ** 2, g: 1024 ** 3 }[m[2] as "" | "b" | "k" | "m" | "g"];
-  return n > 0 ? n : null;
-}
-
-function AutotuneCell({ c, autotune }: { c: Container; autotune: Resources["autotune"] }) {
-  const a = autotune.find((x) => x.service === c.name);
-  if (!a) return <span className="text-muted-foreground">—</span>;
-  const memWanted = parseMem(a.memLimit);
-  const cpuWanted = a.cpus && Number(a.cpus) > 0 ? Number(a.cpus) : null;
-  const sharesWanted = a.cpuShares && Number(a.cpuShares) > 0 ? Number(a.cpuShares) : null;
-  const parts = [cpuWanted && `${cpuWanted} núcl.`, memWanted && formatBytes(memWanted), sharesWanted && `peso ${sharesWanted}`].filter(Boolean);
-  if (parts.length === 0) return <span className="text-muted-foreground">Sin ajustar</span>;
-  // Si el .env dice otra cosa que lo aplicado, falta recrear el contenedor (docker compose up -d).
-  const off =
-    (memWanted !== null && Math.abs(memWanted - (c.memLimit ?? 0)) > memWanted * 0.01) ||
-    (cpuWanted !== null && Math.abs(cpuWanted - (c.cpuLimit ?? 0)) > 0.01) ||
-    (sharesWanted !== null && sharesWanted !== c.cpuShares);
-  return (
-    <span className="flex flex-col gap-1">
-      <span className="font-mono text-xs">{parts.join(" · ")}</span>
-      {off && <Tag tone="warn" title="El .env pide otros topes que los aplicados: recrea el contenedor con «docker compose up -d»">Sin aplicar</Tag>}
-    </span>
-  );
 }
 
 /**
@@ -145,35 +104,15 @@ function ResourcesTab() {
   const running = data.containers.filter((c) => c.state === "running").length;
   const memUsed = data.containers.reduce((s, c) => s + c.memBytes, 0);
   const cpuUsed = data.containers.reduce((s, c) => s + c.cpuCores, 0);
-  const st = data.stack;
-  const stack = [
-    ["Node.js", st.node],
-    ["PostgreSQL", st.postgres],
-    ["pgvector", st.pgvector],
-    ["Embeddings", st.embeddingModel],
-    ["Re-ranker", st.rerankerModel ?? "desactivado"],
-    ["Modelos de lenguaje", st.llmProviders.join(", ") || "ninguno"],
-    ["Antivirus", st.antivirus ? "ClamAV" : "desactivado"],
-    ["Internet", st.webSearch ?? "desactivado"],
-    ...(data.host ? [["Docker", `${data.host.dockerVersion} · ${data.host.os} · ${data.host.arch}`]] : []),
-  ] as const;
 
   return (
     <>
       <div className="mb-4 grid shrink-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Tile icon={MemoryStick} label="RAM en uso" value={`${formatBytes(memUsed)}${data.host ? ` / ${formatBytes(data.host.memBytes)}` : ""}`} />
-        <Tile icon={Cpu} label="CPU en uso" value={`${cores(cpuUsed)}${data.host ? ` / ${data.host.cpus}` : ""} núcl.`} />
+        <Tile icon={MemoryStick} label="RAM en uso" value={`${formatBytes(memUsed)}${data.host ? ` de ${formatBytes(data.host.memBytes)}` : ""}`} />
+        <Tile icon={Cpu} label="CPU en uso" value={`${cores(cpuUsed)}${data.host ? ` de ${data.host.cpus}` : ""} núcl.`} />
         <Tile icon={Server} label="Contenedores en marcha" value={`${running} / ${data.containers.length}`} />
         <Tile icon={BellRing} label="Alertas abiertas" value={String(data.openAlerts)} />
       </div>
-      <dl className="mb-4 flex shrink-0 flex-wrap gap-x-5 gap-y-1 text-xs">
-        {stack.map(([k, v]) => (
-          <div key={k} className="flex gap-1.5">
-            <dt className="text-muted-foreground">{k}:</dt>
-            <dd className="font-mono">{v ?? "—"}</dd>
-          </div>
-        ))}
-      </dl>
       {data.containers.length === 0 ? (
         <NotCollecting collecting={data.collecting} />
       ) : (
@@ -184,7 +123,6 @@ function ResourcesTab() {
                 <TableHead className="pl-4">Contenedor</TableHead>
                 <TableHead>CPU (núcleos)</TableHead>
                 <TableHead>RAM</TableHead>
-                <TableHead className="hidden xl:table-cell">Autotune</TableHead>
                 <TableHead className="hidden md:table-cell text-center">Reinicios</TableHead>
                 <TableHead>Diagnóstico</TableHead>
               </TableRow>
@@ -200,9 +138,6 @@ function ResourcesTab() {
                   </TableCell>
                   <TableCell>
                     <UsageCell now={c.memBytes} peak={c.memPeak7d} limit={c.memLimit} total={data.host?.memBytes ?? null} format={formatBytes} peakLabel="Pico de 7 días" />
-                  </TableCell>
-                  <TableCell className="hidden xl:table-cell">
-                    <AutotuneCell c={c} autotune={data.autotune} />
                   </TableCell>
                   <TableCell className="hidden text-center font-mono text-xs tabular-nums md:table-cell">{c.restarts ?? "—"}</TableCell>
                   <TableCell>
@@ -369,7 +304,7 @@ export function SystemPage() {
     <Page fill>
       <PageHeader
         title="Sistema"
-        description="Recursos del servidor y de cada contenedor de Omni RAG (los demás servicios del servidor no se miden): lo que el autotune asignó (topes de CPU y RAM) frente a lo que consumen, con picos de 24 horas y 7 días, el historial de alertas del monitor (copias, disco, cola, modelos y contenedores) y el estado de las copias de seguridad (locales, carpeta externa y Backblaze B2) y la configuración editable del sistema (alertas, correo, límites, modelos, búsqueda y copias), salvo lo que esté fijado en el archivo de entorno del servidor. El worker toma una muestra por minuto a través de un proxy de Docker que solo responde a consultas de consumo."
+        description="Recursos del servidor y de cada contenedor de Omni RAG (los demás servicios del servidor no se miden): lo que consumen frente a su tope de CPU y RAM, si lo tienen, o frente al total del servidor, el historial de alertas del monitor (copias, disco, cola, modelos y contenedores) y el estado de las copias de seguridad (locales, carpeta externa y Backblaze B2) y la configuración editable del sistema (alertas, correo, límites, modelos, búsqueda y copias), salvo lo que esté fijado en el archivo de entorno del servidor. El worker toma una muestra por minuto a través de un proxy de Docker que solo responde a consultas de consumo."
       />
       <Tabs value={current} onValueChange={(v) => navigate(`/sistema/${v}`)} className="mb-4 shrink-0">
         <TabsList>

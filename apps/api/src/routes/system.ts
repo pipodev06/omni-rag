@@ -21,16 +21,6 @@ import type { BackupInfo } from "../lib/backupStatus.js";
 export const systemRoutes = new Hono<AppEnv>();
 systemRoutes.use("*", requireAuth, requireSuperadmin);
 
-/** Valores que dejó `deploy/autotune.sh` en el .env (o vacíos si no se ejecutó), para compararlos con lo aplicado. */
-const AUTOTUNED = ["embeddings", "reranker", "docling", "worker"] as const;
-function autotuneValues() {
-  const env = (k: string) => process.env[k]?.trim() || null;
-  return AUTOTUNED.map((service) => {
-    const p = service.toUpperCase();
-    return { service, cpus: env(`${p}_CPUS`), memLimit: env(`${p}_MEM_LIMIT`), cpuShares: env(`${p}_CPU_SHARES`) };
-  });
-}
-
 systemRoutes.get("/resources", async (c) => {
   const [[pg], [vector], [host], containers, alerts] = await Promise.all([
     sqlOwner<{ v: string }[]>`SELECT current_setting('server_version') AS v`,
@@ -39,7 +29,7 @@ systemRoutes.get("/resources", async (c) => {
     sqlOwner<
       {
         name: string; state: string; at: Date;
-        cpu_cores: number; cpu_limit: number | null; cpu_shares: number | null; mem_bytes: number; mem_limit: number | null;
+        cpu_cores: number; cpu_limit: number | null; mem_bytes: number; mem_limit: number | null;
         restarts: number | null; oom_killed: boolean;
         mem_peak_7d: number | null; cpu_p95_24h: number | null;
         first_at: Date;
@@ -56,7 +46,7 @@ systemRoutes.get("/resources", async (c) => {
           FROM container_samples WHERE at > now() - interval '7 days' AND state = 'running'
          GROUP BY name
       )
-      SELECT l.name, l.state, l.at, l.cpu_cores, l.cpu_limit, l.cpu_shares,
+      SELECT l.name, l.state, l.at, l.cpu_cores, l.cpu_limit,
              l.mem_bytes::float8 AS mem_bytes, l.mem_limit::float8 AS mem_limit, l.restarts, l.oom_killed,
              a.mem_peak_7d, a.cpu_p95_24h, coalesce(a.first_at, l.at) AS first_at
         FROM last l LEFT JOIN agg a USING (name)
@@ -79,7 +69,6 @@ systemRoutes.get("/resources", async (c) => {
       antivirus: Boolean(config.CLAMAV_HOST),
       webSearch: setting("WEB_SEARCH_PROVIDER") || null,
     },
-    autotune: autotuneValues(),
     /** Todas las alertas abiertas del monitor (copias, disco, modelos, contenedores…), para la tarjeta de arriba. */
     openAlerts: alerts.length,
     containers: containers.map((r) => ({
@@ -87,7 +76,6 @@ systemRoutes.get("/resources", async (c) => {
       state: r.state,
       cpuCores: r.cpu_cores,
       cpuLimit: r.cpu_limit,
-      cpuShares: r.cpu_shares,
       memBytes: r.mem_bytes,
       memLimit: r.mem_limit,
       restarts: r.restarts,
