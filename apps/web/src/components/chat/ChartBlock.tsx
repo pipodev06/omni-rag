@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { BarChart3, Download, Table2 } from "lucide-react";
 import { formatValue, niceScale, parseChart, type ChartSpec } from "@/lib/chartSpec";
 import { safeCell, toCsv } from "@/lib/tableExport";
@@ -295,14 +295,18 @@ export function ChartBlock({ source, streaming }: { source: string; streaming?: 
   return <ChartFigure chart={parsed.chart} />;
 }
 
-/** Gráfico ya validado, con leyenda, tooltip, «Ver datos» y «Descargar CSV». Lo usan las respuestas y la pantalla Sistema. */
-export function ChartFigure({ chart }: { chart: ChartSpec }) {
+/**
+ * Gráfico ya validado, con leyenda, tooltip, «Ver datos» y «Descargar CSV». Lo usan las respuestas y la pantalla Sistema,
+ * que pasa `tools={false}` (sin tabla ni CSV) y sus cifras en `summary`, bajo el título.
+ */
+export function ChartFigure({ chart, summary, tools = true }: { chart: ChartSpec; summary?: ReactNode; tools?: boolean }) {
   const [tip, setTip] = useState<Tip | null>(null);
   const [table, setTable] = useState(false);
   const legend = chart.type === "pie" ? chart.labels : chart.series.length > 1 ? chart.series.map((s) => s.name) : [];
   return (
     <figure className="viz not-prose my-4 rounded-lg border bg-card p-3">
       {chart.title && <figcaption className="mb-2 text-sm font-medium text-foreground">{chart.title}</figcaption>}
+      {summary}
       {legend.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
           {legend.map((name, i) => (
@@ -321,15 +325,17 @@ export function ChartFigure({ chart }: { chart: ChartSpec }) {
         </svg>
         <Tooltip tip={tip} />
       </div>
-      {table && <DataTable chart={chart} />}
-      <div className="mt-1 flex justify-end gap-1">
-        <Button type="button" variant="ghost" size="sm" className={cn("h-7 gap-1 px-2 text-xs text-muted-foreground", table && "text-foreground")} onClick={() => setTable(!table)}>
-          <Table2 /> {table ? "Ocultar datos" : "Ver datos"}
-        </Button>
-        <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs text-muted-foreground" onClick={() => downloadCsv(chart)}>
-          <Download /> Descargar CSV
-        </Button>
-      </div>
+      {tools && table && <DataTable chart={chart} />}
+      {tools && (
+        <div className="mt-1 flex justify-end gap-1">
+          <Button type="button" variant="ghost" size="sm" className={cn("h-7 gap-1 px-2 text-xs text-muted-foreground", table && "text-foreground")} onClick={() => setTable(!table)}>
+            <Table2 /> {table ? "Ocultar datos" : "Ver datos"}
+          </Button>
+          <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs text-muted-foreground" onClick={() => downloadCsv(chart)}>
+            <Download /> Descargar CSV
+          </Button>
+        </div>
+      )}
     </figure>
   );
 }

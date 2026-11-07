@@ -90,20 +90,31 @@ systemRoutes.get("/resources", async (c) => {
 });
 
 const POINTS = 48;
-const RANGES: Record<string, number> = { "1h": 1, "24h": 24, "7d": 168 };
+const RANGES: Record<string, number> = { "1h": 1, "24h": 24, "7d": 168, "14d": 336 };
 
 systemRoutes.get("/metrics", async (c) => {
-  const q = z.object({ name: z.string().min(1).max(200), range: z.enum(["1h", "24h", "7d"]).default("24h") }).safeParse(c.req.query());
+  const q = z.object({ name: z.string().min(1).max(200), range: z.enum(["1h", "24h", "7d", "14d"]).default("24h") }).safeParse(c.req.query());
   if (!q.success) throw badRequest("Parámetros no válidos");
   const hours = RANGES[q.data.range]!;
   const step = (hours * 3600) / POINTS;
-  const rows = await sqlOwner<{ b: number; mem: number | null; mem_limit: number | null; cpu: number | null; cpu_limit: number | null }[]>`
-    SELECT (floor(extract(epoch FROM at) / ${step}) * ${step})::float8 AS b,
-           max(mem_bytes)::float8 AS mem, max(mem_limit)::float8 AS mem_limit,
-           avg(cpu_cores)::float8 AS cpu, max(cpu_limit)::float8 AS cpu_limit
-      FROM container_samples
-     WHERE name = ${q.data.name} AND at > now() - ${`${hours} hours`}::interval
-     GROUP BY 1 ORDER BY 1`;
+  const since = `${hours} hours`;
+  type Summary = { mem_now: number | null; cpu_now: number | null; mem_avg: number | null; mem_max: number | null; cpu_avg: number | null; cpu_max: number | null };
+  const [rows, [s]] = await Promise.all([
+    sqlOwner<{ b: number; mem: number | null; mem_limit: number | null; cpu: number | null; cpu_limit: number | null }[]>`
+      SELECT (floor(extract(epoch FROM at) / ${step}) * ${step})::float8 AS b,
+             max(mem_bytes)::float8 AS mem, max(mem_limit)::float8 AS mem_limit,
+             avg(cpu_cores)::float8 AS cpu, max(cpu_limit)::float8 AS cpu_limit
+        FROM container_samples
+       WHERE name = ${q.data.name} AND at > now() - ${since}::interval
+       GROUP BY 1 ORDER BY 1`,
+    // Ahora, media y pico de todo el periodo sobre las muestras de cada minuto (no sobre los puntos del gráfico).
+    sqlOwner<Summary[]>`
+      SELECT (array_agg(mem_bytes ORDER BY at DESC))[1]::float8 AS mem_now, (array_agg(cpu_cores ORDER BY at DESC))[1]::float8 AS cpu_now,
+             avg(mem_bytes)::float8 AS mem_avg, max(mem_bytes)::float8 AS mem_max,
+             avg(cpu_cores)::float8 AS cpu_avg, max(cpu_cores)::float8 AS cpu_max
+        FROM container_samples
+       WHERE name = ${q.data.name} AND at > now() - ${since}::interval`,
+  ]);
   const byBucket = new Map(rows.map((r) => [r.b, r]));
   const end = Math.floor(Date.now() / 1000 / step) * step;
   const points = Array.from({ length: POINTS }, (_, i) => {
@@ -111,7 +122,9 @@ systemRoutes.get("/metrics", async (c) => {
     const r = byBucket.get(b);
     return { at: new Date(b * 1000).toISOString(), mem: r?.mem ?? null, memLimit: r?.mem_limit ?? null, cpu: r?.cpu ?? null, cpuLimit: r?.cpu_limit ?? null };
   });
-  return c.json({ name: q.data.name, range: q.data.range, points });
+  const summary =
+    s && s.mem_max !== null ? { mem: { now: s.mem_now, avg: s.mem_avg, max: s.mem_max }, cpu: { now: s.cpu_now, avg: s.cpu_avg, max: s.cpu_max } } : null;
+  return c.json({ name: q.data.name, range: q.data.range, points, summary });
 });
 
 systemRoutes.get("/alerts", async (c) => {

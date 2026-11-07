@@ -159,16 +159,35 @@ function ResourcesTab() {
   );
 }
 
-type Range = "1h" | "24h" | "7d";
+type Range = "1h" | "24h" | "7d" | "14d";
+type Stat = { now: number | null; avg: number | null; max: number | null };
 interface Metrics {
   points: { at: string; mem: number | null; memLimit: number | null; cpu: number | null; cpuLimit: number | null }[];
+  summary: { mem: Stat; cpu: Stat } | null;
 }
 
 const RANGE_FORMAT: Record<Range, Intl.DateTimeFormat> = {
   "1h": new Intl.DateTimeFormat("es", { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
   "24h": new Intl.DateTimeFormat("es", { hour: "2-digit", minute: "2-digit" }),
   "7d": new Intl.DateTimeFormat("es", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }),
+  "14d": new Intl.DateTimeFormat("es", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }),
 };
+
+/** Ahora, media y pico de todo el periodo, sobre el gráfico. */
+function Summary({ stat, format }: { stat: Stat | undefined; format: (n: number) => string }) {
+  if (!stat) return null;
+  const items = [["Ahora", stat.now], ["Media", stat.avg], ["Pico", stat.max]] as const;
+  return (
+    <dl className="mb-2 flex flex-wrap gap-x-5 gap-y-1 text-sm">
+      {items.map(([label, v]) => (
+        <div key={label} className="flex items-baseline gap-1.5">
+          <dt className="text-xs text-muted-foreground">{label}</dt>
+          <dd className="font-mono tabular-nums">{v === null ? "—" : format(v)}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
 
 /** Series de uso y tope para ChartFigure (el mismo gráfico de las respuestas del chat). */
 function toCharts(points: Metrics["points"], range: Range): { mem: ChartSpec; cpu: ChartSpec } | null {
@@ -230,14 +249,15 @@ function MetricsTab() {
             <TabsTrigger value="1h">1 hora</TabsTrigger>
             <TabsTrigger value="24h">24 horas</TabsTrigger>
             <TabsTrigger value="7d">7 días</TabsTrigger>
+            <TabsTrigger value="14d">14 días</TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
       <div className={cn("mb-4 grid shrink-0 gap-3 lg:grid-cols-2", metrics.isPlaceholderData && "opacity-60 transition-opacity")}>
         {charts ? (
           <>
-            <ChartFigure chart={charts.mem} />
-            <ChartFigure chart={charts.cpu} />
+            <ChartFigure chart={charts.mem} tools={false} summary={<Summary stat={metrics.data?.summary?.mem} format={formatBytes} />} />
+            <ChartFigure chart={charts.cpu} tools={false} summary={<Summary stat={metrics.data?.summary?.cpu} format={(n) => `${cores(n)} núcl.`} />} />
           </>
         ) : metrics.isLoading ? (
           <Skeleton className="h-64 w-full lg:col-span-2" />
