@@ -77,7 +77,7 @@ function UsageCell({ now, peak, limit, total, format, peakLabel }: { now: number
       </div>
       {pct !== null && (
         <div className="h-1.5 overflow-hidden rounded-full bg-muted" title={`${peakLabel}: ${format(value)} (${Math.round(pct)} % ${limit ? "del tope" : "del servidor"})`}>
-          <div className={cn("h-full rounded-full", !limit ? "bg-muted-foreground/40" : pct >= 90 ? "bg-destructive" : pct >= 75 ? "bg-warning" : "bg-primary")} style={{ width: `${Math.max(pct, 1)}%` }} />
+          <div className={cn("h-full rounded-full", !limit ? "bg-success" : pct >= 90 ? "bg-destructive" : pct >= 75 ? "bg-warning" : "bg-primary")} style={{ width: `${Math.max(pct, 1)}%` }} />
         </div>
       )}
     </div>
