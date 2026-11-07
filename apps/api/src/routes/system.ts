@@ -13,6 +13,7 @@ import { applySettings, b2Configured, backupDestination, SettingsError, setting,
 import { parse } from "../lib/validate.js";
 import type { HostInfo } from "../lib/containerMetrics.js";
 import type { BackupInfo } from "../lib/backupStatus.js";
+import { alertEmailReady, type CheckStatus } from "../lib/monitor.js";
 
 /**
  * Pantalla Sistema (solo superadministrador): stack, recursos asignados a cada contenedor frente a lo que consume y
@@ -128,12 +129,23 @@ systemRoutes.get("/metrics", async (c) => {
 });
 
 systemRoutes.get("/alerts", async (c) => {
-  const [open, events] = await Promise.all([
+  const [open, incidents, [snap]] = await Promise.all([
     sqlOwner<{ key: string; since: Date; message: string }[]>`SELECT key, since, message FROM alert_state ORDER BY since DESC`,
-    sqlOwner<{ id: number; at: Date; key: string; event: string; message: string }[]>`
-      SELECT id, at, key, event, message FROM alert_events ORDER BY at DESC, id DESC LIMIT 300`,
+    // Un problema por fila: cada «opened» con el primer «resolved» que le sigue (sin él, sigue abierto).
+    sqlOwner<{ id: number; key: string; since: Date; until: Date | null; message: string }[]>`
+      SELECT o.id, o.key, o.at AS since, r.at AS until, coalesce(r.message, s.message, o.message) AS message
+        FROM alert_events o
+        LEFT JOIN LATERAL (
+          SELECT at, message FROM alert_events r
+           WHERE r.key = o.key AND r.event = 'resolved' AND (r.at, r.id) > (o.at, o.id)
+           ORDER BY r.at, r.id LIMIT 1
+        ) r ON true
+        LEFT JOIN alert_state s ON s.key = o.key AND r.at IS NULL
+       WHERE o.event = 'opened'
+       ORDER BY o.at DESC, o.id DESC LIMIT 200`,
+    sqlOwner<{ at: Date; checks: CheckStatus[] }[]>`SELECT at, checks FROM monitor_snapshot WHERE id = 1`,
   ]);
-  return c.json({ open, events });
+  return c.json({ open, incidents, checks: snap ?? null, email: alertEmailReady() });
 });
 
 /** Copias de seguridad: lo que guardó el worker en su última lectura (cada 5 minutos) y las alertas de copias abiertas. */

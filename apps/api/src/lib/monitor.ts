@@ -20,6 +20,8 @@ export interface Problem {
 }
 
 const GB = 1024 ** 3;
+/** «7,6 GB»: con coma, como el resto de la pantalla. */
+const gb = (b: number) => `${(b / GB).toLocaleString("es", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} GB`;
 const REMIND_AFTER_MS = 24 * 3600 * 1000;
 /** Tras arrancar el worker, la primera muestra de los contenedores tarda hasta un minuto en llegar. */
 const METRICS_GRACE_SECONDS = 180;
@@ -30,13 +32,18 @@ const METRICS_GRACE_SECONDS = 180;
  */
 const BACKUP_GRACE_SECONDS = 3600;
 
-/** Poco espacio libre en el disco donde se guardan los archivos subidos. */
-export async function checkDisk(dir = config.STORAGE_DIR): Promise<Problem | null> {
+/** Espacio libre del disco de archivos, o null si no se puede leer. */
+async function diskFree(dir = config.STORAGE_DIR): Promise<{ pct: number; bytes: number } | null> {
   const s = await statfs(dir).catch(() => null);
   if (!s || s.blocks === 0) return null;
-  const freePct = (s.bavail / s.blocks) * 100;
-  if (freePct >= setting("ALERT_DISK_FREE_PERCENT")) return null;
-  return { key: "disk", message: `Queda poco espacio en el disco de archivos: ${freePct.toFixed(1)} % libre (${((s.bavail * s.bsize) / GB).toFixed(1)} GB).` };
+  return { pct: (s.bavail / s.blocks) * 100, bytes: s.bavail * s.bsize };
+}
+
+/** Poco espacio libre en el disco donde se guardan los archivos subidos. */
+export async function checkDisk(dir = config.STORAGE_DIR): Promise<Problem | null> {
+  const free = await diskFree(dir);
+  if (!free || free.pct >= setting("ALERT_DISK_FREE_PERCENT")) return null;
+  return { key: "disk", message: `Queda poco espacio en el disco de archivos: ${free.pct.toFixed(1)} % libre (${gb(free.bytes)}).` };
 }
 
 /** Documentos que llevan demasiado tiempo en cola o procesándose: la cola está atascada o el worker no responde. */
@@ -104,16 +111,52 @@ export async function checkLlm(): Promise<Problem | null> {
   return { key: "llm", message: `El modelo de lenguaje no responde: ${row.errors} preguntas fallaron en los últimos 15 minutos y ninguna se contestó. Revisa las claves y la cuota de los proveedores («docker compose logs api | grep llm»).` };
 }
 
+/** Última muestra de un contenedor y su resumen de los últimos 15 minutos (consulta de checkContainers). */
+export interface ContainerRow {
+  name: string;
+  state: string;
+  health: string | null;
+  mem_bytes: number;
+  mem_limit: number | null;
+  oom_killed: boolean;
+  cpu_limit: number | null;
+  cpu_avg: number;
+  cpu_n: number;
+  restarts_delta: number;
+}
+
 /**
- * Señales de que un contenedor está al tope (muestras de `container_samples`, ver lib/containerMetrics.ts): RAM cerca de
- * su tope, CPU pegada a su tope durante 10 minutos, reinicios o muerte por falta de memoria, y salud «unhealthy».
- * Cada contenedor y señal es un problema aparte (`container:<nombre>:<señal>`) para saber cuál falla.
+ * Señales de que un contenedor falla o está al tope: RAM cerca de su tope, CPU pegada a su tope durante 10 minutos,
+ * reinicios o muerte por falta de memoria, parado (`exited`) y salud «unhealthy». Cada contenedor y señal es un
+ * problema aparte (`container:<nombre>:<señal>`) para saber cuál falla.
  */
+export function containerProblems(rows: ContainerRow[], memPercent = setting("ALERT_CONTAINER_MEM_PERCENT")): Problem[] {
+  const problems: Problem[] = [];
+  const mb = (b: number) => `${Math.round(b / 1024 ** 2)} MB`;
+  for (const r of rows) {
+    const k = `container:${r.name}`;
+    if (r.mem_limit && r.mem_bytes / r.mem_limit >= memPercent / 100) {
+      problems.push({ key: `${k}:mem`, message: `«${r.name}» usa ${mb(r.mem_bytes)} de ${mb(r.mem_limit)} de RAM (${Math.round((r.mem_bytes / r.mem_limit) * 100)} %). Si llega al tope, Docker lo reinicia.` });
+    }
+    if (r.cpu_limit && r.cpu_n >= 5 && r.cpu_avg >= r.cpu_limit * 0.95) {
+      problems.push({ key: `${k}:cpu`, message: `«${r.name}» lleva 10 minutos usando toda su CPU (${r.cpu_avg.toFixed(2)} de ${r.cpu_limit} núcleos): responde más lento.` });
+    }
+    if (r.restarts_delta > 0 || r.oom_killed || r.state === "restarting" || r.state === "dead") {
+      const cause = r.oom_killed ? " Lo mató la falta de memoria (OOM): súbele el tope de RAM o libera memoria en el servidor." : "";
+      problems.push({ key: `${k}:restart`, message: `«${r.name}» se reinició${r.restarts_delta > 0 ? ` ${r.restarts_delta === 1 ? "1 vez" : `${r.restarts_delta} veces`} en 15 minutos` : ` (estado: ${r.state})`}.${cause} Revisa «docker compose logs ${r.name}».` });
+    } else if (r.state === "exited") {
+      problems.push({ key: `${k}:stopped`, message: `«${r.name}» está parado. Si no lo paraste a propósito, revisa «docker compose logs ${r.name}» y arráncalo con «docker compose up -d ${r.name}».` });
+    }
+    if (r.health === "unhealthy") {
+      problems.push({ key: `${k}:health`, message: `«${r.name}» no pasa su comprobación de salud. Revisa «docker compose logs ${r.name}».` });
+    }
+  }
+  return problems;
+}
+
 export async function checkContainers(): Promise<Problem[]> {
   if (!config.DOCKER_PROXY_URL) return [];
-  const rows = await sqlOwner<
-    { name: string; state: string; health: string | null; mem_bytes: number; mem_limit: number | null; oom_killed: boolean; cpu_limit: number | null; cpu_avg: number; cpu_n: number; restarts_delta: number }[]
-  >`
+  const rows = await sqlOwner<ContainerRow[]>`
     WITH last AS (
       SELECT DISTINCT ON (name) name, state, health, mem_bytes, mem_limit, oom_killed, cpu_limit, at
         FROM container_samples WHERE at > now() - interval '3 minutes'
@@ -132,28 +175,51 @@ export async function checkContainers(): Promise<Problem[]> {
     const hold = process.uptime() < METRICS_GRACE_SECONDS;
     return [{ key: "metrics", message: "No llegan métricas de los contenedores desde hace más de 3 minutos. Revisa «docker compose logs docker-proxy worker».", hold }];
   }
-  const problems: Problem[] = [];
-  const mb = (b: number) => `${Math.round(b / 1024 ** 2)} MB`;
-  for (const r of rows) {
-    const k = `container:${r.name}`;
-    if (r.mem_limit && r.mem_bytes / r.mem_limit >= setting("ALERT_CONTAINER_MEM_PERCENT") / 100) {
-      problems.push({ key: `${k}:mem`, message: `«${r.name}» usa ${mb(r.mem_bytes)} de ${mb(r.mem_limit)} de RAM (${Math.round((r.mem_bytes / r.mem_limit) * 100)} %). Si llega al tope, Docker lo reinicia.` });
-    }
-    if (r.cpu_limit && r.cpu_n >= 5 && r.cpu_avg >= r.cpu_limit * 0.95) {
-      problems.push({ key: `${k}:cpu`, message: `«${r.name}» lleva 10 minutos usando toda su CPU (${r.cpu_avg.toFixed(2)} de ${r.cpu_limit} núcleos): responde más lento.` });
-    }
-    if (r.restarts_delta > 0 || r.oom_killed || r.state === "restarting" || r.state === "dead") {
-      const cause = r.oom_killed ? " Lo mató la falta de memoria (OOM): súbele el tope de RAM." : "";
-      problems.push({ key: `${k}:restart`, message: `«${r.name}» se reinició${r.restarts_delta > 0 ? ` ${r.restarts_delta === 1 ? "1 vez" : `${r.restarts_delta} veces`} en 15 minutos` : ` (estado: ${r.state})`}.${cause} Revisa «docker compose logs ${r.name}».` });
-    }
-    if (r.health === "unhealthy") {
-      problems.push({ key: `${k}:health`, message: `«${r.name}» no pasa su comprobación de salud. Revisa «docker compose logs ${r.name}».` });
-    }
-  }
-  return problems;
+  return containerProblems(rows);
+}
+
+/**
+ * RAM que usan los contenedores de Omni RAG frente a la que ve Docker (la del servidor o, en Docker Desktop, la de la
+ * máquina virtual). `now` es la última muestra; `low`, la más baja de los últimos 5 minutos (para no avisar de un pico
+ * de un momento, como una conversión de Docling). Los demás servicios del servidor no se cuentan.
+ */
+export interface HostMemUsage {
+  now: number;
+  low: number;
+  samples: number;
+  total: number;
+}
+
+async function hostMemUsage(): Promise<HostMemUsage | null> {
+  if (!config.DOCKER_PROXY_URL) return null;
+  const [row] = await sqlOwner<{ now: number | null; low: number | null; samples: number; total: number | null }[]>`
+    WITH per_minute AS (
+      SELECT at, sum(mem_bytes)::float8 AS used FROM container_samples WHERE at > now() - interval '5 minutes' GROUP BY at
+    )
+    SELECT (SELECT used FROM per_minute ORDER BY at DESC LIMIT 1) AS now, min(used) AS low, count(*)::int AS samples,
+           (SELECT (info->>'memBytes')::float8 FROM host_snapshot WHERE id = 1) AS total
+      FROM per_minute`;
+  if (!row || row.now === null || row.low === null || !row.total) return null;
+  return { now: row.now, low: row.low, samples: row.samples, total: row.total };
+}
+
+/** Omni RAG lleva 5 minutos usando más del ALERT_HOST_MEM_PERCENT % de la RAM: si se agota, el sistema cierra algún contenedor. */
+export function hostMemProblem(u: HostMemUsage | null, percent = setting("ALERT_HOST_MEM_PERCENT")): Problem | null {
+  if (!u || u.samples < 3 || u.low / u.total < percent / 100) return null;
+  return {
+    key: "host-mem",
+    message: `Omni RAG usa ${gb(u.now)} de ${gb(u.total)} de RAM (${Math.round((u.now / u.total) * 100)} %) desde hace 5 minutos o más. Si se agota, el sistema cierra algún contenedor (primero docling). Dale más RAM al servidor o a Docker, o apaga el re-ranker (RERANKER_URL= y RERANKER_REPLICAS=0).`,
+  };
+}
+
+export async function checkHostMem(): Promise<Problem | null> {
+  return hostMemProblem(await hostMemUsage());
 }
 
 const recipients = () => setting("ALERT_EMAIL").split(/[,;\s]+/).filter(Boolean);
+
+/** Hay a quién avisar y con qué: si no, las alertas solo se ven en Sistema → Alertas y en los registros. */
+export const alertEmailReady = () => emailEnabled() && recipients().length > 0;
 
 async function notify(subject: string, intro: string): Promise<void> {
   if (!emailEnabled() || recipients().length === 0) return;
@@ -199,16 +265,72 @@ export async function applyProblems(problems: Problem[], now = new Date()): Prom
   return out;
 }
 
+/** Estado de cada comprobación en la última revisión (panel «Qué se vigila» de Sistema → Alertas). */
+export type CheckState = "ok" | "bad" | "wait" | "off" | "error";
+export interface CheckStatus {
+  id: string;
+  state: CheckState;
+  detail: string | null;
+}
+
+interface Check {
+  id: string;
+  run: () => Promise<Problem | Problem[] | null>;
+  /** Desactivada (sin B2, sin copia externa, sin proxy de Docker…): no se ejecuta. */
+  off?: () => boolean | Promise<boolean>;
+  detail?: () => Promise<string | null>;
+}
+
+const noProxy = () => !config.DOCKER_PROXY_URL;
+
+const CHECKS: Check[] = [
+  { id: "disk", run: () => checkDisk(), detail: async () => { const f = await diskFree(); return f ? `${Math.round(f.pct)} % libre` : null; } },
+  { id: "queue", run: checkQueue },
+  { id: "backup", run: () => checkBackups() },
+  { id: "backup-offsite", run: () => checkOffsite(), off: async () => !(await readJson<LocalStatus>(join(BACKUP_DIR, ".estado.json")))?.offsite },
+  { id: "backup-b2", run: () => checkB2(), off: () => !b2Configured() },
+  { id: "llm", run: checkLlm, off: () => configuredProviders().length === 0 },
+  {
+    id: "containers",
+    run: checkContainers,
+    off: noProxy,
+    detail: async () => {
+      const [r] = await sqlOwner<{ running: number; total: number }[]>`
+        SELECT count(*) FILTER (WHERE state = 'running')::int AS running, count(*)::int AS total
+          FROM (SELECT DISTINCT ON (name) state FROM container_samples WHERE at > now() - interval '3 minutes' ORDER BY name, at DESC) s`;
+      return r && r.total > 0 ? `${r.running} de ${r.total} en marcha` : null;
+    },
+  },
+  { id: "host-mem", run: checkHostMem, off: noProxy, detail: async () => { const u = await hostMemUsage(); return u ? `${Math.round((u.now / u.total) * 100)} % de ${gb(u.total)}` : null; } },
+];
+
+/** De los problemas de una comprobación a su estado: alguno confirmado → bad; solo en espera → wait; ninguno → ok. */
+export function checkState(problems: Problem[]): CheckState {
+  if (problems.some((p) => !p.hold)) return "bad";
+  return problems.length > 0 ? "wait" : "ok";
+}
+
 export async function runMonitor(): Promise<{ problems: number } & Awaited<ReturnType<typeof applyProblems>>> {
-  const checks: (() => Promise<Problem | Problem[] | null>)[] = [checkDisk, checkQueue, checkBackups, checkOffsite, checkB2, checkLlm, checkContainers];
   const problems: Problem[] = [];
-  for (const check of checks) {
+  const statuses: CheckStatus[] = [];
+  for (const check of CHECKS) {
     try {
-      const p = await check();
-      if (p) problems.push(...(Array.isArray(p) ? p : [p]));
+      if (await check.off?.()) {
+        statuses.push({ id: check.id, state: "off", detail: null });
+        continue;
+      }
+      const p = await check.run();
+      const found = p ? (Array.isArray(p) ? p : [p]) : [];
+      problems.push(...found);
+      statuses.push({ id: check.id, state: checkState(found), detail: (await check.detail?.().catch(() => null)) ?? null });
     } catch (err) {
-      console.error(`[monitor] falló la comprobación ${check.name}:`, err);
+      console.error(`[monitor] falló la comprobación ${check.id}:`, err);
+      statuses.push({ id: check.id, state: "error", detail: null });
     }
   }
-  return { problems: problems.filter((p) => !p.hold).length, ...(await applyProblems(problems)) };
+  const result = { problems: problems.filter((p) => !p.hold).length, ...(await applyProblems(problems)) };
+  await sqlOwner`
+    INSERT INTO monitor_snapshot (id, at, checks) VALUES (1, now(), ${sqlOwner.json(statuses as never)})
+    ON CONFLICT (id) DO UPDATE SET at = excluded.at, checks = excluded.checks`;
+  return result;
 }

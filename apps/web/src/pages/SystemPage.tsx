@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router";
+import { Link, useNavigate, useParams } from "react-router";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { Activity, BellRing, Cpu, MemoryStick, Server } from "lucide-react";
+import { Activity, BellRing, CircleCheck, CircleMinus, CircleX, Clock, Cpu, MailX, MemoryStick, Server, TriangleAlert, type LucideIcon } from "lucide-react";
 import { api, formatBytes, formatDate } from "@/api";
 import { cn } from "@/lib/utils";
 import type { ChartSpec } from "@/lib/chartSpec";
@@ -38,9 +38,14 @@ interface Resources {
   containers: Container[];
 }
 
+type CheckState = "ok" | "bad" | "wait" | "off" | "error";
 interface Alerts {
   open: OpenAlert[];
-  events: { id: number; at: string; key: string; event: "opened" | "reminded" | "resolved"; message: string }[];
+  /** Un problema por fila; `until` null = sigue abierto. */
+  incidents: { id: number; key: string; since: string; until: string | null; message: string }[];
+  checks: { at: string; checks: { id: string; state: CheckState; detail: string | null }[] } | null;
+  /** Hay destinatarios y SMTP para avisar por correo. */
+  email: boolean;
 }
 
 const cores = (n: number) => n.toLocaleString("es", { maximumFractionDigits: 2, minimumFractionDigits: n < 10 ? 2 : 0 });
@@ -202,12 +207,6 @@ function toCharts(points: Metrics["points"], range: Range): { mem: ChartSpec; cp
   };
 }
 
-const EVENTS: Record<Alerts["events"][number]["event"], { label: string; tone: keyof typeof TONE }> = {
-  opened: { label: "Empezó", tone: "bad" },
-  reminded: { label: "Sigue", tone: "warn" },
-  resolved: { label: "Resuelto", tone: "ok" },
-};
-
 function MetricsTab() {
   const resources = useQuery({ queryKey: ["system", "resources"], queryFn: () => api.get<Resources>("/system/resources"), refetchInterval: 60_000 });
   const names = resources.data?.containers.map((c) => c.name) ?? [];
@@ -269,37 +268,122 @@ function MetricsTab() {
   );
 }
 
+/** Etiqueta y tono de cada comprobación del monitor (ids de CHECKS en apps/api/src/lib/monitor.ts). */
+const CHECK_LABELS: Record<string, string> = {
+  disk: "Disco",
+  queue: "Cola de documentos",
+  backup: "Copias",
+  "backup-offsite": "Copia externa",
+  "backup-b2": "Backblaze B2",
+  llm: "Modelo de lenguaje",
+  containers: "Contenedores",
+  "host-mem": "RAM del servidor",
+};
+const CHECK_STATES: Record<CheckState, { icon: LucideIcon; className: string; text: string }> = {
+  ok: { icon: CircleCheck, className: "text-success", text: "Bien" },
+  bad: { icon: CircleX, className: "text-destructive", text: "Con problema" },
+  wait: { icon: Clock, className: "text-warning", text: "Comprobando (acaba de arrancar)" },
+  off: { icon: CircleMinus, className: "text-muted-foreground", text: "Sin configurar" },
+  error: { icon: TriangleAlert, className: "text-warning", text: "No se pudo comprobar (ver «docker compose logs worker»)" },
+};
+/** Tras 15 minutos sin revisión (se hace cada 5), el monitor no está corriendo. */
+const MONITOR_STALE_MS = 15 * 60_000;
+
+function duration(ms: number): string {
+  const min = Math.max(1, Math.round(ms / 60_000));
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return min % 60 ? `${h} h ${min % 60} min` : `${h} h`;
+  const d = Math.floor(h / 24);
+  return h % 24 ? `${d} d ${h % 24} h` : `${d} d`;
+}
+
+const timeFormat = new Intl.DateTimeFormat("es", { hour: "2-digit", minute: "2-digit" });
+
+/** Qué vigila el monitor y cómo estaba en su última revisión, más el aviso si no hay correo de alertas. */
+function Watched({ checks, email }: { checks: Alerts["checks"]; email: boolean }) {
+  const stale = !checks || Date.now() - new Date(checks.at).getTime() > MONITOR_STALE_MS;
+  return (
+    <section className="mb-4 shrink-0 rounded-xl border bg-card p-4">
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <h2 className="text-sm font-medium">Qué se vigila</h2>
+        <p className="text-xs text-muted-foreground">
+          Cada 5 minutos{checks && ` · última revisión: ${timeFormat.format(new Date(checks.at))}`}
+        </p>
+      </div>
+      {checks ? (
+        <ul className="grid gap-x-6 gap-y-2 sm:grid-cols-2 xl:grid-cols-4">
+          {checks.checks.map((c) => {
+            const st = CHECK_STATES[c.state];
+            return (
+              <li key={c.id} className="flex min-w-0 items-center gap-2 text-sm" title={st.text}>
+                <st.icon className={cn("size-4 shrink-0", st.className)} aria-label={st.text} />
+                <span className="truncate">{CHECK_LABELS[c.id] ?? c.id}</span>
+                {(c.detail || c.state === "off") && <span className="truncate font-mono text-xs text-muted-foreground tabular-nums">{c.detail ?? "sin configurar"}</span>}
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <p className="text-sm text-muted-foreground">El monitor aún no ha hecho su primera revisión.</p>
+      )}
+      {(stale && checks) || !email ? (
+        <div className="mt-3 space-y-1 border-t pt-3 text-sm">
+          {stale && checks && (
+            <p className="flex items-center gap-2 text-warning">
+              <TriangleAlert className="size-4 shrink-0" /> El monitor no revisa desde las {timeFormat.format(new Date(checks.at))}: revisa «docker compose logs worker».
+            </p>
+          )}
+          {!email && (
+            <p className="flex flex-wrap items-center gap-x-2 text-muted-foreground">
+              <MailX className="size-4 shrink-0" /> Sin correo de alertas: los problemas solo se ven aquí.
+              <Link to="/sistema/configuracion" className="text-primary underline-offset-4 hover:underline">
+                Configurar destinatarios y SMTP
+              </Link>
+            </p>
+          )}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function AlertsTab() {
   const alerts = useQuery({ queryKey: ["system", "alerts"], queryFn: () => api.get<Alerts>("/system/alerts"), refetchInterval: 60_000 });
   if (alerts.isLoading || !alerts.data) return <Skeleton className="h-64 w-full" />;
+  const { open, incidents, checks, email } = alerts.data;
   return (
     <>
-      <OpenAlerts alerts={alerts.data.open} />
-      {alerts.data.events.length === 0 ? (
-        <EmptyState icon={BellRing} title="Sin alertas registradas" description="Cuando el monitor detecte un problema (cada 5 minutos) aparecerá aquí, con el contenedor afectado." />
+      <Watched checks={checks} email={email} />
+      <OpenAlerts alerts={open} />
+      {incidents.length === 0 ? (
+        <EmptyState icon={BellRing} title="Sin problemas registrados" description="Cuando el monitor detecte uno aparecerá aquí, una fila por problema, con cuánto duró." />
       ) : (
         <TableCard>
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="pl-4">Fecha</TableHead>
+                <TableHead className="pl-4">Estado</TableHead>
                 <TableHead>Origen</TableHead>
-                <TableHead>Evento</TableHead>
+                <TableHead>Desde</TableHead>
+                <TableHead>Duración</TableHead>
                 <TableHead className="hidden md:table-cell">Detalle</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {alerts.data.events.map((e) => {
+              {incidents.map((e) => {
                 const d = describeKey(e.key);
+                const end = e.until ? new Date(e.until).getTime() : Date.now();
                 return (
                   <TableRow key={e.id}>
-                    <TableCell className="pl-4 font-mono text-xs whitespace-nowrap text-muted-foreground tabular-nums">{formatDate(e.at)}</TableCell>
+                    <TableCell className="pl-4">{e.until ? <Tag tone="ok">Resuelta</Tag> : <Tag tone="bad">Abierta</Tag>}</TableCell>
                     <TableCell className="text-sm">
                       <span className="font-medium">{d.source}</span>
                       {d.label && <span className="text-muted-foreground"> · {d.label}</span>}
                     </TableCell>
-                    <TableCell>
-                      <Tag tone={EVENTS[e.event].tone}>{EVENTS[e.event].label}</Tag>
+                    <TableCell className="font-mono text-xs whitespace-nowrap text-muted-foreground tabular-nums">{formatDate(e.since)}</TableCell>
+                    <TableCell className="font-mono text-xs whitespace-nowrap tabular-nums" title={e.until ? `Hasta ${formatDate(e.until)}` : "Sigue abierta"}>
+                      {duration(end - new Date(e.since).getTime())}
                     </TableCell>
                     <TableCell className="hidden max-w-xl text-sm text-muted-foreground md:table-cell">{e.message}</TableCell>
                   </TableRow>

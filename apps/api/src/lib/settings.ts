@@ -66,6 +66,7 @@ export const GROUPS: Group[] = [
       { key: "ALERT_BACKUP_HOURS", label: "Antigüedad máxima de la última copia", help: "Se avisa si la copia de seguridad más reciente supera estas horas.", type: "number", min: 1, max: 720, step: 1, unit: "h" },
       { key: "ALERT_QUEUE_MINUTES", label: "Documentos atascados en la cola", help: "Se avisa si un documento lleva más de este tiempo pendiente o procesándose.", type: "number", min: 1, max: 1440, step: 1, unit: "min" },
       { key: "ALERT_CONTAINER_MEM_PERCENT", label: "Uso de memoria de un contenedor", help: "Se avisa cuando un contenedor usa este porcentaje de su tope de memoria.", type: "number", min: 50, max: 100, step: 1, unit: "%" },
+      { key: "ALERT_HOST_MEM_PERCENT", label: "Uso de memoria del servidor", help: "Se avisa cuando Omni RAG lleva 5 minutos usando este porcentaje de la memoria que ve Docker.", type: "number", min: 50, max: 100, step: 1, unit: "%" },
     ],
   },
   {
@@ -178,7 +179,7 @@ const BACKUP_GROUP_IDS = new Set(["backup", "b2"]);
 type ConfigKeys = Extract<keyof Config, string>;
 /** Claves del catálogo que además son variables de config.ts (las demás solo las leen los scripts de copia). */
 export type SettingKey = Extract<
-  | "ALERT_EMAIL" | "ALERT_DISK_FREE_PERCENT" | "ALERT_BACKUP_HOURS" | "ALERT_QUEUE_MINUTES" | "ALERT_CONTAINER_MEM_PERCENT"
+  | "ALERT_EMAIL" | "ALERT_DISK_FREE_PERCENT" | "ALERT_BACKUP_HOURS" | "ALERT_QUEUE_MINUTES" | "ALERT_CONTAINER_MEM_PERCENT" | "ALERT_HOST_MEM_PERCENT"
   | "SMTP_HOST" | "SMTP_PORT" | "SMTP_USER" | "SMTP_PASSWORD" | "SMTP_FROM" | "SMTP_SECURE"
   | "TRASH_RETENTION_DAYS" | "AUDIT_RETENTION_DAYS" | "METRICS_RETENTION_DAYS" | "QUOTA_WARN_PERCENT"
   | "TENANT_DAILY_QUESTION_LIMIT" | "IP_RATE_LIMIT_PER_MIN" | "INVITE_EXPIRES_HOURS" | "RESET_EXPIRES_MINUTES"

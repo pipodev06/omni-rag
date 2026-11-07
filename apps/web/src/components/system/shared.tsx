@@ -20,8 +20,8 @@ export function Tag({ tone, children, title }: { tone: keyof typeof TONE; childr
   );
 }
 
-export const SIGNALS: Record<string, string> = { mem: "RAM al límite", cpu: "CPU al límite", restart: "Se reinició", health: "No responde" };
-const CHECKS: Record<string, string> = { disk: "Disco", queue: "Cola de documentos", backup: "Copias de seguridad", "backup-b2": "Copias en B2", "backup-offsite": "Destino externo de copias", llm: "Modelo de lenguaje", metrics: "Métricas" };
+export const SIGNALS: Record<string, string> = { mem: "RAM al límite", cpu: "CPU al límite", restart: "Se reinició", stopped: "Parado", health: "No responde" };
+const CHECKS: Record<string, string> = { disk: "Disco", queue: "Cola de documentos", backup: "Copias de seguridad", "backup-b2": "Copias en B2", "backup-offsite": "Destino externo de copias", llm: "Modelo de lenguaje", metrics: "Métricas", "host-mem": "RAM del servidor" };
 
 /** «container:api:mem» → { source: "api", label: "RAM al límite" }; «disk» → { source: "Disco", … }. */
 export function describeKey(key: string): { source: string; label: string } {

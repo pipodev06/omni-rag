@@ -66,6 +66,7 @@ const schema = z.object({
   ALERT_BACKUP_HOURS: z.coerce.number().positive().default(36),
   /** Porcentaje de su tope de RAM a partir del cual un contenedor cuenta como «al límite». */
   ALERT_CONTAINER_MEM_PERCENT: z.coerce.number().min(50).max(100).default(90),
+  ALERT_HOST_MEM_PERCENT: z.coerce.number().min(50).max(100).default(90),
 
   // Métricas de los contenedores (pantalla Sistema). El worker lee Docker a través de un proxy con lista blanca.
   /** Proxy de Docker con lista blanca (servicio docker-proxy). Vacío = sin métricas de contenedores. */

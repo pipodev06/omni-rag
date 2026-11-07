@@ -102,6 +102,44 @@ describe("monitorización de copias de seguridad", () => {
   });
 });
 
+describe("monitorización de contenedores y de la RAM del servidor", () => {
+  const row = (over: Partial<import("../src/lib/monitor.js").ContainerRow> = {}) => ({
+    name: "docling", state: "running", health: null, mem_bytes: 500, mem_limit: null, oom_killed: false, cpu_limit: null, cpu_avg: 0, cpu_n: 10, restarts_delta: 0, ...over,
+  });
+  const GB = 1024 ** 3;
+
+  it("avisa de un contenedor parado, y no si está en marcha", async () => {
+    const { containerProblems } = await import("../src/lib/monitor.js");
+    expect(containerProblems([row()], 90)).toEqual([]);
+    expect(containerProblems([row({ state: "exited" })], 90).map((p) => p.key)).toEqual(["container:docling:stopped"]);
+  });
+  it("un reinicio no se cuenta además como «parado»", async () => {
+    const { containerProblems } = await import("../src/lib/monitor.js");
+    expect(containerProblems([row({ state: "exited", restarts_delta: 2 })], 90).map((p) => p.key)).toEqual(["container:docling:restart"]);
+  });
+  it("sin tope no hay alerta de RAM del contenedor; con tope, al pasar el porcentaje", async () => {
+    const { containerProblems } = await import("../src/lib/monitor.js");
+    expect(containerProblems([row({ mem_bytes: 10 * GB })], 90)).toEqual([]);
+    expect(containerProblems([row({ mem_bytes: 95, mem_limit: 100 })], 90).map((p) => p.key)).toEqual(["container:docling:mem"]);
+  });
+  it("RAM del servidor: avisa solo si lleva 5 minutos por encima del porcentaje", async () => {
+    const { hostMemProblem } = await import("../src/lib/monitor.js");
+    const total = 8 * GB;
+    expect(hostMemProblem({ now: 7.5 * GB, low: 7.4 * GB, samples: 5, total }, 90)?.key).toBe("host-mem");
+    // Un pico de un momento (la más baja de los 5 minutos queda por debajo) no avisa.
+    expect(hostMemProblem({ now: 7.8 * GB, low: 6 * GB, samples: 5, total }, 90)).toBeNull();
+    // Con menos de 3 muestras aún no se puede saber.
+    expect(hostMemProblem({ now: 7.8 * GB, low: 7.8 * GB, samples: 2, total }, 90)).toBeNull();
+    expect(hostMemProblem(null, 90)).toBeNull();
+  });
+  it("estado de una comprobación según sus problemas", async () => {
+    const { checkState } = await import("../src/lib/monitor.js");
+    expect(checkState([])).toBe("ok");
+    expect(checkState([{ key: "metrics", message: "", hold: true }])).toBe("wait");
+    expect(checkState([{ key: "metrics", message: "", hold: true }, { key: "container:api:health", message: "" }])).toBe("bad");
+  });
+});
+
 describe("texto que se envía al re-ranker", () => {
   const hit = { documentTitle: "Contrato", heading: "Plazos", content: "x".repeat(2000) };
   it("une título, sección y contenido", async () => {
