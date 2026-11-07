@@ -274,6 +274,7 @@ const CHECK_LABELS: Record<string, string> = {
   queue: "Cola de documentos",
   backup: "Copias",
   "backup-offsite": "Copia externa",
+  "backup-passphrase": "Frase de cifrado guardada",
   "backup-b2": "Backblaze B2",
   llm: "Modelo de lenguaje",
   containers: "Contenedores",

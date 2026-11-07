@@ -52,6 +52,21 @@ const PROVIDERS = [
   { value: "custom", label: "Servidor propio" },
 ];
 
+/**
+ * Zonas de la hora de las copias, en formato POSIX (lo que entienden `date` y los scripts sin base de zonas horarias).
+ * Las que cambian de hora en verano llevan sus reglas. Otra zona: BACKUP_TZ en el archivo de entorno.
+ */
+const BACKUP_TIMEZONES = [
+  { value: "<-05>5", label: "Lima, Bogotá, Quito (UTC−5)" },
+  { value: "<-06>6", label: "Ciudad de México, Centroamérica (UTC−6)" },
+  { value: "<-04>4", label: "Caracas, La Paz, Santo Domingo (UTC−4)" },
+  { value: "<-04>4<-03>,M9.1.6/24,M4.1.6/24", label: "Santiago de Chile (UTC−4, verano −3)" },
+  { value: "<-03>3", label: "Buenos Aires, Montevideo, São Paulo (UTC−3)" },
+  { value: "EST5EDT,M3.2.0,M11.1.0", label: "Nueva York, Miami (UTC−5, verano −4)" },
+  { value: "CET-1CEST,M3.5.0,M10.5.0/3", label: "Madrid (UTC+1, verano +2)" },
+  { value: "UTC0", label: "UTC" },
+];
+
 const COPIES_NOTE = "Se aplica en la siguiente vuelta del servicio de copias (hasta 5 minutos).";
 const NO_CONTROL = /^[^\r\n\0]*$/;
 
@@ -91,7 +106,6 @@ export const GROUPS: Group[] = [
       { key: "AUDIT_RETENTION_DAYS", label: "Retención de la auditoría", help: "Días que se conservan el registro de auditoría y el historial de alertas (mínimo 30).", type: "number", min: 30, max: 3650, step: 1, int: true, unit: "días" },
       { key: "METRICS_RETENTION_DAYS", label: "Retención de las métricas", help: "Días que se conservan las muestras de consumo de los contenedores (mínimo 1).", type: "number", min: 1, max: 90, step: 1, int: true, unit: "días" },
       { key: "QUOTA_WARN_PERCENT", label: "Aviso de cuota", help: "Porcentaje del límite diario a partir del cual se avisa en el chat y por correo.", type: "number", min: 1, max: 100, step: 1, int: true, unit: "%" },
-      { key: "TENANT_DAILY_QUESTION_LIMIT", label: "Preguntas por día de los planes iniciales", help: "Límite con el que se crearon los planes de una instalación nueva.", type: "number", min: 0, max: 100000, step: 1, int: true, unit: "preguntas", restartNote: "Solo se usa al crear la instalación. Los límites vigentes se editan en Planes." },
       { key: "IP_RATE_LIMIT_PER_MIN", label: "Peticiones por minuto sin sesión", help: "Tope por dirección IP para las peticiones sin sesión iniciada. Con 0 no hay límite.", type: "number", min: 0, max: 100000, step: 1, int: true, unit: "por minuto" },
       { key: "INVITE_EXPIRES_HOURS", label: "Caducidad de las invitaciones", help: "Horas de validez del enlace de invitación (máximo 336, dos semanas).", type: "number", min: 1, max: 336, step: 1, unit: "h" },
       { key: "RESET_EXPIRES_MINUTES", label: "Caducidad de la recuperación de contraseña", help: "Minutos de validez del enlace para restablecer la contraseña (máximo 120).", type: "number", min: 1, max: 120, step: 1, unit: "min" },
@@ -148,7 +162,7 @@ export const GROUPS: Group[] = [
       { key: "BACKUP_AT", label: "Hora de la copia diaria", help: "Formato HH:MM (24 h). No se usa si el intervalo es distinto de 24 h.", type: "time", fallback: "03:00", restartNote: COPIES_NOTE },
       { key: "BACKUP_INTERVAL_HOURS", label: "Intervalo entre copias", help: "24 = una copia al día a la hora fijada. Otro valor: una copia cada N horas, contadas desde la última.", type: "number", min: 1, max: 720, step: 1, int: true, unit: "h", fallback: 24, restartNote: COPIES_NOTE },
       { key: "BACKUP_KEEP_DAYS", label: "Retención", help: "Días que se conservan las copias (mínimo 3).", type: "number", min: 3, max: 3650, step: 1, int: true, unit: "días", fallback: 7, restartNote: COPIES_NOTE },
-      { key: "BACKUP_TZ", label: "Zona horaria", help: "Zona de la hora fija, en formato POSIX (por ejemplo <-05>5).", type: "string", pattern: /^[A-Za-z0-9_/+:<>,.\-]{0,64}$/, fallback: "<-05>5", restartNote: COPIES_NOTE },
+      { key: "BACKUP_TZ", label: "Zona horaria", help: "Zona de la hora de la copia y de la subida a B2. Otra zona: BACKUP_TZ en el archivo de entorno (formato POSIX).", type: "enum", options: BACKUP_TIMEZONES, fallback: "<-05>5", restartNote: COPIES_NOTE },
       { key: "BACKUP_UPLOADS_TGZ", label: "Comprimir los archivos subidos", help: "Incluye los documentos subidos como un archivo comprimido en cada copia.", type: "boolean", fallback: true, restartNote: COPIES_NOTE },
       { key: "BACKUP_OFFSITE", label: "Copia externa", help: "Duplica cada copia cifrada en la carpeta externa.", type: "boolean", fallback: false, restartNote: COPIES_NOTE },
     ],
@@ -156,10 +170,10 @@ export const GROUPS: Group[] = [
   {
     id: "b2",
     title: "Backblaze B2",
-    description: "Opcional pero recomendado: sube las copias cifradas a Backblaze B2, fuera del servidor. Necesita la copia externa activada y la frase de cifrado del archivo de entorno.",
+    description: "Opcional pero recomendado: sube las copias cifradas a Backblaze B2, fuera del servidor. Necesita la copia externa activada; la frase de cifrado se genera sola (guárdala con «Ver frase» en esta pantalla).",
     fields: [
-      { key: "B2_AT", label: "Hora fija", help: "Formato HH:MM (24 h). Vacío: una subida cada N horas.", type: "time", fallback: "", restartNote: COPIES_NOTE },
-      { key: "B2_INTERVAL_HOURS", label: "Intervalo entre subidas", help: "Horas entre subidas cuando no hay hora fija.", type: "number", min: 1, max: 720, step: 1, int: true, unit: "h", fallback: 6, restartNote: COPIES_NOTE },
+      { key: "B2_AT", label: "Hora de la subida diaria", help: "Formato HH:MM (24 h), después de la copia. No se usa si el intervalo es distinto de 24 h.", type: "time", fallback: "04:00", restartNote: COPIES_NOTE },
+      { key: "B2_INTERVAL_HOURS", label: "Intervalo entre subidas", help: "24 = una subida al día a la hora fijada. Otro valor: una subida cada N horas.", type: "number", min: 1, max: 720, step: 1, int: true, unit: "h", fallback: 24, restartNote: COPIES_NOTE },
       { key: "B2_KEEP_DAYS", label: "Retención", help: "Días que se conservan las copias en B2 (mínimo 7).", type: "number", min: 7, max: 3650, step: 1, int: true, unit: "días", fallback: 30, restartNote: COPIES_NOTE },
       { key: "B2_SYNC_UPLOADS", label: "Subir también los archivos", help: "Sincroniza los documentos subidos, de forma incremental.", type: "boolean", fallback: false, restartNote: COPIES_NOTE },
       { key: "B2_BUCKET", label: "Bucket", help: "Nombre del bucket de B2.", type: "string", pattern: /^[A-Za-z0-9.\-]{0,63}$/, fallback: "", restartNote: COPIES_NOTE },
@@ -182,7 +196,7 @@ export type SettingKey = Extract<
   | "ALERT_EMAIL" | "ALERT_DISK_FREE_PERCENT" | "ALERT_BACKUP_HOURS" | "ALERT_QUEUE_MINUTES" | "ALERT_CONTAINER_MEM_PERCENT" | "ALERT_HOST_MEM_PERCENT"
   | "SMTP_HOST" | "SMTP_PORT" | "SMTP_USER" | "SMTP_PASSWORD" | "SMTP_FROM" | "SMTP_SECURE"
   | "TRASH_RETENTION_DAYS" | "AUDIT_RETENTION_DAYS" | "METRICS_RETENTION_DAYS" | "QUOTA_WARN_PERCENT"
-  | "TENANT_DAILY_QUESTION_LIMIT" | "IP_RATE_LIMIT_PER_MIN" | "INVITE_EXPIRES_HOURS" | "RESET_EXPIRES_MINUTES"
+  | "IP_RATE_LIMIT_PER_MIN" | "INVITE_EXPIRES_HOURS" | "RESET_EXPIRES_MINUTES"
   | "OPENROUTER_API_KEY" | "GROQ_API_KEY" | "GOOGLE_API_KEY" | "OPENAI_API_KEY" | "DEEPSEEK_API_KEY" | "LLM_CUSTOM_API_KEY"
   | "LLM_CUSTOM_BASE_URL" | "LLM_DEFAULT_PROVIDER" | "LLM_TEMPERATURE" | "LLM_MAX_TOKENS"
   | "WEB_SEARCH_PROVIDER" | "WEB_SEARCH_API_KEY" | "WEB_SEARCH_URL" | "WEB_SEARCH_MAX_RESULTS"

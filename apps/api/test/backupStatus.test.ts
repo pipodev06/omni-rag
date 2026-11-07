@@ -111,6 +111,33 @@ describe("writeBackupConfig (b2.env para los scripts)", () => {
   const sourced = (file: string, vars: string[]) =>
     vars.map((v) => execFileSync("sh", ["-c", `. "$0"; printf %s "$${v}"`, file.replaceAll("\\", "/")], { encoding: "utf8" }));
 
+  it("la frase generada va al b2.env; la del entorno no (backup-b2 ya la recibe de compose)", async () => {
+    const secrets = await tmp();
+    await writeFile(join(secrets, "backup_passphrase"), "frase-generada");
+    const dir = await tmp();
+    const prev = { SECRETS_DIR: process.env.SECRETS_DIR, BACKUP_ENCRYPTION_PASSPHRASE: process.env.BACKUP_ENCRYPTION_PASSPHRASE };
+    try {
+      process.env.SECRETS_DIR = secrets;
+      delete process.env.BACKUP_ENCRYPTION_PASSPHRASE;
+      const { writeBackupConfig, backupPassphrase } = await withSettings([["B2_BUCKET", "x"]]);
+      expect(backupPassphrase()).toEqual({ value: "frase-generada", source: "generated" });
+      await writeBackupConfig(dir);
+      expect(await readFile(join(dir, "b2.env"), "utf8")).toContain(`export BACKUP_ENCRYPTION_PASSPHRASE=${SQ}frase-generada${SQ}`);
+      process.env.BACKUP_ENCRYPTION_PASSPHRASE = "del-entorno";
+      expect(backupPassphrase()?.source).toBe("env");
+      await writeBackupConfig(dir);
+      expect(await readFile(join(dir, "b2.env"), "utf8")).not.toContain("BACKUP_ENCRYPTION_PASSPHRASE");
+    } finally {
+      for (const [k, v] of Object.entries(prev)) if (v === undefined) delete process.env[k]; else process.env[k] = v;
+    }
+  });
+
+  it("sin frase en el entorno ni archivo generado no hay frase", async () => {
+    const { backupPassphrase } = await withSettings([]);
+    expect(backupPassphrase({ SECRETS_DIR: await tmp() })).toBeNull();
+    expect(backupPassphrase({})).toBeNull();
+  });
+
   it("no hace nada si la carpeta no existe (no está montada) y no la crea", async () => {
     const base = await tmp();
     const { writeBackupConfig } = await withSettings([["B2_BUCKET", "x"]]);

@@ -277,7 +277,8 @@ describe("applySettings: validación todo o nada", () => {
     ["WEB_SEARCH_URL", ["", "http://searx.local:8080", "https://x.org/p"], ["ftp://x", "javascript:alert(1)", "no es url"]],
     ["LLM_CUSTOM_BASE_URL", ["http://localhost:11434/v1"], ["file:///etc/passwd"]],
     ["SMTP_HOST", ["smtp.gmail.com", ""], ["a\nb", "x".repeat(301)]],
-    ["BACKUP_TZ", ["<-05>5", "America/Lima", ""], ["a b", "x;rm", "$" + "(id)", "a" + SQ + "b", "x".repeat(65)]],
+    // Lista cerrada de zonas (formato POSIX): una zona por nombre o cualquier otro texto se rechaza.
+    ["BACKUP_TZ", ["<-05>5", "<-03>3", "CET-1CEST,M3.5.0,M10.5.0/3"], ["America/Lima", "", "a b", "x;rm", "$" + "(id)", "a" + SQ + "b"]],
     ["B2_BUCKET", ["mi-bucket.1", ""], ["mi bucket", "a/b", "x".repeat(64)]],
     ["B2_PATH", ["omni-rag", "a/b c/d", ""], ["a/../b", "..", "a" + SQ + "b", "a;b", "$HOME"]],
   ];

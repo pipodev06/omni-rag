@@ -132,6 +132,16 @@ describe("monitorización de contenedores y de la RAM del servidor", () => {
     expect(hostMemProblem({ now: 7.8 * GB, low: 7.8 * GB, samples: 2, total }, 90)).toBeNull();
     expect(hostMemProblem(null, 90)).toBeNull();
   });
+  it("frase de cifrado: avisa hasta que se ve, si cambió de origen y si no se puede leer", async () => {
+    const { passphraseProblem } = await import("../src/lib/monitor.js");
+    const generated = { value: "x", source: "generated" as const };
+    expect(passphraseProblem(generated, null)?.key).toBe("backup-passphrase");
+    expect(passphraseProblem(generated, "generated")).toBeNull();
+    // Se vio la generada y luego se fijó otra en el entorno: es otra frase.
+    expect(passphraseProblem({ value: "y", source: "env" }, "generated")?.message).toMatch(/aún no se ha guardado/);
+    expect(passphraseProblem({ value: null, source: "unreadable" }, "generated")?.message).toMatch(/no se puede leer/);
+    expect(passphraseProblem(null, null)?.message).toMatch(/no hay frase/);
+  });
   it("estado de una comprobación según sus problemas", async () => {
     const { checkState } = await import("../src/lib/monitor.js");
     expect(checkState([])).toBe("ok");

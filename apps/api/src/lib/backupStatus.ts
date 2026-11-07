@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { sqlOwner } from "../db/client.js";
@@ -123,6 +124,30 @@ const shellQuote = (v: string) => `'${v.replaceAll("'", "'\\''")}'`;
  * Solo se escribe si el bucket y las dos claves de B2 tienen valor; si no, se borra el archivo que hubiera para no dejar
  * claves sueltas en disco sin motivo.
  */
+export type PassphraseSource = "env" | "generated" | "unreadable";
+
+/**
+ * Frase que cifra las copias externas y las de B2: la del entorno (BACKUP_ENCRYPTION_PASSPHRASE) manda; si no, la que
+ * genera deploy/init-secrets.sh en el primer arranque (SECRETS_DIR/backup_passphrase). null si no hay ninguna.
+ * «unreadable»: el archivo existe pero la API y el worker no pueden leerlo (dueño distinto de 1000): backup sí cifra con
+ * él, pero B2 no lo recibe y la pantalla no puede mostrarlo.
+ */
+export function backupPassphrase(env: NodeJS.ProcessEnv = process.env): { value: string | null; source: PassphraseSource } | null {
+  const fromEnv = env.BACKUP_ENCRYPTION_PASSPHRASE;
+  if (fromEnv?.trim()) return { value: fromEnv, source: "env" };
+  const dir = env.SECRETS_DIR?.trim();
+  if (!dir) return null;
+  try {
+    const value = readFileSync(join(dir, "backup_passphrase"), "utf8").trim();
+    return value ? { value, source: "generated" } : null;
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") return null;
+    console.error(`[copias] no se puede leer ${join(dir, "backup_passphrase")} (${code ?? "error"}): revisa que su dueño sea el usuario 1000`);
+    return { value: null, source: "unreadable" };
+  }
+}
+
 export async function writeBackupConfig(dir = BACKUP_CONFIG_DIR): Promise<void> {
   if (!(await stat(dir).catch(() => null))?.isDirectory()) return;
   const file = join(dir, "b2.env");
@@ -130,7 +155,11 @@ export async function writeBackupConfig(dir = BACKUP_CONFIG_DIR): Promise<void> 
     await rm(file, { force: true });
     return;
   }
-  const text = backupSettingsForScripts().map(([k, v]) => `export ${k}=${shellQuote(v)}\n`).join("");
+  const entries = [...backupSettingsForScripts()];
+  // backup-b2 no monta ./data/secretos (sale a internet): la frase generada le llega aquí, junto a las claves de B2.
+  const pass = backupPassphrase();
+  if (pass?.source === "generated" && pass.value) entries.push(["BACKUP_ENCRYPTION_PASSPHRASE", pass.value]);
+  const text = entries.map(([k, v]) => `export ${k}=${shellQuote(v)}\n`).join("");
   if ((await readFile(file, "utf8").catch(() => null)) === text) return;
   const tmp = `${file}.tmp`;
   await writeFile(tmp, text, { mode: 0o600 });

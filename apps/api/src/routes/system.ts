@@ -12,7 +12,7 @@ import { ConfirmSchema, hasTotp, reauthenticate, type Confirm } from "../lib/rea
 import { applySettings, b2Configured, backupDestination, SettingsError, setting, settingsView } from "../lib/settings.js";
 import { parse } from "../lib/validate.js";
 import type { HostInfo } from "../lib/containerMetrics.js";
-import type { BackupInfo } from "../lib/backupStatus.js";
+import { backupPassphrase, type BackupInfo } from "../lib/backupStatus.js";
 import { alertEmailReady, type CheckStatus } from "../lib/monitor.js";
 
 /**
@@ -161,7 +161,8 @@ systemRoutes.get("/backups", async (c) => {
   const gone = new Set(deleted.map((d) => d.stamp));
   const info = snap?.info ? { ...snap.info, copies: snap.info.copies.filter((x) => !gone.has(x.stamp)) } : null;
   // El destino sale de los ajustes (se refrescan cada 30 s), no de la foto del worker.
-  return c.json({ readAt: snap?.at ?? null, info: info ? { ...info, destination: backupDestination(), b2Configured: b2Configured() } : null, alerts });
+  // Solo de dónde sale la frase de cifrado («env», «generated» o null), nunca su valor: verla exige reconfirmar.
+  return c.json({ readAt: snap?.at ?? null, info: info ? { ...info, destination: backupDestination(), b2Configured: b2Configured() } : null, alerts, passphrase: backupPassphrase()?.source ?? null });
 });
 
 // --- Primeros pasos ---------------------------------------------------------------
@@ -193,7 +194,9 @@ systemRoutes.get("/onboarding", async (c) => {
 // --- Ajustes editables (Sistema → Configuración) ---------------------------------------------------------------
 
 /** Vista de los ajustes más lo que necesita la pantalla para la reconfirmación (¿pide código de 2FA?). */
-const settingsResponse = async (c: Context<AppEnv>, extra: object = {}) => c.json({ ...settingsView(), reauth: { totp: await hasTotp(c.get("user").id) }, ...extra });
+// `mail`: si el correo saliente funciona (hay servidor) y si las alertas tienen a quién llegar.
+const settingsResponse = async (c: Context<AppEnv>, extra: object = {}) =>
+  c.json({ ...settingsView(), reauth: { totp: await hasTotp(c.get("user").id) }, mail: { enabled: emailEnabled(), alerts: alertEmailReady() }, ...extra });
 
 systemRoutes.get("/settings", (c) => settingsResponse(c));
 
@@ -331,6 +334,36 @@ systemRoutes.post("/backups/delete", async (c) => {
   const order = await requestBackupOrder(c, "delete", { stamp });
   await audit(c, "backup.delete_requested", { targetType: "backup_request", targetId: String(order.id), details: { stamp } });
   return c.json(order);
+});
+
+const ConfirmBody = z.object({ confirm: ConfirmSchema.optional() });
+
+/**
+ * Muestra la frase de cifrado de las copias para guardarla fuera del servidor: sin ella, las copias externas y las de
+ * B2 no se pueden abrir si se pierde el servidor. Reconfirma la identidad, queda en la auditoría y avisa a ALERT_EMAIL.
+ */
+systemRoutes.post("/backups/passphrase", async (c) => {
+  const { confirm } = parse(ConfirmBody, await c.req.json().catch(() => ({})));
+  await reconfirm(c, confirm);
+  const pass = backupPassphrase();
+  if (!pass) throw new HttpError(404, "No hay frase de cifrado: se genera al arrancar db («docker compose up -d»).", "NO_PASSPHRASE");
+  if (!pass.value) throw new HttpError(500, "La frase existe pero no se puede leer: el archivo ./data/secretos/backup_passphrase debe ser del usuario 1000 (recrea db con «docker compose up -d db»).", "PASSPHRASE_UNREADABLE");
+  await audit(c, "backup.passphrase_viewed", { targetType: "settings", details: { source: pass.source } });
+  // Para el monitor: ya se mostró (deja de avisar de «frase sin guardar»). Nunca el valor.
+  await sqlOwner`
+    INSERT INTO secret_views (name, source) VALUES ('backup_passphrase', ${pass.source})
+    ON CONFLICT (name) DO UPDATE SET source = excluded.source, at = now()`;
+  const by = c.get("user").username;
+  const to = setting("ALERT_EMAIL").split(/[,;\s]+/).filter(Boolean);
+  if (emailEnabled() && to.length > 0) {
+    void Promise.all(
+      to.map((addr) =>
+        sendEmail({ to: addr, subject: `[${config.APP_NAME}] Se mostró la frase de cifrado de las copias`, intro: `${by} vio la frase de cifrado de las copias de seguridad en Sistema → Copias (${new Date().toISOString()}). Si no fuiste tú, cambia su contraseña y revisa la auditoría.`, outro: "Aviso automático de seguridad." }),
+      ),
+    ).catch(() => {});
+  }
+  c.header("Cache-Control", "no-store");
+  return c.json({ passphrase: pass.value, source: pass.source });
 });
 
 systemRoutes.get("/backups/requests", async (c) => {

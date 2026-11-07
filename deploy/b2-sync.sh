@@ -6,9 +6,10 @@
 #   2. Con B2_SYNC_UPLOADS=true, los archivos subidos (/uploads) de forma INCREMENTAL: solo sube lo nuevo o
 #      cambiado. Lo que se borra en la aplicación pasa a «archive/AAAA-MM-DD» y allí se conserva B2_KEEP_DAYS días.
 #      Los nombres y el contenido se cifran con BACKUP_ENCRYPTION_PASSPHRASE (rclone crypt) antes de salir.
-#   - Cada B2_INTERVAL_HOURS horas (por defecto 6) o, con B2_AT=04:00, una vez al día a esa hora (hora de BACKUP_TZ;
-#     por defecto Lima, UTC-5): ponla después de BACKUP_AT. Con B2_AT, al arrancar se sube lo que haya quedado
-#     pendiente (copias *.enc de la carpeta externa que aún no están en B2), tras esperar 5 minutos a la copia de «backup».
+#   - Una vez al día a la hora B2_AT (por defecto 04:00, hora de BACKUP_TZ; por defecto Lima, UTC-5), después de la
+#     copia de las 03:00. Al arrancar se sube lo que haya quedado pendiente (copias *.enc de la carpeta externa que aún
+#     no están en B2), tras esperar 5 minutos a la copia de «backup». Con B2_INTERVAL_HOURS distinto de 24, una subida
+#     cada N horas (B2_AT no se usa).
 #   - En B2 se conservan B2_KEEP_DAYS días (por defecto 30) las copias de la base y lo borrado de los archivos.
 # Ajustes: la variable de entorno (si no está vacía) manda; si no, lo guardado en Sistema → Copias, que el worker deja
 # en /backup-config/b2.env (se relee cada minuto); si no, el valor por defecto de este script.
@@ -38,7 +39,7 @@ OBSCURED_FOR=""; OBSCURED_1=""; OBSCURED_2=""
 
 # Variables que puede traer el archivo b2.env. Se guarda cómo venían del entorno para que la variable no vacía siempre mande.
 Q="'"
-CFG_KEYS="B2_AT B2_INTERVAL_HOURS B2_KEEP_DAYS B2_SYNC_UPLOADS B2_BUCKET B2_PATH B2_KEY_ID B2_APPLICATION_KEY BACKUP_TZ BACKUP_AT BACKUP_INTERVAL_HOURS BACKUP_KEEP_DAYS BACKUP_UPLOADS_TGZ BACKUP_OFFSITE BACKUP_DESTINATION"
+CFG_KEYS="B2_AT B2_INTERVAL_HOURS B2_KEEP_DAYS B2_SYNC_UPLOADS B2_BUCKET B2_PATH B2_KEY_ID B2_APPLICATION_KEY BACKUP_ENCRYPTION_PASSPHRASE BACKUP_TZ BACKUP_AT BACKUP_INTERVAL_HOURS BACKUP_KEEP_DAYS BACKUP_UPLOADS_TGZ BACKUP_OFFSITE BACKUP_DESTINATION"
 for k in $CFG_KEYS; do eval "ORIG_$k=\${$k:-}"; done
 # La clave que da rclone por el entorno (compose la copia de B2_KEY_ID / B2_APPLICATION_KEY).
 ORIG_ACCOUNT="${RCLONE_CONFIG_B2_ACCOUNT:-}"
@@ -89,9 +90,11 @@ apply_config() {
   BUCKET="${B2_BUCKET:-}"
   B2PATH="${B2_PATH:-}"; [ -n "$B2PATH" ] || B2PATH=omni-rag
   case "$B2PATH" in *[!A-Za-z0-9\ _./-]*|/*|*..*) bad B2_PATH; B2PATH=omni-rag ;; esac
-  set_uint INTERVAL_HOURS "${B2_INTERVAL_HOURS:-}" 6
+  set_uint INTERVAL_HOURS "${B2_INTERVAL_HOURS:-}" 24
   set_uint KEEP_DAYS "${B2_KEEP_DAYS:-}" 30
-  AT="${B2_AT:-}"; if [ -n "$AT" ] && ! valid_at "$AT"; then bad B2_AT; AT=""; fi
+  AT="${B2_AT:-}"; if [ -z "$AT" ]; then AT="04:00"; elif ! valid_at "$AT"; then bad B2_AT; AT="04:00"; fi
+  # Un intervalo distinto de 24 h manda sobre la hora fija: una subida cada N horas.
+  [ "$INTERVAL_HOURS" = 24 ] || AT=""
   case "${B2_SYNC_UPLOADS:-}" in true) SYNC_UPLOADS=true ;; ''|false) SYNC_UPLOADS=false ;; *) bad B2_SYNC_UPLOADS; SYNC_UPLOADS=false ;; esac
   TZ_EFF="${BACKUP_TZ:-}"
   case "$TZ_EFF" in '') TZ_EFF="<-05>5" ;; *[!A-Za-z0-9\<\>+:/_,.-]*) bad BACKUP_TZ; TZ_EFF="<-05>5" ;; esac

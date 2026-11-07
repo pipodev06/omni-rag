@@ -28,6 +28,10 @@ export PGCONNECT_TIMEOUT=10
 # Sin POSTGRES_PASSWORD en el archivo de entorno, la contraseña de rag_owner es la que se generó en el primer arranque.
 # Se lee aquí (no en el entrypoint) para que también valga con «docker compose exec backup sh /backup.sh --once».
 if [ -z "${PGPASSWORD:-}" ] && [ -r /secrets/postgres_password ]; then PGPASSWORD=$(cat /secrets/postgres_password); export PGPASSWORD; fi
+# Frase de cifrado: la del entorno manda; si no, la generada en el primer arranque (deploy/init-secrets.sh).
+if [ -z "${BACKUP_ENCRYPTION_PASSPHRASE:-}" ] && [ -r /secrets/backup_passphrase ]; then
+  BACKUP_ENCRYPTION_PASSPHRASE=$(cat /secrets/backup_passphrase); export BACKUP_ENCRYPTION_PASSPHRASE
+fi
 mkdir -p "$DEST"
 : > "$SETTINGS"
 

@@ -16,6 +16,8 @@ const state = {
   cooldown: null as number | null,
   expired: 0,
   totp: false,
+  /** Origen de la frase de cifrado anotado en secret_views al mostrarla. */
+  passphraseSeen: null as string | null,
 };
 const sendMail = vi.fn(async (_o: { to: string; subject: string; intro: string; outro: string }) => true);
 const verifyEmail = vi.fn(async () => {});
@@ -46,6 +48,10 @@ function fakeSql() {
     }
     if (q.startsWith("DELETE FROM settings")) {
       state.settings.delete(vals[0] as string);
+      return Promise.resolve([]);
+    }
+    if (q.startsWith("INSERT INTO secret_views")) {
+      state.passphraseSeen = vals[0] as string;
       return Promise.resolve([]);
     }
     // Fragmento reutilizable (PENDING): se interpola dentro de otra consulta.
@@ -116,6 +122,7 @@ beforeEach(async () => {
   state.cooldown = null;
   state.expired = 0;
   state.totp = false;
+  state.passphraseSeen = null;
   sendMail.mockClear();
   verifyEmail.mockReset();
   sendEmail.mockClear();
@@ -195,6 +202,53 @@ describe("POST /system/backups/delete", () => {
     expect(res.status).toBe(403);
     expect(state.orders).toHaveLength(0);
   });
+});
+
+describe("POST /system/backups/passphrase", () => {
+  const withPassphrase = async (value: string | null, fn: () => Promise<void>) => {
+    const { mkdtemp, writeFile } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = await mkdtemp(join(tmpdir(), "rag-secretos-"));
+    if (value !== null) await writeFile(join(dir, "backup_passphrase"), value);
+    const prev = { SECRETS_DIR: process.env.SECRETS_DIR, BACKUP_ENCRYPTION_PASSPHRASE: process.env.BACKUP_ENCRYPTION_PASSPHRASE };
+    process.env.SECRETS_DIR = dir;
+    delete process.env.BACKUP_ENCRYPTION_PASSPHRASE;
+    try {
+      await fn();
+    } finally {
+      for (const [k, v] of Object.entries(prev)) if (v === undefined) delete process.env[k]; else process.env[k] = v;
+    }
+  };
+
+  it("con la identidad reconfirmada devuelve la frase, sin caché, y lo audita sin el valor", () =>
+    withPassphrase("frase-de-prueba", async () => {
+      const res = await call("POST", "/backups/passphrase", { confirm: CONFIRM });
+      expect(res.status, await res.clone().text()).toBe(200);
+      expect(await res.json()).toEqual({ passphrase: "frase-de-prueba", source: "generated" });
+      expect(res.headers.get("cache-control")).toBe("no-store");
+      expect(audit).toHaveBeenCalledWith(expect.anything(), "backup.passphrase_viewed", expect.objectContaining({ details: { source: "generated" } }));
+      expect(JSON.stringify((audit as unknown as { mock: { calls: unknown[] } }).mock.calls)).not.toContain("frase-de-prueba");
+      // El monitor deja de avisar de «frase sin guardar»: se anota de dónde salía, nunca el valor.
+      expect(state.passphraseSeen).toBe("generated");
+    }));
+
+  it("sin reconfirmar: 403 y no la devuelve", () =>
+    withPassphrase("frase-de-prueba", async () => {
+      const res = await call("POST", "/backups/passphrase", {});
+      expect(res.status).toBe(403);
+      expect(await res.text()).not.toContain("frase-de-prueba");
+    }));
+
+  it("sin frase generada ni en el entorno: 404", () =>
+    withPassphrase(null, async () => {
+      expect((await call("POST", "/backups/passphrase", { confirm: CONFIRM })).status).toBe(404);
+    }));
+
+  it("un administrador que no es superadmin recibe 403", () =>
+    withPassphrase("frase-de-prueba", async () => {
+      expect((await call("POST", "/backups/passphrase", { confirm: CONFIRM }, "admin")).status).toBe(403);
+    }));
 });
 
 describe("POST /system/backups/run", () => {

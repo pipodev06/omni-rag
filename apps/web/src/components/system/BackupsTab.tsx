@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { EmptyState, TableCard } from "@/components/common";
 import { DestinationDialog, type BackupTargets } from "@/components/system/DestinationDialog";
 import { ReauthDialog, type Confirm } from "@/components/system/ReauthDialog";
+import { PassphraseCard, type PassphraseSource } from "@/components/system/PassphraseCard";
 import { RestoreDialog, type RestoreCopy } from "@/components/system/RestoreDialog";
 import { SettingsGroups, useReauthTotp } from "@/components/system/SettingsForm";
 import { OpenAlerts, Tag, Tile, type OpenAlert } from "@/components/system/shared";
@@ -30,6 +31,8 @@ interface Backups {
     b2: { checkedAt: string; ok: boolean; error: string; lastOkAt: string; at: string; intervalHours: number; nextAt: string; syncUploads: boolean; keepDays: number } | null;
   } | null;
   alerts: OpenAlert[];
+  /** De dónde sale la frase de cifrado (nunca su valor). */
+  passphrase: PassphraseSource;
 }
 
 /** «8, 83, 724» (lo que cuenta la verificación) → texto legible. */
@@ -264,7 +267,7 @@ export function BackupsTab() {
           <>
             <Tag tone="muted">No configurado</Tag>
             <span className="text-muted-foreground">
-              Opcional, pero recomendado: guarda una copia cifrada fuera del servidor por si se pierde el disco. Se configura en «Ajustes de copias y Backblaze B2», más abajo, y necesita la copia externa activa y una frase de cifrado (docs/produccion.md).
+              Opcional, pero recomendado: guarda una copia cifrada fuera del servidor por si se pierde el disco. Se configura en «Ajustes de copias y Backblaze B2», más abajo, y necesita la copia externa activa (sube las copias cifradas con la frase de abajo).
             </span>
           </>
         ) : b2 ? (
@@ -287,6 +290,8 @@ export function BackupsTab() {
           <span className="text-muted-foreground">Configurado. El servicio backup-b2 aún no anotó ningún intento; si no cambia en unos minutos, revisa «docker compose logs backup-b2».</span>
         )}
       </div>
+
+      <PassphraseCard source={data.passphrase} totp={totp} />
 
       {requests.data && requests.data.requests.length > 0 && <RequestsTable requests={requests.data.requests} />}
 

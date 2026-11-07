@@ -2,7 +2,7 @@ import { readdir, stat, statfs } from "node:fs/promises";
 import { join } from "node:path";
 import { config } from "../config.js";
 import { sqlOwner } from "../db/client.js";
-import { BACKUP_DIR, BACKUP_STATUS_DIR, readJson, type B2Status, type LocalStatus } from "./backupStatus.js";
+import { BACKUP_DIR, BACKUP_STATUS_DIR, backupPassphrase, readJson, type B2Status, type LocalStatus } from "./backupStatus.js";
 import { configuredProviders } from "./llmProviders.js";
 import { emailEnabled, sendEmail } from "./mailer.js";
 import { b2Configured, setting } from "./settings.js";
@@ -98,6 +98,26 @@ export async function checkOffsite(dir = BACKUP_DIR): Promise<Problem | null> {
   const status = await readJson<LocalStatus>(join(dir, ".estado.json"));
   if (!status?.offsiteError) return null;
   return { key: "backup-offsite", message: `La copia externa no se está guardando: ${status.offsiteError}. Revisa «docker compose logs backup».` };
+}
+
+/**
+ * Con la copia externa activa, la frase que la cifra (y la de B2) tiene que estar guardada fuera del servidor: se avisa
+ * mientras nadie la haya visto en Sistema → Copias (o si cambió de origen desde entonces), y si no se puede leer.
+ */
+export function passphraseProblem(pass: ReturnType<typeof backupPassphrase>, seenSource: string | null): Problem | null {
+  if (!pass) return { key: "backup-passphrase", message: "La copia externa está activa pero no hay frase de cifrado: recrea db con «docker compose up -d db» para que se genere." };
+  if (!pass.value) return { key: "backup-passphrase", message: "La frase de cifrado de las copias no se puede leer (./data/secretos/backup_passphrase debe ser del usuario 1000): B2 no sube nada y la pantalla no puede mostrarla. Recrea db con «docker compose up -d db»." };
+  if (seenSource === pass.source) return null;
+  return { key: "backup-passphrase", message: "La frase que cifra las copias externas y las de B2 aún no se ha guardado: ábrela en Sistema → Copias → «Ver frase» y guárdala en tu gestor de contraseñas. Sin ella, si se pierde el servidor, esas copias no se pueden abrir." };
+}
+
+async function offsiteActive(): Promise<boolean> {
+  return (await readJson<LocalStatus>(join(BACKUP_DIR, ".estado.json")))?.offsite === true;
+}
+
+export async function checkPassphrase(): Promise<Problem | null> {
+  const [seen] = await sqlOwner<{ source: string }[]>`SELECT source FROM secret_views WHERE name = 'backup_passphrase'`;
+  return passphraseProblem(backupPassphrase(), seen?.source ?? null);
 }
 
 /** El modelo no está respondiendo: varios fallos seguidos en los últimos 15 minutos y ninguna respuesta correcta. */
@@ -287,7 +307,8 @@ const CHECKS: Check[] = [
   { id: "disk", run: () => checkDisk(), detail: async () => { const f = await diskFree(); return f ? `${Math.round(f.pct)} % libre` : null; } },
   { id: "queue", run: checkQueue },
   { id: "backup", run: () => checkBackups() },
-  { id: "backup-offsite", run: () => checkOffsite(), off: async () => !(await readJson<LocalStatus>(join(BACKUP_DIR, ".estado.json")))?.offsite },
+  { id: "backup-offsite", run: () => checkOffsite(), off: async () => !(await offsiteActive()) },
+  { id: "backup-passphrase", run: checkPassphrase, off: async () => !(await offsiteActive()) },
   { id: "backup-b2", run: () => checkB2(), off: () => !b2Configured() },
   { id: "llm", run: checkLlm, off: () => configuredProviders().length === 0 },
   {

@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { KeyRound, Loader2, Lock, RotateCcw, Send, Plug } from "lucide-react";
+import { Check, Copy, KeyRound, Loader2, Lock, RotateCcw, Send, Plug, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/api";
 import { InfoHint } from "@/components/common";
@@ -47,6 +47,8 @@ interface SettingsResponse {
   groups: SettingsGroup[];
   /** El usuario tiene 2FA: la reconfirmación pide también el código. */
   reauth?: { totp: boolean };
+  /** El correo saliente funciona (hay servidor) y las alertas tienen destinatarios con los que llegar. */
+  mail?: { enabled: boolean; alerts: boolean };
 }
 
 const KEY = ["system", "settings"] as const;
@@ -60,7 +62,7 @@ const NONE = "__none__";
 export function useSettingsGroups(ids: string[]) {
   const query = useQuery({ queryKey: KEY, queryFn: () => api.get<SettingsResponse>("/system/settings") });
   const groups = query.data ? ids.map((id) => query.data.groups.find((g) => g.id === id)).filter((g): g is SettingsGroup => g !== undefined) : [];
-  return { ...query, groups, totp: query.data?.reauth?.totp ?? false };
+  return { ...query, groups, totp: query.data?.reauth?.totp ?? false, mail: query.data?.mail };
 }
 
 /** ¿Pide la reconfirmación el código de dos pasos? (el usuario lo tiene activo). */
@@ -278,7 +280,7 @@ function ScalarField({ field, draft, onDraft, onReset, busy }: { field: SettingF
 
 const APPLY_NOTE: Record<string, string> = { backup: "Guardado. El servicio de copias lo aplica en unos minutos.", b2: "Guardado. El servicio de B2 lo aplica en unos minutos." };
 
-function GroupForm({ group, totp, extra }: { group: SettingsGroup; totp: boolean; extra?: React.ReactNode }) {
+function GroupForm({ group, totp, extra, status }: { group: SettingsGroup; totp: boolean; extra?: React.ReactNode; status?: React.ReactNode }) {
   const [edited, setEdited] = useState<Record<string, string | boolean>>({});
   const [secret, setSecret] = useState<SettingField | null>(null);
   // Guardado a la espera de la reconfirmación de identidad.
@@ -307,11 +309,14 @@ function GroupForm({ group, totp, extra }: { group: SettingsGroup; totp: boolean
 
   return (
     <>
-      <form onSubmit={submit} className="rounded-xl border bg-card p-4">
+      <form id={`ajustes-${group.id}`} onSubmit={submit} className="scroll-mt-4 rounded-xl border bg-card p-4">
         <div className="mb-4 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1">
-            <h2 className="text-sm font-semibold">{group.title}</h2>
-            {group.description && <InfoHint title={group.title}>{group.description}</InfoHint>}
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <div className="flex items-center gap-1">
+              <h2 className="text-sm font-semibold">{group.title}</h2>
+              {group.description && <InfoHint title={group.title}>{group.description}</InfoHint>}
+            </div>
+            {status}
           </div>
           <Button type="submit" size="sm" disabled={dirty.length === 0 || busy}>
             Guardar
@@ -383,14 +388,55 @@ function LlmTests({ group }: { group: SettingsGroup }) {
 }
 
 /** Formularios de ajustes de los grupos indicados (pestañas Configuración y Copias). */
+const IMPORT_COMMAND = "docker compose exec api node dist/scripts/import-env-settings.js";
+
+/** Aviso cuando hay ajustes fijados en el .env: la orden que los pasa a la base para poder editarlos aquí. */
+function LockedBanner({ count }: { count: number }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(IMPORT_COMMAND);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      toast.error("No se pudo copiar; selecciona la orden y cópiala a mano");
+    }
+  };
+  return (
+    <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm">
+      <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" />
+      <div className="min-w-0 space-y-2">
+        <p className="text-muted-foreground">
+          {count === 1 ? "1 ajuste está fijado" : `${count} ajustes están fijados`} en el archivo de entorno del servidor y no se pueden editar aquí (candado). Para pasarlos a esta pantalla sin perder su valor, ejecuta en el servidor esta orden y luego quita del archivo de entorno las líneas que te indique:
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <code className="rounded border bg-muted px-2 py-1 font-mono text-xs break-all">{IMPORT_COMMAND}</code>
+          <Button type="button" size="sm" variant="outline" onClick={copy}>
+            {copied ? <Check /> : <Copy />} {copied ? "Copiada" : "Copiar"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function SettingsGroups({ ids }: { ids: string[] }) {
-  const { groups, totp, isLoading, isError, error } = useSettingsGroups(ids);
+  const { groups, totp, mail, isLoading, isError, error } = useSettingsGroups(ids);
   if (isLoading) return <Skeleton className="h-48 w-full" />;
   if (isError) return <p className="text-sm text-destructive">{errorMessage(error)}</p>;
+  const locked = groups.reduce((n, g) => n + g.fields.filter((f) => f.lockedByEnv).length, 0);
+  // Estado al lado del título: sin servidor SMTP no sale ningún correo; sin destinatarios, las alertas solo se ven en Sistema.
+  const status = (id: string) => {
+    if (!mail) return undefined;
+    if (id === "email") return mail.enabled ? <Tag tone="ok">Activo</Tag> : <Tag tone="warn">Desactivado: falta el servidor</Tag>;
+    if (id === "alerts" && !mail.alerts) return <Tag tone="warn">{`${mail.enabled ? "Sin destinatarios" : "Sin correo saliente"}: solo en Sistema → Alertas`}</Tag>;
+    return undefined;
+  };
   return (
     <div className="space-y-4">
+      {locked > 0 && <LockedBanner count={locked} />}
       {groups.map((g) => (
-        <GroupForm key={g.id} group={g} totp={totp} extra={g.id === "email" ? <EmailTest /> : g.id === "llm" ? <LlmTests group={g} /> : undefined} />
+        <GroupForm key={g.id} group={g} totp={totp} status={status(g.id)} extra={g.id === "email" ? <EmailTest /> : g.id === "llm" ? <LlmTests group={g} /> : undefined} />
       ))}
     </div>
   );

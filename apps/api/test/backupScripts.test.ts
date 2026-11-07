@@ -655,7 +655,8 @@ describe.concurrent("deploy/b2-sync.sh", { skip: !hasGnuSh }, () => {
 
   it("en el bucle principal, sin credenciales no sale y arranca solo cuando se configuran", async () => {
     const sb = await sandbox();
-    const child = spawn("sh", [`${sb.px}/b2-sync.sh`], { cwd: sb.root, env: sb.env(confFile(sb)), stdio: "ignore" });
+    // Con intervalo (no hora fija) sube nada más arrancar: con la hora fija esperaría a las 04:00.
+    const child = spawn("sh", [`${sb.px}/b2-sync.sh`], { cwd: sb.root, env: sb.env({ ...confFile(sb), B2_INTERVAL_HOURS: "6" }), stdio: "ignore" });
     try {
       const first = await waitFor(async () => {
         const s = await b2State(sb);

@@ -106,6 +106,7 @@ services:
       DATABASE_URL: ""
       APP_DATABASE_URL: ""
       SECRETS_DIR: /secrets
+      BACKUP_ENCRYPTION_PASSPHRASE: ${BACKUP_ENCRYPTION_PASSPHRASE:-}
       EMBEDDINGS_URL: http://embeddings:80
       DOCLING_URL: http://docling:5001
       RERANKER_URL: ${RERANKER_URL-http://reranker:80}
