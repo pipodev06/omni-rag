@@ -158,7 +158,6 @@ services:
     restart: unless-stopped
     ports:
       - "${WEB_BIND:-0.0.0.0}:${WEB_PORT:-8000}:80"
-    networks: [default, proxy_externo]
     depends_on:
       - api
 
@@ -269,9 +268,6 @@ networks:
     internal: true
   docker:
     internal: true
-  proxy_externo:
-    name: ${PROXY_NETWORK:-rag_proxy}
-    external: ${PROXY_EXTERNAL:-false}
 
 configs:
   caddyfile:

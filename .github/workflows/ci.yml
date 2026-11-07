@@ -99,9 +99,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: docker-compose.yml válido (también con la red de un proxy externo y con volúmenes)
+      - name: docker-compose.yml válido (también con los volúmenes de Windows)
         run: |
           cp .env.example .env
           docker compose config --quiet
-          PROXY_NETWORK=proxy PROXY_EXTERNAL=true docker compose config --quiet
           docker compose -f docker-compose.yml -f docker-compose.volumenes.example.yml config --quiet
