@@ -1,24 +1,10 @@
-# =====================================================================
-# Omni RAG — todo el sistema con un solo comando, sin configurar nada antes:
-#     docker compose up -d
-# Luego abre http://localhost:8000 y sigue la configuración inicial (el código de un solo uso sale en
-# «docker compose logs api»). El archivo .env es opcional: solo para fijar valores (ver .env.example).
-# Ver docs/instalacion.md y docs/configuracion-inicial.md.
-# =====================================================================
 name: rag
 
-# DNS de los contenedores que salen a internet (modelos, OpenRouter, SMTP, antivirus, copias). Por defecto Cloudflare y
-# Google, por IPv4: no dependen del DNS del servidor, que a veces es solo IPv6. En una red con DNS propio, cámbialos.
 x-dns: &dns
   - ${DNS_PRIMARY:-1.1.1.1}
   - ${DNS_SECONDARY:-8.8.8.8}
 
 services:
-  # Base de datos: PostgreSQL 17 con pgvector (imagen omni-rag-ops, que parte de pgvector/pgvector:pg17). Antes de
-  # arrancar PostgreSQL prepara el primer arranque (deploy/init-secrets.sh): genera las contraseñas internas y la clave
-  # de las sesiones si no están en el .env, y deja con dueño node las carpetas que escriben la API y el worker.
-  # Va aquí y no en un servicio aparte para que no quede un contenedor parado (Dockge marcaría el stack «finalizado»).
-  # La contraseña de rag_owner sale del .env o de la generada. Solo cuenta al crear la base.
   db:
     image: ghcr.io/pipodev06/omni-rag-ops:${OMNI_RAG_VERSION:-latest}
     build: &ops-build
@@ -33,43 +19,34 @@ services:
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
       - ./data/secretos:/secrets
-      # Carpetas que escribe el usuario node (API y worker): se dejan con su dueño (Docker las crea como root).
       - ./data/uploads:/prepare/uploads
       - ./data/copias-config:/prepare/copias-config
     ports:
-      - "127.0.0.1:${DB_PORT:-15432}:5432" # solo accesible desde esta máquina
+      - "127.0.0.1:${DB_PORT:-15432}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U rag_owner -d rag"]
       interval: 5s
       timeout: 5s
       retries: 20
 
-  # Embeddings locales (gratis, privados, sin límite de uso) con Hugging Face TEI.
   embeddings:
     image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.8
     restart: unless-stopped
     dns: *dns
-    # Lotes de 4096 tokens: misma calidad, ~2,3 GB de RAM en vez de ~3,2 GB.
     command: ["--model-id", "${EMBEDDING_MODEL:-intfloat/multilingual-e5-base}", "--max-batch-tokens", "4096", "--max-client-batch-size", "32"]
-    # Recursos (los calcula deploy/autotune.sh según el hardware; 0 / 1024 = sin límite y peso normal).
-    # Limitar la CPU también reduce la memoria del modelo (~0,2 GB menos por núcleo que no usa).
     cpus: ${EMBEDDINGS_CPUS:-0}
     cpu_shares: ${EMBEDDINGS_CPU_SHARES:-1024}
     mem_limit: ${EMBEDDINGS_MEM_LIMIT:-0}
     volumes:
-      - ./data/modelos:/data # el modelo se descarga una sola vez
+      - ./data/modelos:/data
     ports:
       - "127.0.0.1:${EMBEDDINGS_PORT:-18080}:80"
 
-  # Re-ranker local (cross-encoder multilingüe): reordena los resultados de la
-  # búsqueda leyendo pregunta y fragmento juntos. ~1,6 GB de RAM, ~0,6 s por pregunta en CPU.
-  # Para desactivarlo: RERANKER_URL= (vacío) y RERANKER_REPLICAS=0 en .env.
   reranker:
     image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.8
     restart: unless-stopped
     dns: *dns
     command: ["--model-id", "${RERANKER_MODEL:-cross-encoder/mmarco-mMiniLMv2-L12-H384-v1}", "--max-batch-tokens", "4096", "--max-client-batch-size", "32"]
-    # Recursos (ver deploy/autotune.sh). Pasados los núcleos reales casi no gana velocidad y sí memoria.
     cpus: ${RERANKER_CPUS:-0}
     cpu_shares: ${RERANKER_CPU_SHARES:-1024}
     mem_limit: ${RERANKER_MEM_LIMIT:-0}
@@ -78,25 +55,18 @@ services:
     deploy:
       replicas: ${RERANKER_REPLICAS:-1}
 
-  # Conversión de documentos (PDF, Office, HTML, imágenes con OCR…) a Markdown.
   docling:
     image: quay.io/docling-project/docling-serve-cpu:v1.37.0
     restart: unless-stopped
     dns: *dns
     environment:
-      # Cada conversión simultánea puede usar ~3 GB con PDFs grandes.
-      # 1 = cabe en 8 GB; súbelo solo si tienes RAM de sobra (ver docs/requisitos.md).
       DOCLING_SERVE_ENG_LOC_NUM_WORKERS: ${DOCLING_WORKERS:-1}
       DOCLING_SERVE_MAX_DOCUMENT_TIMEOUT: ${DOCLING_TIMEOUT_SECONDS:-900}
       DOCLING_SERVE_ENABLE_UI: "false"
-    # Recursos (ver deploy/autotune.sh). Si la memoria se agota, el sistema cierra este servicio antes que a los modelos
-    # de búsqueda o a otros contenedores del servidor (oom_score_adj alto).
     cpus: ${DOCLING_CPUS:-0}
     cpu_shares: ${DOCLING_CPU_SHARES:-1024}
     mem_limit: ${DOCLING_MEM_LIMIT:-0}
     oom_score_adj: ${DOCLING_OOM_SCORE_ADJ:-0}
-    # Procesa archivos de usuarios (no confiables): red interna, sin salida a internet
-    # ni acceso a la base de datos. Solo el worker puede hablar con él.
     networks: [ingest]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:5001/health',timeout=5)"]
@@ -105,16 +75,12 @@ services:
       retries: 5
       start_period: 60s
 
-  # Antivirus ClamAV (opcional): la API analiza cada archivo subido y rechaza los infectados.
-  # Se activa con COMPOSE_PROFILES=antivirus y CLAMAV_HOST=clamav en .env. Usa ~2 GB de RAM y descarga
-  # las firmas (~300 MB) al arrancar; por eso necesita salida a internet (no va en la red «ingest»).
   clamav:
     image: clamav/clamav:1.4
     profiles: ["antivirus"]
     restart: unless-stopped
     dns: *dns
     environment:
-      # clamd rechaza por defecto los archivos de más de 25 MB: se sube al máximo de subida + margen.
       CLAMD_CONF_StreamMaxLength: ${CLAMAV_MAX_SIZE:-100M}
       CLAMD_CONF_MaxFileSize: ${CLAMAV_MAX_SIZE:-100M}
     volumes:
@@ -126,9 +92,7 @@ services:
       retries: 5
       start_period: 180s
 
-  # API HTTP (Hono + TypeScript). Aplica migraciones al arrancar.
   api:
-    # Imagen publicada por el CI en GitHub (GHCR). «docker compose pull» la descarga; «up -d --build» la construye aquí.
     image: ghcr.io/pipodev06/omni-rag-api:${OMNI_RAG_VERSION:-latest}
     build:
       context: .
@@ -137,10 +101,8 @@ services:
     dns: *dns
     env_file: &env-file
       - path: .env
-        required: false # opcional: sin él vale todo por defecto y los secretos se generan al arrancar db
+        required: false
     environment: &backend-env
-      # Vacías a propósito: la API las arma con POSTGRES_PASSWORD / APP_DB_PASSWORD del .env o, si no están, con las
-      # generadas en /secrets (config.ts). Así una URL de desarrollo del .env no se cuela en el contenedor.
       DATABASE_URL: ""
       APP_DATABASE_URL: ""
       SECRETS_DIR: /secrets
@@ -150,7 +112,6 @@ services:
       STORAGE_DIR: /data/uploads
       CLAMAV_HOST: ${CLAMAV_HOST:-}
       REQUIRE_SUPERADMIN_2FA: ${REQUIRE_SUPERADMIN_2FA:-auto}
-      # Métricas de los contenedores (pantalla Sistema). Solo el worker llega al proxy (red «docker»); vacío = sin métricas.
       DOCKER_PROXY_URL: ${DOCKER_PROXY_URL-http://docker-proxy:2375}
     volumes:
       - ./data/uploads:/data/uploads
@@ -161,9 +122,7 @@ services:
       db:
         condition: service_healthy
 
-  # Worker: procesa los documentos subidos en segundo plano.
   worker:
-    # Misma imagen que la API.
     image: ghcr.io/pipodev06/omni-rag-api:${OMNI_RAG_VERSION:-latest}
     build:
       context: .
@@ -171,18 +130,14 @@ services:
     restart: unless-stopped
     dns: *dns
     command: ["node", "dist/worker.js"]
-    # Peso de CPU (ver deploy/autotune.sh): la ingesta cede CPU a las búsquedas y a otros servicios si hay competencia.
     cpu_shares: ${WORKER_CPU_SHARES:-1024}
     env_file: *env-file
     environment: *backend-env
     volumes:
       - ./data/uploads:/data/uploads
       - ./data/secretos:/secrets:ro
-      # Solo lectura: el monitor comprueba que las copias de seguridad sean recientes.
       - ./backups:/backups:ro
-      # Solo lectura: estado de la subida a B2 (pantalla Sistema → Copias).
       - ./data/copias-estado:/backup-status:ro
-      # Escribe el archivo de ajustes de B2 con lo guardado en Sistema → Copias (lo lee backup-b2).
       - ./data/copias-config:/backup-config
     security_opt: ["no-new-privileges:true"]
     cap_drop: [ALL]
@@ -195,7 +150,6 @@ services:
       docling:
         condition: service_started
 
-  # Interfaz web (React) servida por nginx, que además redirige /api a la API.
   web:
     image: ghcr.io/pipodev06/omni-rag-web:${OMNI_RAG_VERSION:-latest}
     build:
@@ -203,15 +157,11 @@ services:
       dockerfile: apps/web/Dockerfile
     restart: unless-stopped
     ports:
-      # En producción con Caddy, pon WEB_BIND=127.0.0.1 para que solo se entre por HTTPS.
       - "${WEB_BIND:-0.0.0.0}:${WEB_PORT:-8000}:80"
+    networks: [default, proxy_externo]
     depends_on:
       - api
 
-  # Proxy del socket de Docker para las métricas de la pantalla Sistema. Lista blanca exacta: solo GET a /info,
-  # /containers/json y /containers/<id>/stats|json; cualquier otra ruta o método se rechaza. Solo atiende al worker y
-  # vive en una red interna sin salida a internet. Imagen mínima (sin shell), sin capacidades y de solo lectura.
-  # Docker rootless o Podman: cambia DOCKER_SOCKET. Para no usar root: DOCKER_PROXY_USER=65534:<gid del grupo docker>.
   docker-proxy:
     image: wollomatic/socket-proxy:1.13.1
     restart: unless-stopped
@@ -231,16 +181,12 @@ services:
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
 
-  # Copias de seguridad automáticas en ./backups (base de datos + archivos).
-  # Los horarios y demás ajustes de copias se pueden fijar en el .env o en Sistema → Copias. Las variables llegan vacías
-  # si no están en el .env (solo mandan si no están vacías) y los valores por defecto viven en deploy/backup.sh.
   backup:
     image: ghcr.io/pipodev06/omni-rag-ops:${OMNI_RAG_VERSION:-latest}
     build: *ops-build
     restart: unless-stopped
     entrypoint: ["sh", "/backup.sh"]
     environment:
-      # Vacía = backup.sh usa la generada en /secrets.
       PGPASSWORD: ${POSTGRES_PASSWORD:-}
       BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-}
       BACKUP_AT: ${BACKUP_AT:-}
@@ -254,31 +200,21 @@ services:
       - ./data/secretos:/secrets:ro
       - ./data/uploads:/uploads:ro
       - ./backups:/backups
-      # Carpeta externa (disco, NAS, carpeta sincronizada). Solo se usa con BACKUP_OFFSITE=true.
       - ${BACKUP_OFFSITE_DIR:-backups-offsite}:/offsite
-      # Discos o carpetas entre los que se puede elegir el destino desde Sistema → Copias (BACKUP_TARGETS_DIR).
-      # Sin definirla es una carpeta vacía del proyecto y la pantalla no ofrece cambiar de destino.
       - ${BACKUP_TARGETS_DIR:-backups-targets}:/targets
     depends_on:
       db:
         condition: service_healthy
-    # Corre como root solo para leer /uploads y escribir en discos ajenos: sin el resto de privilegios de root.
-    # DAC_OVERRIDE = leer/escribir archivos de otros usuarios; FOWNER = ajustar fechas y permisos de lo copiado.
     cap_drop: [ALL]
     cap_add: [DAC_OVERRIDE, FOWNER]
     security_opt: ["no-new-privileges:true"]
 
-  # Sube las copias cifradas de la carpeta externa (BACKUP_OFFSITE_DIR o el destino elegido) a Backblaze B2. Siempre en
-  # marcha pero opcional: sin bucket ni claves espera sin hacer nada. Necesita BACKUP_OFFSITE=true y
-  # BACKUP_ENCRYPTION_PASSPHRASE (sin cifrar no sube nada).
-  # Las claves de B2 pueden ir en el .env o guardarse en Sistema → Copias (llegan por /backup-config).
   backup-b2:
     image: ghcr.io/pipodev06/omni-rag-ops:${OMNI_RAG_VERSION:-latest}
     build: *ops-build
     restart: unless-stopped
     dns: *dns
     entrypoint: ["sh", "/b2-sync.sh"]
-    # Después del worker, que escribe en ./data/copias-config los ajustes de B2 guardados en la pantalla.
     depends_on:
       - worker
     environment:
@@ -299,12 +235,9 @@ services:
       - ./data/uploads:/uploads:ro
       - ${BACKUP_OFFSITE_DIR:-backups-offsite}:/offsite:ro
       - ${BACKUP_TARGETS_DIR:-backups-targets}:/targets:ro
-      # Ajustes guardados en Sistema → Copias (los escribe el worker); se releen cada minuto.
       - ./data/copias-config:/backup-config:ro
-      # Estado de la última subida (sin secretos) para la pantalla Sistema → Copias.
       - ./data/copias-estado:/status
 
-  # HTTPS automático (Let's Encrypt). Solo con COMPOSE_PROFILES=https y DOMAIN definido.
   caddy:
     image: caddy:2.11-alpine
     profiles: ["https"]
@@ -324,8 +257,6 @@ services:
     depends_on:
       - web
 
-  # Servidor de correo de PRUEBAS: captura los emails sin enviarlos.
-  # Bandeja en http://localhost:8025. Solo con COMPOSE_PROFILES=correo-pruebas.
   mailpit:
     image: axllent/mailpit:v1.31
     profiles: ["correo-pruebas"]
@@ -334,14 +265,14 @@ services:
       - "127.0.0.1:${MAILPIT_PORT:-8025}:8025"
 
 networks:
-  # Red sin salida a internet donde vive Docling.
   ingest:
     internal: true
-  # Red sin salida a internet entre el worker y el proxy de Docker.
   docker:
     internal: true
+  proxy_externo:
+    name: ${PROXY_NETWORK:-rag_proxy}
+    external: ${PROXY_EXTERNAL:-false}
 
-# Configuración de Caddy (perfil https), aquí mismo para no depender de archivos fuera del compose.
 configs:
   caddyfile:
     content: |
@@ -352,14 +283,10 @@ configs:
           -Server
         }
         reverse_proxy web:80 {
-          # Las respuestas del chat y los avisos en tiempo real llegan en streaming.
           flush_interval -1
         }
       }
 
 volumes:
-  # Los datos viven en ./data (carpetas junto a este archivo, como en cualquier otro servicio): ningún «docker prune»
-  # los toca. Estos dos son solo los destinos por defecto de la copia externa, vacíos mientras no se configuren
-  # BACKUP_OFFSITE_DIR / BACKUP_TARGETS_DIR. En Windows (desarrollo): docker-compose.volumenes.example.yml.
   backups-offsite:
   backups-targets:
