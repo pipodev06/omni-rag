@@ -1,9 +1,9 @@
 #!/bin/sh
 # =====================================================================
 # Primer arranque: genera las contraseñas internas de la base (rag_owner y rag_app) y la clave de las sesiones
-# (JWT_SECRET) si aún no existen, para que Omni RAG arranque sin archivo de entorno. Lo ejecuta el servicio «init»
-# antes que los demás y termina; si los archivos ya están, no cambia nada. Una variable escrita en el archivo de
-# entorno siempre manda sobre ellos.
+# (JWT_SECRET) si aún no existen, para que Omni RAG arranque sin archivo de entorno. Lo ejecuta el servicio db justo
+# antes de iniciar PostgreSQL (los demás servicios esperan a que la base esté lista); si los archivos ya están, no
+# cambia nada. Una variable escrita en el archivo de entorno siempre manda sobre ellos.
 #
 # Se guardan en ./data/secretos. No van en las copias de seguridad:
 # guarda esa carpeta (o sus tres valores) en un lugar seguro, porque sin JWT_SECRET no se pueden leer las claves de API

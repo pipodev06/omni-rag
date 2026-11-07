@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { Activity, BellRing, Cpu, HardDrive, MemoryStick, Server } from "lucide-react";
-import { api, formatBytes, formatDate, timeAgo } from "@/api";
+import { Activity, BellRing, Cpu, MemoryStick, Server } from "lucide-react";
+import { api, formatBytes, formatDate } from "@/api";
 import { cn } from "@/lib/utils";
 import type { ChartSpec } from "@/lib/chartSpec";
 import { ChartFigure } from "@/components/chat/ChartBlock";
@@ -17,9 +17,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface Container {
   name: string;
-  image: string;
   state: string;
-  health: string | null;
   cpuCores: number;
   cpuLimit: number | null;
   cpuShares: number | null;
@@ -27,11 +25,8 @@ interface Container {
   memLimit: number | null;
   restarts: number | null;
   oomKilled: boolean;
-  memPeak24h: number | null;
   memPeak7d: number | null;
-  cpuAvg24h: number | null;
   cpuP95_24h: number | null;
-  cpuMax24h: number | null;
   historyHours: number;
   alerts: string[];
 }
@@ -51,6 +46,7 @@ interface Resources {
     webSearch: string | null;
   };
   autotune: { service: string; cpus: string | null; memLimit: string | null; cpuShares: string | null }[];
+  openAlerts: number;
   containers: Container[];
 }
 
@@ -106,9 +102,14 @@ function AutotuneCell({ c, autotune }: { c: Container; autotune: Resources["auto
   );
 }
 
-/** Uso frente a tope: barra con el pico y el valor actual en texto. */
-function UsageCell({ now, peak, limit, format, peakLabel }: { now: number; peak: number | null; limit: number | null; format: (n: number) => string; peakLabel: string }) {
-  const pct = limit && peak !== null ? Math.min(100, (peak / limit) * 100) : null;
+/**
+ * Uso frente a tope: valor actual en texto y una barra con el pico (p95 de 24 h en CPU, máximo de 7 días en RAM). Sin
+ * tope, la barra se compara con el total del servidor. El pico se ve al pasar el ratón por la barra.
+ */
+function UsageCell({ now, peak, limit, total, format, peakLabel }: { now: number; peak: number | null; limit: number | null; total: number | null; format: (n: number) => string; peakLabel: string }) {
+  const base = limit ?? total;
+  const value = peak ?? now;
+  const pct = base ? Math.min(100, (value / base) * 100) : null;
   return (
     <div className="min-w-40 space-y-1">
       <div className="flex items-baseline justify-between gap-2 font-mono text-xs tabular-nums">
@@ -116,14 +117,9 @@ function UsageCell({ now, peak, limit, format, peakLabel }: { now: number; peak:
         <span className="text-muted-foreground">/ {limit ? format(limit) : "sin tope"}</span>
       </div>
       {pct !== null && (
-        <div className="h-1.5 overflow-hidden rounded-full bg-muted" title={`${peakLabel}: ${format(peak!)} (${Math.round(pct)} % del tope)`}>
-          <div className={cn("h-full rounded-full", pct >= 90 ? "bg-destructive" : pct >= 75 ? "bg-warning" : "bg-primary")} style={{ width: `${pct}%` }} />
+        <div className="h-1.5 overflow-hidden rounded-full bg-muted" title={`${peakLabel}: ${format(value)} (${Math.round(pct)} % ${limit ? "del tope" : "del servidor"})`}>
+          <div className={cn("h-full rounded-full", !limit ? "bg-muted-foreground/40" : pct >= 90 ? "bg-destructive" : pct >= 75 ? "bg-warning" : "bg-primary")} style={{ width: `${Math.max(pct, 1)}%` }} />
         </div>
-      )}
-      {peak !== null && (
-        <p className="font-mono text-xs text-muted-foreground tabular-nums">
-          {peakLabel}: {format(peak)}
-        </p>
       )}
     </div>
   );
@@ -146,8 +142,7 @@ function NotCollecting({ collecting }: { collecting: boolean }) {
 function ResourcesTab() {
   const { data, isLoading } = useQuery({ queryKey: ["system", "resources"], queryFn: () => api.get<Resources>("/system/resources"), refetchInterval: 60_000 });
   if (isLoading || !data) return <Skeleton className="h-64 w-full" />;
-  const memAssigned = data.containers.reduce((s, c) => s + (c.memLimit ?? 0), 0);
-  const unlimited = data.containers.filter((c) => !c.memLimit).length;
+  const running = data.containers.filter((c) => c.state === "running").length;
   const memUsed = data.containers.reduce((s, c) => s + c.memBytes, 0);
   const cpuUsed = data.containers.reduce((s, c) => s + c.cpuCores, 0);
   const st = data.stack;
@@ -166,10 +161,10 @@ function ResourcesTab() {
   return (
     <>
       <div className="mb-4 grid shrink-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Tile icon={Server} label="Servidor" value={data.host ? `${formatBytes(data.host.memBytes)} · ${data.host.cpus} núcl.` : "—"} hint={data.host ? `Kernel ${data.host.kernel}` : undefined} />
-        <Tile icon={MemoryStick} label="RAM con tope (Omni RAG)" value={formatBytes(memAssigned)} hint={`${data.host ? `${Math.round((memAssigned / data.host.memBytes) * 100)} % del servidor · ` : ""}${unlimited} contenedor(es) sin tope`} />
-        <Tile icon={HardDrive} label="RAM en uso (Omni RAG)" value={formatBytes(memUsed)} hint={data.host ? `${Math.round((memUsed / data.host.memBytes) * 100)} % del total` : undefined} />
-        <Tile icon={Cpu} label="CPU en uso" value={`${cores(cpuUsed)} núcl.`} hint={data.sampledAt ? `Muestra ${timeAgo(data.sampledAt)}` : undefined} />
+        <Tile icon={MemoryStick} label="RAM en uso" value={`${formatBytes(memUsed)}${data.host ? ` / ${formatBytes(data.host.memBytes)}` : ""}`} />
+        <Tile icon={Cpu} label="CPU en uso" value={`${cores(cpuUsed)}${data.host ? ` / ${data.host.cpus}` : ""} núcl.`} />
+        <Tile icon={Server} label="Contenedores en marcha" value={`${running} / ${data.containers.length}`} />
+        <Tile icon={BellRing} label="Alertas abiertas" value={String(data.openAlerts)} />
       </div>
       <dl className="mb-4 flex shrink-0 flex-wrap gap-x-5 gap-y-1 text-xs">
         {stack.map(([k, v]) => (
@@ -199,15 +194,12 @@ function ResourcesTab() {
                 <TableRow key={c.name}>
                   <TableCell className="pl-4">
                     <p className="font-medium">{c.name}</p>
-                    <p className="max-w-56 truncate font-mono text-xs text-muted-foreground" title={c.image}>
-                      {c.image}
-                    </p>
                   </TableCell>
                   <TableCell>
-                    <UsageCell now={c.cpuCores} peak={c.cpuP95_24h} limit={c.cpuLimit} format={cores} peakLabel="p95 24 h" />
+                    <UsageCell now={c.cpuCores} peak={c.cpuP95_24h} limit={c.cpuLimit} total={data.host?.cpus ?? null} format={cores} peakLabel="Uso alto habitual (p95 de 24 h)" />
                   </TableCell>
                   <TableCell>
-                    <UsageCell now={c.memBytes} peak={c.memPeak7d} limit={c.memLimit} format={formatBytes} peakLabel="Pico 7 días" />
+                    <UsageCell now={c.memBytes} peak={c.memPeak7d} limit={c.memLimit} total={data.host?.memBytes ?? null} format={formatBytes} peakLabel="Pico de 7 días" />
                   </TableCell>
                   <TableCell className="hidden xl:table-cell">
                     <AutotuneCell c={c} autotune={data.autotune} />

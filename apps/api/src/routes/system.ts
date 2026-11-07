@@ -38,10 +38,10 @@ systemRoutes.get("/resources", async (c) => {
     sqlOwner<{ at: Date; info: HostInfo }[]>`SELECT at, info FROM host_snapshot WHERE id = 1`,
     sqlOwner<
       {
-        name: string; image: string; state: string; health: string | null; at: Date;
+        name: string; state: string; at: Date;
         cpu_cores: number; cpu_limit: number | null; cpu_shares: number | null; mem_bytes: number; mem_limit: number | null;
         restarts: number | null; oom_killed: boolean;
-        mem_peak_24h: number | null; mem_peak_7d: number | null; cpu_avg_24h: number | null; cpu_p95_24h: number | null; cpu_max_24h: number | null;
+        mem_peak_7d: number | null; cpu_p95_24h: number | null;
         first_at: Date;
       }[]
     >`
@@ -50,24 +50,21 @@ systemRoutes.get("/resources", async (c) => {
          WHERE at > now() - interval '5 minutes' ORDER BY name, at DESC
       ), agg AS (
         SELECT name,
-               max(mem_bytes) FILTER (WHERE at > now() - interval '24 hours')::float8 AS mem_peak_24h,
                max(mem_bytes)::float8 AS mem_peak_7d,
-               avg(cpu_cores) FILTER (WHERE at > now() - interval '24 hours')::float8 AS cpu_avg_24h,
                (percentile_cont(0.95) WITHIN GROUP (ORDER BY cpu_cores) FILTER (WHERE at > now() - interval '24 hours'))::float8 AS cpu_p95_24h,
-               max(cpu_cores) FILTER (WHERE at > now() - interval '24 hours')::float8 AS cpu_max_24h,
                min(at) AS first_at
           FROM container_samples WHERE at > now() - interval '7 days' AND state = 'running'
          GROUP BY name
       )
-      SELECT l.name, l.image, l.state, l.health, l.at, l.cpu_cores, l.cpu_limit, l.cpu_shares,
+      SELECT l.name, l.state, l.at, l.cpu_cores, l.cpu_limit, l.cpu_shares,
              l.mem_bytes::float8 AS mem_bytes, l.mem_limit::float8 AS mem_limit, l.restarts, l.oom_killed,
-             a.mem_peak_24h, a.mem_peak_7d, a.cpu_avg_24h, a.cpu_p95_24h, a.cpu_max_24h, coalesce(a.first_at, l.at) AS first_at
+             a.mem_peak_7d, a.cpu_p95_24h, coalesce(a.first_at, l.at) AS first_at
         FROM last l LEFT JOIN agg a USING (name)
        ORDER BY l.name`,
-    sqlOwner<{ key: string }[]>`SELECT key FROM alert_state WHERE key LIKE 'container:%'`,
+    sqlOwner<{ key: string }[]>`SELECT key FROM alert_state`,
   ]);
 
-  const openAlerts = (name: string) => alerts.filter((a) => a.key.startsWith(`container:${name}:`)).map((a) => a.key.split(":")[2]!);
+  const containerAlerts = (name: string) => alerts.filter((a) => a.key.startsWith(`container:${name}:`)).map((a) => a.key.split(":")[2]!);
   return c.json({
     collecting: Boolean(config.DOCKER_PROXY_URL),
     sampledAt: host?.at ?? null,
@@ -83,11 +80,11 @@ systemRoutes.get("/resources", async (c) => {
       webSearch: setting("WEB_SEARCH_PROVIDER") || null,
     },
     autotune: autotuneValues(),
+    /** Todas las alertas abiertas del monitor (copias, disco, modelos, contenedores…), para la tarjeta de arriba. */
+    openAlerts: alerts.length,
     containers: containers.map((r) => ({
       name: r.name,
-      image: r.image,
       state: r.state,
-      health: r.health,
       cpuCores: r.cpu_cores,
       cpuLimit: r.cpu_limit,
       cpuShares: r.cpu_shares,
@@ -95,14 +92,11 @@ systemRoutes.get("/resources", async (c) => {
       memLimit: r.mem_limit,
       restarts: r.restarts,
       oomKilled: r.oom_killed,
-      memPeak24h: r.mem_peak_24h,
       memPeak7d: r.mem_peak_7d,
-      cpuAvg24h: r.cpu_avg_24h,
       cpuP95_24h: r.cpu_p95_24h,
-      cpuMax24h: r.cpu_max_24h,
       /** Horas de historial: con menos de 24 h el veredicto aún no es fiable. */
       historyHours: Math.round((Date.now() - new Date(r.first_at).getTime()) / 36e5),
-      alerts: openAlerts(r.name),
+      alerts: containerAlerts(r.name),
     })),
   });
 });

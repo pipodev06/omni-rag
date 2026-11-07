@@ -181,7 +181,7 @@ function withoutInvalidEmpty(env: NodeJS.ProcessEnv): Record<string, string | un
   return out;
 }
 
-/** Secretos que el servicio `init` genera en el primer arranque (deploy/init-secrets.sh), con su archivo. */
+/** Secretos que se generan en el primer arranque (deploy/init-secrets.sh, al arrancar db), con su archivo. */
 const GENERATED_SECRETS = { POSTGRES_PASSWORD: "postgres_password", APP_DB_PASSWORD: "app_db_password", JWT_SECRET: "jwt_secret" } as const;
 
 /**

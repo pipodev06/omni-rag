@@ -14,38 +14,28 @@ x-dns: &dns
   - ${DNS_SECONDARY:-8.8.8.8}
 
 services:
-  # Primer arranque: genera las contraseñas internas y la clave de las sesiones si no están en el .env (ver
-  # deploy/init-secrets.sh) y termina. Los demás servicios esperan a que acabe.
-  init:
+  # Base de datos: PostgreSQL 17 con pgvector (imagen omni-rag-ops, que parte de pgvector/pgvector:pg17). Antes de
+  # arrancar PostgreSQL prepara el primer arranque (deploy/init-secrets.sh): genera las contraseñas internas y la clave
+  # de las sesiones si no están en el .env, y deja con dueño node las carpetas que escriben la API y el worker.
+  # Va aquí y no en un servicio aparte para que no quede un contenedor parado (Dockge marcaría el stack «finalizado»).
+  # La contraseña de rag_owner sale del .env o de la generada. Solo cuenta al crear la base.
+  db:
     image: ghcr.io/pipodev06/omni-rag-ops:${OMNI_RAG_VERSION:-latest}
     build: &ops-build
       context: .
       dockerfile: deploy/ops.Dockerfile
-    restart: "no"
-    entrypoint: ["sh", "/init-secrets.sh"]
-    network_mode: none
-    volumes:
-      - ./data/secretos:/secrets
-      # Carpetas que escribe el usuario node (API y worker): init las deja con su dueño (Docker las crea como root).
-      - ./data/uploads:/prepare/uploads
-      - ./data/copias-config:/prepare/copias-config
-
-  # Base de datos: PostgreSQL 17 con la extensión pgvector.
-  db:
-    image: pgvector/pgvector:pg17
     restart: unless-stopped
-    # La contraseña de rag_owner sale del .env o, si no está, de la generada por «init». Solo cuenta al crear la base.
-    entrypoint: ["sh", "-c", "export POSTGRES_PASSWORD=\"$${POSTGRES_PASSWORD:-$$(cat /secrets/postgres_password)}\"; exec docker-entrypoint.sh postgres"]
+    entrypoint: ["sh", "-c", "sh /init-secrets.sh && export POSTGRES_PASSWORD=\"$${POSTGRES_PASSWORD:-$$(cat /secrets/postgres_password)}\" && exec docker-entrypoint.sh postgres"]
     environment:
       POSTGRES_USER: rag_owner
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
       POSTGRES_DB: rag
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
-      - ./data/secretos:/secrets:ro
-    depends_on:
-      init:
-        condition: service_completed_successfully
+      - ./data/secretos:/secrets
+      # Carpetas que escribe el usuario node (API y worker): se dejan con su dueño (Docker las crea como root).
+      - ./data/uploads:/prepare/uploads
+      - ./data/copias-config:/prepare/copias-config
     ports:
       - "127.0.0.1:${DB_PORT:-15432}:5432" # solo accesible desde esta máquina
     healthcheck:
@@ -147,7 +137,7 @@ services:
     dns: *dns
     env_file: &env-file
       - path: .env
-        required: false # opcional: sin él vale todo por defecto y los secretos los genera «init»
+        required: false # opcional: sin él vale todo por defecto y los secretos se generan al arrancar db
     environment: &backend-env
       # Vacías a propósito: la API las arma con POSTGRES_PASSWORD / APP_DB_PASSWORD del .env o, si no están, con las
       # generadas en /secrets (config.ts). Así una URL de desarrollo del .env no se cuela en el contenedor.

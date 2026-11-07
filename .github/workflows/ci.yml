@@ -42,7 +42,7 @@ jobs:
         run: pnpm build
 
   # Construye las imágenes en cada push. Desde main (o una etiqueta v1.2.3) y con las pruebas en verde, las publica en
-  # GitHub (ghcr.io/pipodev06/omni-rag-api, omni-rag-web y omni-rag-ops, la de init/backup/backup-b2), que es de donde
+  # GitHub (ghcr.io/pipodev06/omni-rag-api, omni-rag-web y omni-rag-ops, la de db, backup y backup-b2), que es de donde
   # las descarga «docker compose pull».
   #   main   → :latest y :sha-<commit>
   #   v1.2.3 → :1.2.3 y :1.2 (para fijar una versión con OMNI_RAG_VERSION)

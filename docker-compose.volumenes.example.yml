@@ -6,15 +6,12 @@
 # Los nombres coinciden con los de las versiones anteriores (rag_pgdata, rag_uploads…): una instalación de desarrollo
 # que ya tenía datos los sigue viendo. Ojo: en volúmenes, «docker volume prune» los borra si no hay contenedores.
 services:
-  init:
-    volumes:
-      - secrets:/secrets
-      - uploads:/prepare/uploads
-      - backup-config:/prepare/copias-config
   db:
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - secrets:/secrets:ro
+      - secrets:/secrets
+      - uploads:/prepare/uploads
+      - backup-config:/prepare/copias-config
   embeddings:
     volumes:
       - hf-cache:/data
