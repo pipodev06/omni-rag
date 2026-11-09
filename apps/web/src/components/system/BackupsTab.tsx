@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArchiveRestore, CalendarClock, ChevronDown, CloudUpload, DatabaseBackup, FolderInput, HardDrive, Loader2, Play, Settings2, ShieldCheck, Trash2, TriangleAlert } from "lucide-react";
+import { ArchiveRestore, CalendarClock, ChevronDown, CloudUpload, DatabaseBackup, FolderInput, HardDrive, Loader2, Play, Settings2, ShieldCheck, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage, formatBytes, formatDate, timeAgo } from "@/api";
 import { cn } from "@/lib/utils";
@@ -174,19 +174,14 @@ export function BackupsTab() {
         <Button size="sm" onClick={() => run.mutate()} disabled={busy}>
           {busy ? <Loader2 className="animate-spin" /> : <Play />} Hacer copia ahora
         </Button>
-        <Button size="sm" variant="outline" onClick={() => setDestOpen(true)} disabled={!targets || requests.pending}>
-          <FolderInput /> Cambiar destino
-        </Button>
+        {/* Botón desactivado no muestra title: lo lleva el span (sin BACKUP_TARGETS_DIR no hay carpetas que elegir). */}
+        <span title={targets ? undefined : "Para elegir otro disco o carpeta, define BACKUP_TARGETS_DIR en el servidor (docs/operacion.md)"}>
+          <Button size="sm" variant="outline" onClick={() => setDestOpen(true)} disabled={!targets || requests.pending}>
+            <FolderInput /> Cambiar destino
+          </Button>
+        </span>
         <span className="font-mono text-xs text-muted-foreground">Destino: {destination || "carpeta clásica (./offsite)"}</span>
       </div>
-      {!targets && (
-        <div className="mb-4 flex shrink-0 items-start gap-2 rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm">
-          <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" />
-          <p className="text-muted-foreground">
-            Para elegir aquí otro disco o carpeta, el servidor debe indicar una vez qué carpeta pueden usar las copias, porque un contenedor solo ve las carpetas que se le dan al arrancar (por seguridad, nunca el disco entero). Escribe en el archivo de entorno <span className="font-mono text-xs">BACKUP_TARGETS_DIR=/mnt</span> (o la carpeta donde se montan tus discos, p. ej. <span className="font-mono text-xs">/media/usuario</span>) y aplica con «docker compose up -d». Desde ese momento, los discos y carpetas de dentro se eligen con «Cambiar destino». Si ya lo hiciste, espera un minuto: el servicio de copias revisa los destinos cada 5 minutos.
-          </p>
-        </div>
-      )}
       <div className="mb-4 grid shrink-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Tile icon={DatabaseBackup} label="Última copia" value={last ? timeAgo(last.at) : "Ninguna"} hint={last ? `${formatDate(last.at)} · ${formatBytes(last.dbBytes + (last.uploadsBytes ?? 0))}` : undefined} />
         <Tile
