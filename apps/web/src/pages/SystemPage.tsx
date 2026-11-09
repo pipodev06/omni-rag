@@ -272,7 +272,7 @@ function MetricsTab() {
 const CHECK_LABELS: Record<string, string> = {
   disk: "Disco",
   queue: "Cola de documentos",
-  backup: "Copias",
+  backup: "Copias automáticas",
   "backup-offsite": "Copia externa",
   "backup-passphrase": "Frase de cifrado guardada",
   "backup-b2": "Backblaze B2",

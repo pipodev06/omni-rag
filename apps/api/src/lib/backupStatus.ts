@@ -23,6 +23,8 @@ const MAX_COPIES = 30;
 export interface LocalStatus {
   attemptAt: string;
   ok: boolean;
+  /** Copias programadas activas (BACKUP_ENABLED); ausente en estados de versiones anteriores = sí. */
+  auto?: boolean;
   error: string;
   counts: string;
   at: string;

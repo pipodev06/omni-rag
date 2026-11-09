@@ -289,6 +289,16 @@ describe.concurrent("deploy/backup.sh --once (copia con pg_dump y rclone falsos)
     expect(await every6.json<{ at: string; intervalHours: number }>("backups", ".estado.json")).toMatchObject({ at: "", intervalHours: 6 });
   }, T);
 
+  it("con las copias automáticas apagadas, el estado lo dice y no anuncia próxima copia (la manual sí se hace)", async () => {
+    const sb = await sandbox();
+    await sb.settings({ BACKUP_ENABLED: "false" });
+    expect((await sb.run("backup.sh", ["--once"], { BACKUP_UPLOADS_TGZ: "false" })).code).toBe(0);
+    expect(await sb.json<{ auto: boolean; nextAt: string; ok: boolean }>("backups", ".estado.json")).toMatchObject({ auto: false, nextAt: "", ok: true });
+    const on = await sandbox();
+    expect((await on.run("backup.sh", ["--once"], { BACKUP_UPLOADS_TGZ: "false" })).code).toBe(0);
+    expect((await on.json<{ auto: boolean }>("backups", ".estado.json")).auto).toBe(true);
+  }, T);
+
   it("pg_dump falla: sin db_*.dump, ni temporales, estado con error y sin copia externa", async () => {
     const sb = await sandbox();
     const r = await sb.run("backup.sh", ["--once"], { BACKUP_OFFSITE: "true", BACKUP_UPLOADS_TGZ: "false", STUB_PGDUMP_FAIL: "1" });

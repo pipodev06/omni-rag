@@ -159,6 +159,7 @@ export const GROUPS: Group[] = [
     title: "Copias de seguridad",
     description: "Frecuencia, retención y destino de las copias locales y externas.",
     fields: [
+      { key: "BACKUP_ENABLED", label: "Copias automáticas", help: "Desactivado: no se hacen copias programadas; «Hacer copia ahora» sigue funcionando.", type: "boolean", fallback: true, restartNote: COPIES_NOTE },
       { key: "BACKUP_AT", label: "Hora de la copia diaria", help: "Formato HH:MM (24 h). No se usa si el intervalo es distinto de 24 h.", type: "time", fallback: "03:00", restartNote: COPIES_NOTE },
       { key: "BACKUP_INTERVAL_HOURS", label: "Intervalo entre copias", help: "24 = una copia al día a la hora fijada. Otro valor: una copia cada N horas, contadas desde la última.", type: "number", min: 1, max: 720, step: 1, int: true, unit: "h", fallback: 24, restartNote: COPIES_NOTE },
       { key: "BACKUP_KEEP_DAYS", label: "Retención", help: "Días que se conservan las copias (mínimo 3).", type: "number", min: 3, max: 3650, step: 1, int: true, unit: "días", fallback: 7, restartNote: COPIES_NOTE },

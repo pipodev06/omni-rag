@@ -306,7 +306,7 @@ const noProxy = () => !config.DOCKER_PROXY_URL;
 const CHECKS: Check[] = [
   { id: "disk", run: () => checkDisk(), detail: async () => { const f = await diskFree(); return f ? `${Math.round(f.pct)} % libre` : null; } },
   { id: "queue", run: checkQueue },
-  { id: "backup", run: () => checkBackups() },
+  { id: "backup", run: () => checkBackups(), off: async () => (await readJson<LocalStatus>(join(BACKUP_DIR, ".estado.json")))?.auto === false },
   { id: "backup-offsite", run: () => checkOffsite(), off: async () => !(await offsiteActive()) },
   { id: "backup-passphrase", run: checkPassphrase, off: async () => !(await offsiteActive()) },
   { id: "backup-b2", run: () => checkB2(), off: () => !b2Configured() },

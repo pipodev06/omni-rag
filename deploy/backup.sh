@@ -5,6 +5,8 @@
 #     el contenedor solo se hace copia si la última tiene más de 24 h (el servidor estuvo apagado o parado a esa hora).
 #   - Con BACKUP_INTERVAL_HOURS distinto de 24, una copia cada N horas contadas desde la última (BACKUP_AT no se usa).
 #     Reiniciar el contenedor no adelanta la copia.
+#   - Con BACKUP_ENABLED=false no se hacen copias programadas (ni la de recuperación al arrancar); las órdenes de la
+#     pantalla («Hacer copia ahora», borrar, cambiar destino) siguen funcionando.
 #   - Se conservan BACKUP_KEEP_DAYS días (por defecto 7).
 #   - Se guardan en la carpeta ./backups del proyecto.
 # Copia inmediata:  docker compose exec backup sh /backup.sh --once
@@ -77,7 +79,7 @@ valid_path() {
 }
 
 load_settings() {
-  if psql_q -c "SELECT key || E'\t' || (value #>> '{}') FROM settings WHERE value IS NOT NULL AND key IN ('BACKUP_AT','BACKUP_INTERVAL_HOURS','BACKUP_KEEP_DAYS','BACKUP_TZ','BACKUP_UPLOADS_TGZ','BACKUP_OFFSITE','BACKUP_DESTINATION')" > "$SETTINGS.new" 2>/dev/null; then
+  if psql_q -c "SELECT key || E'\t' || (value #>> '{}') FROM settings WHERE value IS NOT NULL AND key IN ('BACKUP_ENABLED','BACKUP_AT','BACKUP_INTERVAL_HOURS','BACKUP_KEEP_DAYS','BACKUP_TZ','BACKUP_UPLOADS_TGZ','BACKUP_OFFSITE','BACKUP_DESTINATION')" > "$SETTINGS.new" 2>/dev/null; then
     mv "$SETTINGS.new" "$SETTINGS"
   else
     rm -f "$SETTINGS.new" # sin base (o sin tabla todavía): se conservan los últimos valores leídos
@@ -86,6 +88,7 @@ load_settings() {
   set_uint KEEP_DAYS BACKUP_KEEP_DAYS "${BACKUP_KEEP_DAYS:-}" 7
   set_bool UPLOADS_TGZ BACKUP_UPLOADS_TGZ "${BACKUP_UPLOADS_TGZ:-}" true
   set_bool OFFSITE_ON BACKUP_OFFSITE "${BACKUP_OFFSITE:-}" false
+  set_bool AUTO_ON BACKUP_ENABLED "${BACKUP_ENABLED:-}" true
   raw BACKUP_AT "${BACKUP_AT:-}"
   if valid_at "$PICKED"; then AT="$PICKED"; elif [ -z "$PICKED" ]; then AT="03:00"; else bad BACKUP_AT; AT="03:00"; fi
   # Un intervalo distinto de 24 h manda sobre la hora fija: una copia cada N horas.
@@ -218,8 +221,9 @@ DEST_DEV_FOR=$(status_field destination)
 save_status() {
   ok=true; [ -z "$LAST_ERROR" ] || ok=false
   encrypted=false; [ -z "${BACKUP_ENCRYPTION_PASSPHRASE:-}" ] || encrypted=true
-  printf '{"attemptAt":"%s","ok":%s,"error":"%s","counts":"%s","at":"%s","intervalHours":%s,"nextAt":"%s","offsite":%s,"encrypted":%s,"keepDays":%s,"offsiteError":"%s","destination":"%s","destDevice":"%s"}\n' \
-    "$ATTEMPT_AT" "$ok" "$(jstr "$LAST_ERROR")" "$(jstr "$COUNTS")" "$AT" "$INTERVAL_HOURS" "$NEXT_AT" \
+  next="$NEXT_AT"; [ "$AUTO_ON" = "true" ] || next=""
+  printf '{"attemptAt":"%s","ok":%s,"error":"%s","counts":"%s","auto":%s,"at":"%s","intervalHours":%s,"nextAt":"%s","offsite":%s,"encrypted":%s,"keepDays":%s,"offsiteError":"%s","destination":"%s","destDevice":"%s"}\n' \
+    "$ATTEMPT_AT" "$ok" "$(jstr "$LAST_ERROR")" "$(jstr "$COUNTS")" "$([ "$AUTO_ON" = "true" ] && echo true || echo false)" "$AT" "$INTERVAL_HOURS" "$next" \
     "$([ "$OFFSITE_ON" = "true" ] && echo true || echo false)" "$encrypted" "$KEEP_DAYS" \
     "$(jstr "$OFFSITE_ERROR")" "$(jstr "$DEST_REL")" "$(jstr "$DEST_DEVICE")" > "$STATUS.tmp" && mv "$STATUS.tmp" "$STATUS" || true
 }
@@ -491,7 +495,7 @@ load_settings
 # El intervalo cuenta desde la copia más reciente que hay en la carpeta: reiniciar el contenedor no hace otra copia.
 NEWEST=$(ls -t "$DEST"/db_*.dump 2>/dev/null | head -n 1 || true)
 [ -z "$NEWEST" ] || LAST_RUN=$(stat -c %Y "$NEWEST" 2>/dev/null || echo 0)
-if [ -n "$AT" ]; then
+if [ -n "$AT" ] && [ "$AUTO_ON" = "true" ]; then
   # Si el servidor no estaba en marcha a la hora fijada, la copia de ese día se hace ahora.
   if [ -z "$(find "$DEST" -maxdepth 1 -name 'db_*.dump' -mmin -1440 2>/dev/null)" ]; then
     echo "[backup] la última copia tiene más de 24 h (o no hay ninguna): se hace una ahora"
@@ -503,13 +507,14 @@ fi
 SIG=""
 while true; do
   tick || true
-  new_sig="$AT|$INTERVAL_HOURS|$TZ_EFF"
+  new_sig="$AUTO_ON|$AT|$INTERVAL_HOURS|$TZ_EFF"
   if [ "$new_sig" != "$SIG" ]; then
     SIG="$new_sig"; schedule_next
-    if [ -n "$AT" ]; then echo "[backup] próxima copia a las $AT (hora local; ahora son $(TZ="$TZ_EFF" date +%H:%M)), dentro de $(( (NEXT_EPOCH - $(date +%s)) / 60 )) min"
+    if [ "$AUTO_ON" != "true" ]; then echo "[backup] copias automáticas desactivadas (BACKUP_ENABLED=false): solo las de la pantalla"
+    elif [ -n "$AT" ]; then echo "[backup] próxima copia a las $AT (hora local; ahora son $(TZ="$TZ_EFF" date +%H:%M)), dentro de $(( (NEXT_EPOCH - $(date +%s)) / 60 )) min"
     else echo "[backup] una copia cada $INTERVAL_HOURS h"; fi
   fi
-  if [ "$(date +%s)" -ge "$NEXT_EPOCH" ]; then
+  if [ "$AUTO_ON" = "true" ] && [ "$(date +%s)" -ge "$NEXT_EPOCH" ]; then
     backup || echo "[backup] ERROR en la copia (se reintentará en el próximo ciclo)"
     LAST_RUN=$(date +%s)
     schedule_next

@@ -24,7 +24,7 @@ interface Backups {
     copies: { stamp: string; at: string; dbBytes: number; uploadsBytes: number | null }[];
     totalBytes: number;
     failed: number;
-    local: { attemptAt: string; ok: boolean; error: string; counts: string; at: string; intervalHours: number; nextAt: string; offsite: boolean; encrypted: boolean; keepDays: number } | null;
+    local: { attemptAt: string; ok: boolean; error: string; counts: string; auto?: boolean; at: string; intervalHours: number; nextAt: string; offsite: boolean; encrypted: boolean; keepDays: number } | null;
     targets: BackupTargets | null;
     destination: string;
     /** Bucket y claves de B2 guardados (en la pantalla o en el entorno). Sin ellos B2 está «no configurado», no fallando. */
@@ -163,8 +163,7 @@ export function BackupsTab() {
   const busy = run.isPending || requests.pending;
   // La más reciente no se borra (siempre queda al menos una).
   const deletable = info.copies.slice(1);
-  // Sin copia externa (B2 la necesita) todas las copias viven en el mismo disco que los datos.
-  const onlyHere = local !== null && !local.offsite;
+  const offsiteOn = local?.offsite === true;
 
   return (
     <div className="relative min-h-0 flex-1 overflow-y-auto pr-3">
@@ -192,13 +191,19 @@ export function BackupsTab() {
           value={local ? (local.ok ? "Correcto" : "Falló") : "—"}
           hint={local ? (local.ok ? (describeCounts(local.counts) ?? "Restaurada en una base de prueba") : local.error) : "backup.sh aún no anotó ningún intento"}
         />
-        <Tile icon={CalendarClock} label="Próxima copia" value={local?.nextAt ? formatDate(local.nextAt) : "—"} hint={local ? `${schedule(local.at, local.intervalHours)} · se guardan ${local.keepDays} días` : undefined} />
+        {local?.auto === false ? (
+          <Tile icon={CalendarClock} label="Próxima copia" value="Desactivada" warn hint="Copias automáticas apagadas en «Ajustes»: solo «Hacer copia ahora»." />
+        ) : (
+          <Tile icon={CalendarClock} label="Próxima copia" value={local?.nextAt ? formatDate(local.nextAt) : "—"} hint={local ? `${schedule(local.at, local.intervalHours)} · se guardan ${local.keepDays} días` : undefined} />
+        )}
+        {/* Fuera del servidor, B2 y frase solo importan con la copia externa activa (B2 sube desde ella). */}
+        {offsiteOn && (
+          <>
         <Tile
           icon={HardDrive}
           label="Fuera del servidor"
           value={offsite}
-          warn={onlyHere}
-          hint={onlyHere ? "Si se pierde el disco, se pierden también las copias. Actívala en «Ajustes»." : `${info.copies.length} copia(s) · ${formatBytes(info.totalBytes)} en ./backups`}
+          hint={`${info.copies.length} copia(s) · ${formatBytes(info.totalBytes)} en ./backups`}
         />
         <Tile
           icon={CloudUpload}
@@ -216,6 +221,8 @@ export function BackupsTab() {
           }
         />
         <PassphraseTile source={data.passphrase} totp={totp} />
+          </>
+        )}
       </div>
 
       {info.copies.length === 0 ? (

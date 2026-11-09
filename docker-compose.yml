@@ -188,6 +188,7 @@ services:
     entrypoint: ["sh", "/backup.sh"]
     environment:
       PGPASSWORD: ${POSTGRES_PASSWORD:-}
+      BACKUP_ENABLED: ${BACKUP_ENABLED:-}
       BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-}
       BACKUP_AT: ${BACKUP_AT:-}
       BACKUP_UPLOADS_TGZ: ${BACKUP_UPLOADS_TGZ:-}
