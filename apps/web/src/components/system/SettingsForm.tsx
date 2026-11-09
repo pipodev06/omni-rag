@@ -210,8 +210,11 @@ function ScalarField({ field, draft, onDraft, onReset, busy }: { field: SettingF
 
   if (field.type === "boolean") {
     return (
+      // Misma altura que un campo con título + caja (la fila de arriba queda vacía): la casilla cae a la altura de las cajas
+      // de los campos vecinos en vez de a la de sus títulos.
       <div className="space-y-1.5">
-        <div className="flex min-h-7 items-center gap-2">
+        <div aria-hidden className="hidden min-h-7 md:block" />
+        <div className="flex min-h-9 items-center gap-2">
           <Checkbox id={field.key} checked={draft === true} disabled={locked} onCheckedChange={(c) => onDraft(c === true)} />
           <Label htmlFor={field.key}>{field.label}</Label>
           {(field.help || field.restartNote) && (

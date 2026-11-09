@@ -189,7 +189,25 @@ describe("POST /system/backups/delete", () => {
     expect(res.status, await res.clone().text()).toBe(200);
     expect(state.orders[0]).toMatchObject({ kind: "delete" });
     expect(JSON.stringify(state.orders[0])).toContain("2026-11-04_0515");
-    expect(audit).toHaveBeenCalledWith(expect.anything(), "backup.delete_requested", expect.objectContaining({ details: { stamp: "2026-11-04_0515" } }));
+    expect(audit).toHaveBeenCalledWith(expect.anything(), "backup.delete_requested", expect.objectContaining({ details: { stamps: ["2026-11-04_0515"] } }));
+  });
+
+  it("varias en una sola orden, sin repetir", async () => {
+    const res = await call("POST", "/backups/delete", { stamps: ["2026-11-01_0300", "2026-11-02_0300", "2026-11-01_0300"], confirm: CONFIRM });
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect(state.orders).toHaveLength(1);
+    expect(audit).toHaveBeenCalledWith(expect.anything(), "backup.delete_requested", expect.objectContaining({ details: { stamps: ["2026-11-01_0300", "2026-11-02_0300"] } }));
+  });
+
+  it.each([
+    ["lista vacía", { stamps: [] }],
+    ["más de 50", { stamps: Array.from({ length: 51 }, (_, i) => `2026-01-01_${String(i).padStart(4, "0")}`) }],
+    ["una fecha mala en la lista", { stamps: ["2026-11-01_0300", "../x"] }],
+    ["stamp y stamps a la vez", { stamp: "2026-11-01_0300", stamps: ["2026-11-02_0300"] }],
+    ["ninguno", {}],
+  ])("rechaza %s con 400", async (_name, body) => {
+    expect((await call("POST", "/backups/delete", { ...body, confirm: CONFIRM })).status).toBe(400);
+    expect(state.orders).toHaveLength(0);
   });
 
   it.each(["", "2026-11-04", "../db_2026-11-04_0515", "2026-11-04_0515*", "2026-11-04_0515;rm", "2026-11-04_051"])("rechaza %j con 400", async (stamp) => {

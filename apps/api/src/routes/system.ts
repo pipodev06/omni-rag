@@ -322,17 +322,23 @@ systemRoutes.post("/backups/destination", async (c) => {
 });
 
 /** Fecha y hora de una copia tal como va en sus archivos: db_2026-11-06_0340.dump → 2026-11-06_0340. */
-const DeleteBody = z.object({ stamp: z.string().regex(/^\d{4}-\d{2}-\d{2}_\d{4}$/), confirm: ConfirmSchema.optional() });
+const Stamp = z.string().regex(/^\d{4}-\d{2}-\d{2}_\d{4}$/);
+/** Una copia (`stamp`) o varias (`stamps`, hasta 50, sin repetir). */
+const DeleteBody = z
+  .object({ stamp: Stamp.optional(), stamps: z.array(Stamp).min(1).max(50).optional(), confirm: ConfirmSchema.optional() })
+  .refine((b) => (b.stamp === undefined) !== (b.stamps === undefined), "Indica «stamp» o «stamps»");
 
 /**
- * Borra una copia (base y archivos de esa fecha) de ./backups y de la carpeta externa. La borra el servicio de copias,
- * que es quien tiene la carpeta; la API nunca la monta. La copia más reciente no se puede borrar. En B2 sigue hasta caducar.
+ * Borra una o varias copias (base y archivos de esa fecha) de ./backups y de la carpeta externa, en una sola orden. Las
+ * borra el servicio de copias, que es quien tiene la carpeta; la API nunca la monta. La copia más reciente no se puede
+ * borrar. En B2 siguen hasta caducar.
  */
 systemRoutes.post("/backups/delete", async (c) => {
-  const { stamp, confirm } = parse(DeleteBody, await c.req.json().catch(() => ({})));
-  await reconfirm(c, confirm);
-  const order = await requestBackupOrder(c, "delete", { stamp });
-  await audit(c, "backup.delete_requested", { targetType: "backup_request", targetId: String(order.id), details: { stamp } });
+  const body = parse(DeleteBody, await c.req.json().catch(() => ({})));
+  const stamps = [...new Set(body.stamps ?? [body.stamp!])];
+  await reconfirm(c, body.confirm);
+  const order = await requestBackupOrder(c, "delete", { stamps });
+  await audit(c, "backup.delete_requested", { targetType: "backup_request", targetId: String(order.id), details: { stamps } });
   return c.json(order);
 });
 

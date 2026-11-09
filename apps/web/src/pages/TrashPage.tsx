@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
-import { ArrowLeft, ArchiveRestore, Trash2, X } from "lucide-react";
+import { ArrowLeft, ArchiveRestore, Trash2 } from "lucide-react";
 import { formatBytes, timeAgo, type TrashedDocument } from "@/api";
 import { useTrash, useTrashActions } from "@/hooks/useTrash";
 import { useCurrentUser } from "@/hooks/useSession";
-import { EmptyState, FileTypeIcon, Page, PageHeader, TableCard } from "@/components/common";
+import { EmptyState, FileTypeIcon, Page, PageHeader, SelectionBar, TableCard } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -78,15 +78,7 @@ export function TrashPage() {
         }
       />
 
-      {picked.length > 0 && (
-        <div className="mb-5 flex shrink-0 flex-wrap items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2 text-sm">
-          <span className="font-medium">
-            {picked.length} seleccionado{picked.length === 1 ? "" : "s"}
-          </span>
-          <div className="ml-auto flex flex-wrap items-center gap-2">
-            <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
-              <X /> Quitar selección
-            </Button>
+      <SelectionBar count={picked.length} onClear={() => setSelected(new Set())} className="mb-5">
             <Button size="sm" variant="outline" onClick={() => void restoreAndClear(picked)}>
               <ArchiveRestore /> Restaurar
             </Button>
@@ -95,9 +87,7 @@ export function TrashPage() {
                 <Trash2 /> Eliminar definitivamente
               </Button>
             )}
-          </div>
-        </div>
-      )}
+      </SelectionBar>
 
       {loading ? (
         <Skeleton className="h-48 w-full" />

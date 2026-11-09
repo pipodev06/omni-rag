@@ -9,7 +9,7 @@ export function ConfigTab() {
   return (
     // `relative`: los campos ocultos que Radix añade a Checkbox y Select dentro de un form son `absolute`; sin un
     // ancestro posicionado escapan de este scroll, alargan el documento y la página entera se desplaza.
-    <div className="relative min-h-0 flex-1 overflow-y-auto">
+    <div className="relative min-h-0 flex-1 overflow-y-auto pr-3">
       <div className="grid items-start gap-4 lg:grid-cols-[11rem_1fr]">
         <nav aria-label="Grupos de ajustes" className="sticky top-0 hidden lg:block">
           <ul className="space-y-0.5 text-sm">

@@ -4,14 +4,15 @@ import { ArchiveRestore, CalendarClock, ChevronDown, CloudUpload, DatabaseBackup
 import { toast } from "sonner";
 import { api, errorMessage, formatBytes, formatDate, timeAgo } from "@/api";
 import { cn } from "@/lib/utils";
-import { EmptyState, TableCard } from "@/components/common";
+import { EmptyState, SelectionBar, TableCard } from "@/components/common";
 import { DestinationDialog, type BackupTargets } from "@/components/system/DestinationDialog";
 import { ReauthDialog, type Confirm } from "@/components/system/ReauthDialog";
 import { PassphraseTile, type PassphraseSource } from "@/components/system/PassphraseTile";
 import { RestoreDialog, type RestoreCopy } from "@/components/system/RestoreDialog";
 import { SettingsGroups, useReauthTotp } from "@/components/system/SettingsForm";
-import { OpenAlerts, Tag, Tile, type OpenAlert } from "@/components/system/shared";
+import { OpenAlerts, Tile, type OpenAlert } from "@/components/system/shared";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -46,7 +47,7 @@ const schedule = (at: string, hours: number) => (at ? `Diaria a las ${at}` : `Ca
 interface BackupRequest {
   id: number;
   kind: "backup" | "destination" | "delete";
-  payload: { path?: string; moveExisting?: boolean; stamp?: string } | null;
+  payload: { path?: string; moveExisting?: boolean; stamp?: string; stamps?: string[] } | null;
   requestedBy: string | null;
   createdAt: string;
   startedAt: string | null;
@@ -55,13 +56,19 @@ interface BackupRequest {
   message: string | null;
 }
 
-const requestState = (r: BackupRequest): { tone: "ok" | "bad" | "warn" | "muted"; label: string } =>
-  r.finishedAt ? (r.ok ? { tone: "ok", label: "Correcta" } : { tone: "bad", label: "Falló" }) : r.startedAt ? { tone: "warn", label: "En curso" } : { tone: "muted", label: "En cola" };
+const requestTitle = (r: BackupRequest) => {
+  if (r.kind === "backup") return "Copia manual";
+  if (r.kind === "delete") {
+    const stamps = r.payload?.stamps ?? (r.payload?.stamp ? [r.payload.stamp] : []);
+    return stamps.length === 1 ? `Borrar la copia ${stamps[0]}` : `Borrar ${stamps.length} copias`;
+  }
+  return `Cambio de destino${r.payload?.path ? ` a «${r.payload.path}»` : " a la carpeta clásica"}${r.payload?.moveExisting ? " (moviendo las copias)" : ""}`;
+};
 
-const requestTitle = (r: BackupRequest) =>
-  r.kind === "backup" ? "Copia manual" : r.kind === "delete" ? `Borrar la copia ${r.payload?.stamp ?? ""}` : `Cambio de destino${r.payload?.path ? ` a «${r.payload.path}»` : " a la carpeta clásica"}${r.payload?.moveExisting ? " (moviendo las copias)" : ""}`;
-
-/** Órdenes enviadas al servicio de copias; se consulta cada 5 s mientras alguna no haya terminado. */
+/**
+ * Órdenes enviadas al servicio de copias; se consulta cada 5 s mientras alguna no haya terminado. Al terminar una que se
+ * vio pendiente, su resultado sale en un aviso (el historial completo queda en la auditoría).
+ */
 function useBackupRequests() {
   const qc = useQueryClient();
   const query = useQuery({
@@ -69,50 +76,37 @@ function useBackupRequests() {
     queryFn: () => api.get<{ requests: BackupRequest[] }>("/system/backups/requests"),
     refetchInterval: (q) => (q.state.data?.requests.some((r) => !r.finishedAt) ? 5_000 : false),
   });
-  const pending = query.data?.requests.some((r) => !r.finishedAt) ?? false;
-  const wasPending = useRef(false);
-  // Al terminar una orden, la lista de copias y el destino cambian: se recargan una vez.
+  const requests = query.data?.requests ?? [];
+  const running = requests.find((r) => !r.finishedAt) ?? null;
+  const watching = useRef(new Set<number>());
   useEffect(() => {
-    if (wasPending.current && !pending) {
+    let finished = false;
+    for (const r of requests) {
+      if (!r.finishedAt) {
+        watching.current.add(r.id);
+      } else if (watching.current.delete(r.id)) {
+        finished = true;
+        const text = `${requestTitle(r)}: ${r.message ?? (r.ok ? "hecho" : "falló")}`;
+        if (r.ok) toast.success(text);
+        else toast.error(text);
+      }
+    }
+    // Al terminar una orden, la lista de copias y el destino cambian: se recargan una vez.
+    if (finished) {
       void qc.invalidateQueries({ queryKey: ["system", "backups"], exact: true });
       void qc.invalidateQueries({ queryKey: ["system", "settings"] });
     }
-    wasPending.current = pending;
-  }, [pending, qc]);
-  return { ...query, pending };
+  }, [requests, qc]);
+  return { running, pending: running !== null };
 }
 
-function RequestsTable({ requests }: { requests: BackupRequest[] }) {
+/** Orden en marcha (o en cola) mientras el servicio de copias la atiende. */
+function RunningOrder({ order }: { order: BackupRequest }) {
   return (
-    <div className="mb-4 shrink-0">
-      <h2 className="mb-2 text-sm font-semibold">Órdenes recientes</h2>
-      <TableCard className="max-h-56">
-        <Table>
-          <TableHeader>
-            <TableRow className="hover:bg-transparent">
-              <TableHead className="pl-4">Fecha</TableHead>
-              <TableHead>Orden</TableHead>
-              <TableHead>Estado</TableHead>
-              <TableHead className="hidden md:table-cell">Resultado</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {requests.map((r) => {
-              const s = requestState(r);
-              return (
-                <TableRow key={r.id}>
-                  <TableCell className="pl-4 font-mono text-xs whitespace-nowrap tabular-nums">{formatDate(r.createdAt)}</TableCell>
-                  <TableCell className="text-sm">{requestTitle(r)}</TableCell>
-                  <TableCell>
-                    <Tag tone={s.tone}>{s.label}</Tag>
-                  </TableCell>
-                  <TableCell className="hidden max-w-xl text-sm text-muted-foreground md:table-cell">{r.message ?? "—"}</TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-      </TableCard>
+    <div className="mb-4 flex shrink-0 items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2 text-sm">
+      <Loader2 className="size-4 animate-spin text-muted-foreground" />
+      <span className="font-medium">{requestTitle(order)}</span>
+      <span className="text-muted-foreground">{order.startedAt ? "en curso…" : "en cola: empieza en menos de un minuto"}</span>
     </div>
   );
 }
@@ -123,14 +117,17 @@ export function BackupsTab() {
   const requests = useBackupRequests();
   const [destOpen, setDestOpen] = useState(false);
   const totp = useReauthTotp();
-  const [toDelete, setToDelete] = useState<{ stamp: string; at: string } | null>(null);
+  // Copias a borrar (una desde su fila o varias desde la barra de selección) y su texto para la reconfirmación.
+  const [toDelete, setToDelete] = useState<{ stamps: string[]; label: string } | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [toRestore, setToRestore] = useState<RestoreCopy | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const remove = useMutation({
-    mutationFn: ({ stamp, confirm }: { stamp: string; confirm: Confirm }) => api.post<{ id: number }>("/system/backups/delete", { stamp, confirm }),
-    onSuccess: () => {
+    mutationFn: ({ stamps, confirm }: { stamps: string[]; confirm: Confirm }) => api.post<{ id: number }>("/system/backups/delete", { stamps, confirm }),
+    onSuccess: (_r, { stamps }) => {
       setToDelete(null);
-      toast.success("Orden enviada. La copia se borra en menos de un minuto.");
+      setSelected(new Set());
+      toast.success(`Orden enviada. ${stamps.length === 1 ? "La copia se borra" : `Las ${stamps.length} copias se borran`} en menos de un minuto.`);
       return qc.invalidateQueries({ queryKey: ["system", "backups", "requests"] });
     },
   });
@@ -164,24 +161,29 @@ export function BackupsTab() {
   const destination = info.destination ?? "";
   const offsite = local ? (local.offsite ? (local.encrypted ? "Carpeta externa · cifrada" : "Carpeta externa · SIN cifrar") : "Solo en el servidor") : "—";
   const busy = run.isPending || requests.pending;
+  // La más reciente no se borra (siempre queda al menos una).
+  const deletable = info.copies.slice(1);
   // Sin copia externa (B2 la necesita) todas las copias viven en el mismo disco que los datos.
   const onlyHere = local !== null && !local.offsite;
 
   return (
-    <div className="relative min-h-0 flex-1 overflow-y-auto">
+    <div className="relative min-h-0 flex-1 overflow-y-auto pr-3">
       <OpenAlerts alerts={data.alerts} />
       <div className="mb-4 flex shrink-0 flex-wrap items-center gap-2">
         <Button size="sm" onClick={() => run.mutate()} disabled={busy}>
           {busy ? <Loader2 className="animate-spin" /> : <Play />} Hacer copia ahora
         </Button>
-        {/* Botón desactivado no muestra title: lo lleva el span (sin BACKUP_TARGETS_DIR no hay carpetas que elegir). */}
-        <span title={targets ? undefined : "Para elegir otro disco o carpeta, define BACKUP_TARGETS_DIR en el servidor (docs/operacion.md)"}>
-          <Button size="sm" variant="outline" onClick={() => setDestOpen(true)} disabled={!targets || requests.pending}>
-            <FolderInput /> Cambiar destino
-          </Button>
-        </span>
-        <span className="font-mono text-xs text-muted-foreground">Destino: {destination || "carpeta clásica (./offsite)"}</span>
+        {/* Solo con carpetas que elegir (BACKUP_TARGETS_DIR en el servidor): si no, no hay nada que cambiar. */}
+        {targets && (
+          <>
+            <Button size="sm" variant="outline" onClick={() => setDestOpen(true)} disabled={requests.pending}>
+              <FolderInput /> Cambiar destino
+            </Button>
+            <span className="font-mono text-xs text-muted-foreground">Destino: {destination || "carpeta clásica (./offsite)"}</span>
+          </>
+        )}
       </div>
+      {requests.running && <RunningOrder order={requests.running} />}
       <div className="mb-4 grid shrink-0 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <Tile icon={DatabaseBackup} label="Última copia" value={last ? timeAgo(last.at) : "Ninguna"} hint={last ? `${formatDate(last.at)} · ${formatBytes(last.dbBytes + (last.uploadsBytes ?? 0))}` : undefined} />
         <Tile
@@ -219,11 +221,30 @@ export function BackupsTab() {
       {info.copies.length === 0 ? (
         <EmptyState icon={DatabaseBackup} title="No hay copias en ./backups" description="Pulsa «Hacer copia ahora» para crear la primera." className="mb-4" />
       ) : (
-        <TableCard className="mb-4 max-h-80">
+        <>
+        <SelectionBar count={selected.size} onClear={() => setSelected(new Set())} className="mb-2">
+          <Button
+            size="sm"
+            variant="destructive"
+            disabled={requests.pending}
+            onClick={() => setToDelete({ stamps: [...selected], label: `Vas a eliminar ${selected.size === 1 ? "1 copia" : `${selected.size} copias`} de este servidor y de la carpeta externa (en Backblaze B2 se conservan hasta caducar).` })}
+          >
+            <Trash2 /> Eliminar
+          </Button>
+        </SelectionBar>
+        <TableCard className="mb-4">
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="pl-4">Fecha</TableHead>
+                <TableHead className="w-10 pl-4">
+                  <Checkbox
+                    aria-label="Seleccionar todas las copias que se pueden borrar"
+                    checked={selected.size === 0 ? false : selected.size === deletable.length ? true : "indeterminate"}
+                    onCheckedChange={(v) => setSelected(v === true ? new Set(deletable.map((c) => c.stamp)) : new Set())}
+                    disabled={deletable.length === 0}
+                  />
+                </TableHead>
+                <TableHead>Fecha</TableHead>
                 <TableHead className="hidden sm:table-cell">Archivo</TableHead>
                 <TableHead className="text-right">Base de datos</TableHead>
                 <TableHead className="text-right">Archivos subidos</TableHead>
@@ -234,8 +255,23 @@ export function BackupsTab() {
             </TableHeader>
             <TableBody>
               {info.copies.map((c, i) => (
-                <TableRow key={c.stamp}>
-                  <TableCell className="pl-4 font-mono text-xs whitespace-nowrap tabular-nums">{formatDate(c.at)}</TableCell>
+                <TableRow key={c.stamp} data-state={selected.has(c.stamp) ? "selected" : undefined}>
+                  <TableCell className="w-10 pl-4">
+                    <Checkbox
+                      aria-label={i === 0 ? "La copia más reciente no se puede borrar" : `Seleccionar la copia del ${formatDate(c.at)}`}
+                      checked={selected.has(c.stamp)}
+                      disabled={i === 0}
+                      onCheckedChange={(v) =>
+                        setSelected((prev) => {
+                          const next = new Set(prev);
+                          if (v === true) next.add(c.stamp);
+                          else next.delete(c.stamp);
+                          return next;
+                        })
+                      }
+                    />
+                  </TableCell>
+                  <TableCell className="font-mono text-xs whitespace-nowrap tabular-nums">{formatDate(c.at)}</TableCell>
                   <TableCell className="hidden font-mono text-xs text-muted-foreground sm:table-cell">db_{c.stamp}.dump</TableCell>
                   <TableCell className="text-right font-mono text-xs tabular-nums">{formatBytes(c.dbBytes)}</TableCell>
                   <TableCell className="text-right font-mono text-xs tabular-nums">{c.uploadsBytes === null ? "—" : formatBytes(c.uploadsBytes)}</TableCell>
@@ -257,7 +293,7 @@ export function BackupsTab() {
                       aria-label={`Eliminar la copia del ${formatDate(c.at)}`}
                       title={i === 0 ? "La copia más reciente no se puede eliminar" : "Eliminar esta copia"}
                       disabled={i === 0 || requests.pending}
-                      onClick={() => setToDelete({ stamp: c.stamp, at: c.at })}
+                      onClick={() => setToDelete({ stamps: [c.stamp], label: `Vas a eliminar la copia del ${formatDate(c.at)} de este servidor y de la carpeta externa (en Backblaze B2 se conserva hasta caducar).` })}
                     >
                       <Trash2 />
                     </Button>
@@ -267,10 +303,9 @@ export function BackupsTab() {
             </TableBody>
           </Table>
         </TableCard>
+        </>
       )}
       {info.failed > 0 && <p className="mb-4 shrink-0 text-xs text-muted-foreground">{info.failed} copia(s) fallida(s) apartada(s) como «.dump.fallida»; se borran a los {local?.keepDays ?? 7} días.</p>}
-
-      {requests.data && requests.data.requests.length > 0 && <RequestsTable requests={requests.data.requests} />}
 
       <Collapsible open={settingsOpen} onOpenChange={setSettingsOpen} className="mb-4">
         <CollapsibleTrigger asChild>
@@ -288,8 +323,8 @@ export function BackupsTab() {
         open={toDelete !== null}
         onCancel={() => setToDelete(null)}
         totp={totp}
-        action={toDelete ? `Vas a eliminar la copia del ${formatDate(toDelete.at)} de este servidor y de la carpeta externa (en Backblaze B2 se conserva hasta caducar).` : undefined}
-        onConfirm={(confirm) => remove.mutateAsync({ stamp: toDelete!.stamp, confirm })}
+        action={toDelete?.label}
+        onConfirm={(confirm) => remove.mutateAsync({ stamps: toDelete!.stamps, confirm })}
       />
       {targets && <DestinationDialog open={destOpen} onOpenChange={setDestOpen} targets={targets} current={destination} />}
     </div>

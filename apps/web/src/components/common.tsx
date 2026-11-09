@@ -12,6 +12,7 @@ import {
   Info,
   Loader2,
   Presentation,
+  X,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import type { DocumentInfo } from "@/api";
@@ -80,6 +81,27 @@ export function TableCard({ children, className }: { children: ReactNode; classN
       )}
     >
       {children}
+    </div>
+  );
+}
+
+/**
+ * Barra de acciones en lote (Documentos, Papelera, Copias): «N seleccionados», «Quitar selección» y los botones de la
+ * pantalla a la derecha. Solo aparece con algo seleccionado.
+ */
+export function SelectionBar({ count, onClear, children, className }: { count: number; onClear: () => void; children: ReactNode; className?: string }) {
+  if (count === 0) return null;
+  return (
+    <div className={cn("flex shrink-0 flex-wrap items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2 text-sm", className)}>
+      <span className="font-medium">
+        {count} seleccionado{count === 1 ? "" : "s"}
+      </span>
+      <div className="ml-auto flex flex-wrap items-center gap-2">
+        <Button size="sm" variant="ghost" onClick={onClear}>
+          <X /> Quitar selección
+        </Button>
+        {children}
+      </div>
     </div>
   );
 }

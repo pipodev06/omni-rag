@@ -382,7 +382,8 @@ do_delete() { # AAAA-MM-DD_HHMM
   esac
   newest=$(ls -t "$DEST"/db_????-??-??_????.dump 2>/dev/null | head -n 1 || true)
   if [ "$newest" = "$DEST/db_$st.dump" ]; then REQ_MSG="La copia más reciente no se puede borrar: siempre queda al menos una"; return 0; fi
-  n=0
+  # del_n, no n: n es el contador de órdenes de process_requests, que llama a esta función.
+  del_n=0
   for dir in "$DEST" "$(offsite_dir)"; do
     [ -d "$dir" ] || continue
     # Los mismos nombres que la retención (BACKUP_NAMES y los .fallida), con la fecha de esta copia.
@@ -391,13 +392,32 @@ do_delete() { # AAAA-MM-DD_HHMM
     for pat in $BACKUP_NAMES db_????-??-??_????.dump.fallida; do
       f="$dir/$(printf '%s' "$pat" | sed "s/????-??-??_????/$st/")"
       [ -f "$f" ] || continue
-      rm -f "$f" && n=$((n + 1))
+      rm -f "$f" && del_n=$((del_n + 1))
     done
     set +f
   done
-  if [ "$n" -eq 0 ]; then REQ_MSG="No se encontró la copia $st"; return 0; fi
-  REQ_OK=true; REQ_MSG="Copia $st borrada ($n archivo(s)). En Backblaze B2 se conserva hasta caducar"
+  if [ "$del_n" -eq 0 ]; then REQ_MSG="No se encontró la copia $st"; return 0; fi
+  REQ_OK=true; REQ_MSG="Copia $st borrada ($del_n archivo(s)). En Backblaze B2 se conserva hasta caducar"
   echo "[backup] $REQ_MSG"
+}
+
+# Varias copias en una orden: fechas separadas por espacios (do_delete valida cada una). Pone REQ_OK (true solo si se
+# borraron todas) y REQ_MSG con lo borrado y lo que no.
+do_delete_many() { # "AAAA-MM-DD_HHMM AAAA-MM-DD_HHMM …"
+  ok_n=0; bad=""; last_ok=""
+  set -f # que el shell no expanda comodines al partir la lista
+  for one in $1; do
+    REQ_OK=false; REQ_MSG="Orden no procesada"
+    do_delete "$one" || true
+    if [ "$REQ_OK" = true ]; then ok_n=$((ok_n + 1)); last_ok="$REQ_MSG"; else bad="${bad:+$bad; }$one: $REQ_MSG"; fi
+  done
+  set +f
+  if [ "$ok_n" -eq 1 ]; then REQ_MSG="$last_ok"
+  elif [ "$ok_n" -gt 0 ]; then REQ_MSG="$ok_n copias borradas. En Backblaze B2 se conservan hasta caducar"
+  else REQ_MSG=""; fi
+  [ -z "$bad" ] || REQ_MSG="${REQ_MSG:+$REQ_MSG. }No se borró: $bad"
+  [ -n "$REQ_MSG" ] || REQ_MSG="No se indicó ninguna copia"
+  if [ "$ok_n" -gt 0 ] && [ -z "$bad" ]; then REQ_OK=true; else REQ_OK=false; fi
 }
 
 # Atiende las órdenes pendientes (máximo 5 por vuelta). La fila se toma con UPDATE … RETURNING para no repetirla.
@@ -407,7 +427,7 @@ process_requests() {
   n=0
   while [ "$n" -lt 5 ]; do
     n=$((n + 1))
-    row=$(psql_q -F "$TAB" -c "UPDATE backup_requests SET started_at = now() WHERE id = (SELECT id FROM backup_requests WHERE started_at IS NULL ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING id, kind, COALESCE(payload->>'path', ''), COALESCE(payload->>'moveExisting', 'false'), COALESCE(payload->>'stamp', '')" 2>/dev/null | head -n 1 || true)
+    row=$(psql_q -F "$TAB" -c "UPDATE backup_requests SET started_at = now() WHERE id = (SELECT id FROM backup_requests WHERE started_at IS NULL ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING id, kind, COALESCE(payload->>'path', ''), COALESCE(payload->>'moveExisting', 'false'), COALESCE(payload->>'stamp', (SELECT string_agg(s, ' ') FROM jsonb_array_elements_text(CASE WHEN jsonb_typeof(payload->'stamps') = 'array' THEN payload->'stamps' ELSE '[]'::jsonb END) s), '')" 2>/dev/null | head -n 1 || true)
     [ -n "$row" ] || return 0
     id=$(printf '%s' "$row" | cut -f1); kind=$(printf '%s' "$row" | cut -f2)
     rpath=$(printf '%s' "$row" | cut -f3); rmove=$(printf '%s' "$row" | cut -f4); rstamp=$(printf '%s' "$row" | cut -f5)
@@ -426,9 +446,8 @@ process_requests() {
         finish_request "$id" "$REQ_OK" "$REQ_MSG"
         ;;
       delete)
-        echo "[backup] orden $id: borrar la copia $rstamp"
-        REQ_OK=false; REQ_MSG="Orden no procesada"
-        do_delete "$rstamp" || true
+        echo "[backup] orden $id: borrar $rstamp"
+        do_delete_many "$rstamp" || true
         finish_request "$id" "$REQ_OK" "$REQ_MSG"
         ;;
       *) finish_request "$id" false "Tipo de orden desconocido" ;;

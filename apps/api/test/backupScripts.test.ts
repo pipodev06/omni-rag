@@ -621,6 +621,41 @@ describe.concurrent("deploy/backup.sh: orden «Borrar copia» (do_delete)", { sk
     const r = await del(sb, "2020-01-01_0000");
     expect(r).toMatchObject({ ok: false, msg: expect.stringMatching(/No se encontró/) });
   }, T);
+
+  const delMany = async (sb: Sandbox, stamps: string) => {
+    const r = await sb.fn(`do_delete_many "${stamps}" || true\nprintf 'RESULT:%s|%s\\n' "$REQ_OK" "$REQ_MSG"`);
+    const m = r.out.match(/RESULT:(true|false)\|(.*)/);
+    if (!m) throw new Error(`sin resultado: ${r.out}`);
+    return { ok: m[1] === "true", msg: m[2]! };
+  };
+
+  it("varias en una orden: borra todas y lo resume", async () => {
+    const sb = await twoCopies();
+    await sb.write("backups/db_2026-11-02_0300.dump", "otro");
+    await sb.age("backups/db_2026-11-02_0300.dump", 3);
+    const r = await delMany(sb, "2026-11-01_0300 2026-11-02_0300");
+    expect(r.ok, r.msg).toBe(true);
+    expect(r.msg).toMatch(/2 copias borradas/);
+    expect(await sb.ls("backups")).toEqual(["db_2026-11-01_0300.xlsx", "db_2026-11-05_0300.dump"]);
+  }, T);
+
+  it("varias con la más reciente o una inexistente: borra las demás, dice cuál no y termina con ok=false", async () => {
+    const sb = await twoCopies();
+    const r = await delMany(sb, "2026-11-01_0300 2026-11-05_0300 2020-01-01_0000");
+    expect(r.ok).toBe(false);
+    expect(r.msg).toMatch(/^Copia 2026-11-01_0300 borrada/);
+    expect(r.msg).toMatch(/No se borró: 2026-11-05_0300: .*más reciente.*; 2020-01-01_0000: No se encontró/);
+    expect(await sb.exists("backups", "db_2026-11-05_0300.dump")).toBe(true);
+    expect(await sb.exists("backups", "db_2026-11-01_0300.dump")).toBe(false);
+  }, T);
+
+  it("un comodín en la lista no se expande contra los archivos de la carpeta", async () => {
+    const sb = await twoCopies();
+    const r = await delMany(sb, "*");
+    expect(r.ok).toBe(false);
+    expect(r.msg).toMatch(/\*: Copia no válida/);
+    expect(await sb.ls("backups")).toHaveLength(4);
+  }, T);
 });
 
 const CREDS =["export B2_BUCKET=" + SQ + "mibucket" + SQ, "export B2_KEY_ID=" + SQ + "kid" + SQ, "export B2_APPLICATION_KEY=" + SQ + "secreta" + SQ];

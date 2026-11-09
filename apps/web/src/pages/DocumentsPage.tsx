@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { useDropzone } from "react-dropzone";
-import { CloudUpload, Download, FolderInput, FolderOpen, FolderPlus, Loader2, RotateCw, Search, Trash2, X } from "lucide-react";
+import { CloudUpload, Download, FolderInput, FolderOpen, FolderPlus, Loader2, RotateCw, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { errorMessage, uploadDocuments, type DocumentInfo, type UploadResult } from "@/api";
 import { batches, expandUploads } from "@/lib/uploadPrep";
@@ -10,7 +10,7 @@ import { useCurrentUser } from "@/hooks/useSession";
 import { applyView, availableTypes, DEFAULT_VIEW, FIRST_DIR, isFiltered, type DocumentView, type SortKey } from "@/lib/documentView";
 import { startDownload } from "@/lib/download";
 import { cn } from "@/lib/utils";
-import { EmptyState, Page, PageHeader } from "@/components/common";
+import { EmptyState, Page, PageHeader, SelectionBar } from "@/components/common";
 import { CollectionFormDialog, MembersDialog } from "@/components/documents/CollectionDialogs";
 import { CollectionToolbar } from "@/components/documents/CollectionToolbar";
 import { DocumentFilters } from "@/components/documents/DocumentFilters";
@@ -151,7 +151,7 @@ function useDocumentSelection(documents: DocumentInfo[], canEdit: boolean, colle
 }
 
 /** Barra de acciones en lote, con los botones a la derecha. Solo aparece con algo seleccionado. */
-function SelectionBar({ docs, onClear, onMove, onReprocess, onDelete }: {
+function DocumentsSelectionBar({ docs, onClear, onMove, onReprocess, onDelete }: {
   docs: DocumentInfo[];
   onClear: () => void;
   onMove: () => void;
@@ -168,14 +168,7 @@ function SelectionBar({ docs, onClear, onMove, onReprocess, onDelete }: {
     startDownload(`/api/documents/download?ids=${docs.map((d) => d.id).join(",")}`);
   };
   return (
-    <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2 text-sm">
-      <span className="font-medium">
-        {docs.length} seleccionado{docs.length === 1 ? "" : "s"}
-      </span>
-      <div className="ml-auto flex flex-wrap items-center gap-2">
-        <Button size="sm" variant="ghost" onClick={onClear}>
-          <X /> Quitar selección
-        </Button>
+    <SelectionBar count={docs.length} onClear={onClear}>
         <Button size="sm" variant="outline" onClick={download}>
           <Download /> Descargar
         </Button>
@@ -188,8 +181,7 @@ function SelectionBar({ docs, onClear, onMove, onReprocess, onDelete }: {
         <Button size="sm" variant="destructive" onClick={onDelete}>
           <Trash2 /> Enviar a la papelera
         </Button>
-      </div>
-    </div>
+    </SelectionBar>
   );
 }
 
@@ -307,7 +299,7 @@ export function DocumentsPage() {
 
           {canEdit && <UploadZone collectionId={current.id} extensions={extensions} onUploaded={refresh} />}
 
-          <SelectionBar
+          <DocumentsSelectionBar
             docs={selectedDocs}
             onClear={clear}
             onMove={() => setMoveDocs(selectedDocs)}
