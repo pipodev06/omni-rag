@@ -170,6 +170,10 @@ interface Metrics {
   points: { at: string; mem: number | null; memLimit: number | null; cpu: number | null; cpuLimit: number | null }[];
   summary: { mem: Stat; cpu: Stat } | null;
 }
+interface Overview {
+  at: string[];
+  series: { name: string; mem: (number | null)[] }[];
+}
 
 const RANGE_FORMAT: Record<Range, Intl.DateTimeFormat> = {
   "1h": new Intl.DateTimeFormat("es", { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
@@ -178,66 +182,128 @@ const RANGE_FORMAT: Record<Range, Intl.DateTimeFormat> = {
   "14d": new Intl.DateTimeFormat("es", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }),
 };
 
-/** Ahora, media y pico de todo el periodo, sobre el gráfico. */
-function Summary({ stat, format }: { stat: Stat | undefined; format: (n: number) => string }) {
+/** Valor del selector para la vista con todos los contenedores. */
+const ALL = "*";
+
+/** Ahora, media y pico de todo el periodo, sobre el gráfico; `total` añade al pico su parte del servidor. */
+function Summary({ stat, format, total }: { stat: Stat | undefined; format: (n: number) => string; total?: number | null }) {
   if (!stat) return null;
-  const items = [["Ahora", stat.now], ["Media", stat.avg], ["Pico", stat.max]] as const;
+  const share = total && stat.max !== null ? ` (${Math.round((stat.max / total) * 100)} % del servidor)` : "";
+  const items = [["Ahora", stat.now, ""], ["Media", stat.avg, ""], ["Pico", stat.max, share]] as const;
   return (
     <dl className="mb-2 flex flex-wrap gap-x-5 gap-y-1 text-sm">
-      {items.map(([label, v]) => (
+      {items.map(([label, v, extra]) => (
         <div key={label} className="flex items-baseline gap-1.5">
           <dt className="text-xs text-muted-foreground">{label}</dt>
-          <dd className="font-mono tabular-nums">{v === null ? "—" : format(v)}</dd>
+          <dd className="font-mono tabular-nums">
+            {v === null ? "—" : format(v)}
+            {v !== null && extra && <span className="text-xs text-muted-foreground">{extra}</span>}
+          </dd>
         </div>
       ))}
     </dl>
   );
 }
 
+/** RAM en GB cuando algún valor pasa de 1 GB (3197 MB se lee mejor como 3,12 GB); si no, en MB. */
+function memScale(values: (number | null)[]) {
+  const max = Math.max(0, ...values.filter((v): v is number => v !== null));
+  const gb = max >= 1024 ** 3;
+  const div = gb ? 1024 ** 3 : 1024 ** 2;
+  const k = gb ? 100 : 1;
+  return { unit: gb ? "GB" : "MB", conv: (n: number | null) => (n === null ? null : Math.round((n / div) * k) / k) };
+}
+
+/**
+ * Explica los tramos vacíos: al principio, aún no había muestras; en medio, el servidor o Docker estuvo apagado. El último
+ * tramo (el que está en curso) no cuenta.
+ */
+function gapNote(at: string[], hasData: boolean[]): string | null {
+  const first = hasData.indexOf(true);
+  if (first === -1) return null;
+  const notes: string[] = [];
+  if (first > 0) notes.push(`Datos desde el ${formatDate(at[first]!)}.`);
+  const last = hasData.lastIndexOf(true);
+  if (hasData.slice(first, last).includes(false)) notes.push("Los cortes de la línea son ratos sin muestras: el servidor o Docker estaba apagado.");
+  return notes.length ? notes.join(" ") : null;
+}
+
 /** Series de uso y tope para ChartFigure (el mismo gráfico de las respuestas del chat). */
 function toCharts(points: Metrics["points"], range: Range): { mem: ChartSpec; cpu: ChartSpec } | null {
   if (!points.some((p) => p.mem !== null)) return null;
   const labels = points.map((p) => RANGE_FORMAT[range].format(new Date(p.at)));
-  const MB = 1024 ** 2;
   const round = (n: number | null, k = 1) => (n === null ? null : Math.round(n * k) / k);
   const series = (name: string, data: (number | null)[]) => (data.some((v) => v !== null) ? [{ name, data }] : []);
+  const mem = memScale(points.flatMap((p) => [p.mem, p.memLimit]));
   return {
-    mem: { type: "line", title: "RAM (MB)", unit: "MB", labels, series: [...series("Uso (pico)", points.map((p) => round(p.mem && p.mem / MB))), ...series("Tope", points.map((p) => round(p.memLimit && p.memLimit / MB)))] },
+    mem: { type: "line", title: `RAM (${mem.unit})`, unit: mem.unit, labels, series: [...series("Uso (pico)", points.map((p) => mem.conv(p.mem))), ...series("Tope", points.map((p) => mem.conv(p.memLimit)))] },
     cpu: { type: "line", title: "CPU (núcleos)", unit: "", labels, series: [...series("Uso (promedio)", points.map((p) => round(p.cpu, 100))), ...series("Tope", points.map((p) => round(p.cpuLimit, 100)))] },
+  };
+}
+
+/** Un gráfico de RAM con una línea por contenedor (los 7 que más usan y «otros»). */
+function toOverviewChart(data: Overview, range: Range): ChartSpec | null {
+  if (data.series.length === 0) return null;
+  const mem = memScale(data.series.flatMap((s) => s.mem));
+  return {
+    type: "line",
+    title: `RAM por contenedor (${mem.unit})`,
+    unit: mem.unit,
+    labels: data.at.map((a) => RANGE_FORMAT[range].format(new Date(a))),
+    series: data.series.map((s) => ({ name: s.name, data: s.mem.map(mem.conv) })),
   };
 }
 
 function MetricsTab() {
   const resources = useQuery({ queryKey: ["system", "resources"], queryFn: () => api.get<Resources>("/system/resources"), refetchInterval: 60_000 });
-  const names = resources.data?.containers.map((c) => c.name) ?? [];
-  // Por defecto, el primer contenedor con una alerta abierta; si no hay, el primero de la lista.
-  const firstWithAlert = resources.data?.containers.find((c) => c.alerts.length > 0)?.name;
+  // De mayor a menor consumo de RAM: lo que más pesa, arriba.
+  const containers = useMemo(() => [...(resources.data?.containers ?? [])].sort((a, b) => b.memBytes - a.memBytes), [resources.data]);
+  // Por defecto, el primer contenedor con una alerta abierta; si no hay, el que más RAM usa.
   const [picked, setPicked] = useState<string | null>(null);
-  const name = picked ?? firstWithAlert ?? names[0] ?? null;
+  const name = picked ?? containers.find((c) => c.alerts.length > 0)?.name ?? containers[0]?.name ?? null;
+  const all = name === ALL;
   const [range, setRange] = useState<Range>("24h");
   const metrics = useQuery({
     queryKey: ["system", "metrics", name, range],
     queryFn: () => api.get<Metrics>(`/system/metrics?${new URLSearchParams({ name: name!, range })}`),
-    enabled: name !== null,
+    enabled: name !== null && !all,
+    refetchInterval: 60_000,
+    placeholderData: keepPreviousData,
+  });
+  const overview = useQuery({
+    queryKey: ["system", "metrics", ALL, range],
+    queryFn: () => api.get<Overview>(`/system/metrics/overview?${new URLSearchParams({ range })}`),
+    enabled: all,
     refetchInterval: 60_000,
     placeholderData: keepPreviousData,
   });
   const charts = useMemo(() => (metrics.data ? toCharts(metrics.data.points, range) : null), [metrics.data, range]);
+  const overviewChart = useMemo(() => (overview.data ? toOverviewChart(overview.data, range) : null), [overview.data, range]);
+  const note = useMemo(() => {
+    if (all) return overview.data ? gapNote(overview.data.at, overview.data.at.map((_, i) => overview.data.series.some((s) => s.mem[i] !== null)).slice(0, -1)) : null;
+    return metrics.data ? gapNote(metrics.data.points.map((p) => p.at), metrics.data.points.map((p) => p.mem !== null).slice(0, -1)) : null;
+  }, [all, overview.data, metrics.data]);
 
   if (resources.isLoading) return <Skeleton className="h-64 w-full" />;
-  if (!resources.data || names.length === 0) return <NotCollecting collecting={resources.data?.collecting ?? false} />;
+  if (!resources.data || containers.length === 0) return <NotCollecting collecting={resources.data?.collecting ?? false} />;
+  const host = resources.data.host;
+  const memTotal = host?.memBytes ?? null;
+  const memNow = containers.reduce((s, c) => s + c.memBytes, 0);
+  const current = all ? overview : metrics;
 
   return (
     <>
       <div className="mb-3 flex shrink-0 flex-wrap items-center gap-2">
         <Select value={name ?? undefined} onValueChange={setPicked}>
-          <SelectTrigger className="w-56" aria-label="Contenedor">
+          <SelectTrigger className="w-64" aria-label="Contenedor">
             <SelectValue />
           </SelectTrigger>
-          <SelectContent>
-            {resources.data.containers.map((c) => (
+          <SelectContent position="popper">
+            <SelectItem value={ALL}>Todos (RAM)</SelectItem>
+            {containers.map((c) => (
               <SelectItem key={c.name} value={c.name}>
                 {c.name}
+                <span className="text-muted-foreground"> · {formatBytes(c.memBytes)}</span>
                 {c.alerts.length > 0 && " · con alerta"}
               </SelectItem>
             ))}
@@ -252,17 +318,32 @@ function MetricsTab() {
           </TabsList>
         </Tabs>
       </div>
-      <div className={cn("mb-4 grid shrink-0 gap-3 lg:grid-cols-2", metrics.isPlaceholderData && "opacity-60 transition-opacity")}>
-        {charts ? (
+      <div className={cn("mb-4 grid shrink-0 gap-3 lg:grid-cols-2", current.isPlaceholderData && "opacity-60 transition-opacity")}>
+        {all && overviewChart ? (
+          <div className="lg:col-span-2">
+            <ChartFigure
+              chart={overviewChart}
+              tools={false}
+              summary={
+                <p className="mb-2 text-sm">
+                  <span className="text-xs text-muted-foreground">En uso ahora </span>
+                  <span className="font-mono tabular-nums">{formatBytes(memNow)}</span>
+                  {memTotal && <span className="text-xs text-muted-foreground"> de {formatBytes(memTotal)} ({Math.round((memNow / memTotal) * 100)} % del servidor)</span>}
+                </p>
+              }
+            />
+          </div>
+        ) : !all && charts ? (
           <>
-            <ChartFigure chart={charts.mem} tools={false} summary={<Summary stat={metrics.data?.summary?.mem} format={formatBytes} />} />
+            <ChartFigure chart={charts.mem} tools={false} summary={<Summary stat={metrics.data?.summary?.mem} format={formatBytes} total={memTotal} />} />
             <ChartFigure chart={charts.cpu} tools={false} summary={<Summary stat={metrics.data?.summary?.cpu} format={(n) => `${cores(n)} núcl.`} />} />
           </>
-        ) : metrics.isLoading ? (
+        ) : current.isLoading ? (
           <Skeleton className="h-64 w-full lg:col-span-2" />
         ) : (
-          <p className="text-sm text-muted-foreground lg:col-span-2">Sin muestras de «{name}» en este periodo.</p>
+          <p className="text-sm text-muted-foreground lg:col-span-2">{all ? "Sin muestras en este periodo." : `Sin muestras de «${name}» en este periodo.`}</p>
         )}
+        {note && <p className="-mt-1 text-xs text-muted-foreground lg:col-span-2">{note}</p>}
       </div>
     </>
   );

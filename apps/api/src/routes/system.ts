@@ -92,13 +92,51 @@ systemRoutes.get("/resources", async (c) => {
 
 const POINTS = 48;
 const RANGES: Record<string, number> = { "1h": 1, "24h": 24, "7d": 168, "14d": 336 };
+const RangeSchema = z.enum(["1h", "24h", "7d", "14d"]).default("24h");
+
+/** Tramos del gráfico: duración de cada uno (s), intervalo SQL del periodo y las 48 marcas de inicio, la última la actual. */
+function buckets(range: keyof typeof RANGES) {
+  const hours = RANGES[range]!;
+  const step = (hours * 3600) / POINTS;
+  const end = Math.floor(Date.now() / 1000 / step) * step;
+  return { step, since: `${hours} hours`, starts: Array.from({ length: POINTS }, (_, i) => end - (POINTS - 1 - i) * step) };
+}
+
+/** Líneas de la vista «Todos»: las que más RAM usan; el resto se suma en «otros» para no pasar de 8 en el gráfico. */
+const OVERVIEW_LINES = 7;
+
+systemRoutes.get("/metrics/overview", async (c) => {
+  const q = z.object({ range: RangeSchema }).safeParse(c.req.query());
+  if (!q.success) throw badRequest("Parámetros no válidos");
+  const { step, since, starts } = buckets(q.data.range);
+  const rows = await sqlOwner<{ name: string; b: number; mem: number }[]>`
+    SELECT name, (floor(extract(epoch FROM at) / ${step}) * ${step})::float8 AS b, max(mem_bytes)::float8 AS mem
+      FROM container_samples
+     WHERE at > now() - ${since}::interval
+     GROUP BY 1, 2`;
+  const byName = new Map<string, Map<number, number>>();
+  const peak = new Map<string, number>();
+  for (const r of rows) {
+    if (!byName.has(r.name)) byName.set(r.name, new Map());
+    byName.get(r.name)!.set(r.b, r.mem);
+    peak.set(r.name, Math.max(peak.get(r.name) ?? 0, r.mem));
+  }
+  const ranked = [...peak.keys()].sort((a, b) => peak.get(b)! - peak.get(a)!);
+  const line = (names: string[]) =>
+    starts.map((b) => {
+      const vals = names.map((n) => byName.get(n)!.get(b)).filter((v): v is number => v !== undefined);
+      return vals.length ? vals.reduce((s, v) => s + v, 0) : null;
+    });
+  const top = ranked.length > OVERVIEW_LINES + 1 ? ranked.slice(0, OVERVIEW_LINES) : ranked;
+  const rest = ranked.slice(top.length);
+  const series = [...top.map((name) => ({ name, mem: line([name]) })), ...(rest.length ? [{ name: `otros (${rest.length})`, mem: line(rest) }] : [])];
+  return c.json({ range: q.data.range, at: starts.map((b) => new Date(b * 1000).toISOString()), series });
+});
 
 systemRoutes.get("/metrics", async (c) => {
-  const q = z.object({ name: z.string().min(1).max(200), range: z.enum(["1h", "24h", "7d", "14d"]).default("24h") }).safeParse(c.req.query());
+  const q = z.object({ name: z.string().min(1).max(200), range: RangeSchema }).safeParse(c.req.query());
   if (!q.success) throw badRequest("Parámetros no válidos");
-  const hours = RANGES[q.data.range]!;
-  const step = (hours * 3600) / POINTS;
-  const since = `${hours} hours`;
+  const { step, since, starts } = buckets(q.data.range);
   type Summary = { mem_now: number | null; cpu_now: number | null; mem_avg: number | null; mem_max: number | null; cpu_avg: number | null; cpu_max: number | null };
   const [rows, [s]] = await Promise.all([
     sqlOwner<{ b: number; mem: number | null; mem_limit: number | null; cpu: number | null; cpu_limit: number | null }[]>`
@@ -117,9 +155,7 @@ systemRoutes.get("/metrics", async (c) => {
        WHERE name = ${q.data.name} AND at > now() - ${since}::interval`,
   ]);
   const byBucket = new Map(rows.map((r) => [r.b, r]));
-  const end = Math.floor(Date.now() / 1000 / step) * step;
-  const points = Array.from({ length: POINTS }, (_, i) => {
-    const b = end - (POINTS - 1 - i) * step;
+  const points = starts.map((b) => {
     const r = byBucket.get(b);
     return { at: new Date(b * 1000).toISOString(), mem: r?.mem ?? null, memLimit: r?.mem_limit ?? null, cpu: r?.cpu ?? null, cpuLimit: r?.cpu_limit ?? null };
   });
