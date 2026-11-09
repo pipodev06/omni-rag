@@ -3,7 +3,7 @@ import { Check, Copy, KeyRound } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/api";
 import { ReauthDialog, type Confirm } from "@/components/system/ReauthDialog";
-import { Tag } from "@/components/system/shared";
+import { Tile } from "@/components/system/shared";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
@@ -13,7 +13,7 @@ export type PassphraseSource = "env" | "generated" | "unreadable" | null;
  * Frase que cifra las copias externas y las de B2. Se genera sola en el primer arranque; «Ver frase» la muestra tras
  * reconfirmar la identidad (queda en la auditoría y se avisa a ALERT_EMAIL) para guardarla fuera del servidor.
  */
-export function PassphraseCard({ source, totp }: { source: PassphraseSource; totp: boolean }) {
+export function PassphraseTile({ source, totp }: { source: PassphraseSource; totp: boolean }) {
   const [asking, setAsking] = useState(false);
   const [shown, setShown] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -35,29 +35,27 @@ export function PassphraseCard({ source, totp }: { source: PassphraseSource; tot
   };
 
   return (
-    <div className="mb-4 flex shrink-0 flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border bg-card p-4 text-sm">
-      <span className="flex items-center gap-2 font-medium">
-        <KeyRound className="size-4 text-muted-foreground" /> Frase de cifrado
-      </span>
-      {source === "unreadable" ? (
-        <Tag tone="bad">No se puede leer</Tag>
-      ) : source ? (
-        <Tag tone="ok">{source === "env" ? "Fijada en el archivo de entorno" : "Generada en el servidor"}</Tag>
-      ) : (
-        <Tag tone="bad">No hay</Tag>
-      )}
-      <span className="min-w-0 flex-1 text-muted-foreground">
-        {source === "unreadable"
-          ? "El archivo ./data/secretos/backup_passphrase existe pero no es del usuario 1000: B2 no sube nada. Recrea db con «docker compose up -d db»."
-          : source
-            ? "Cifra la copia externa y la de Backblaze B2. Guárdala en tu gestor de contraseñas: si se pierde el servidor, sin ella esas copias no se pueden abrir."
-            : "Se genera al arrancar el servicio db. Recrea los contenedores con «docker compose up -d»."}
-      </span>
-      {(source === "env" || source === "generated") && (
-        <Button size="sm" variant="outline" onClick={() => setAsking(true)}>
-          Ver frase
-        </Button>
-      )}
+    <>
+      <Tile
+        icon={KeyRound}
+        label="Frase de cifrado"
+        value={source === "env" ? "Del entorno" : source === "generated" ? "Generada" : source === "unreadable" ? "No se puede leer" : "No hay"}
+        warn={source === "unreadable" || source === null}
+        hint={
+          source === "unreadable"
+            ? "./data/secretos/backup_passphrase no es del usuario 1000. Recrea db."
+            : source
+              ? "Cifra la copia externa y la de B2. Guárdala fuera del servidor."
+              : "Se genera al arrancar db («docker compose up -d»)."
+        }
+        action={
+          source === "env" || source === "generated" ? (
+            <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => setAsking(true)}>
+              Ver frase
+            </Button>
+          ) : undefined
+        }
+      />
       <ReauthDialog open={asking} onCancel={() => setAsking(false)} totp={totp} action="Vas a ver la frase que cifra las copias de seguridad. Quedará en la auditoría y se avisará por correo a los destinatarios de las alertas." onConfirm={reveal} />
       <Dialog open={shown !== null} onOpenChange={(o) => !o && (setShown(null), setCopied(false))}>
         <DialogContent className="sm:max-w-lg">
@@ -73,6 +71,6 @@ export function PassphraseCard({ source, totp }: { source: PassphraseSource; tot
           </div>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   );
 }

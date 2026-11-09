@@ -30,12 +30,15 @@ export function describeKey(key: string): { source: string; label: string } {
   return { source: CHECKS[key] ?? key, label: "" };
 }
 
-/** Tarjeta con una cifra. `warn`: borde y cifra en ámbar (un riesgo que conviene resolver). */
-export function Tile({ icon: Icon, label, value, hint, warn }: { icon: LucideIcon; label: string; value: string; hint?: string; warn?: boolean }) {
+/** Tarjeta con una cifra. `warn`: borde y cifra en ámbar (un riesgo que conviene resolver). `action`: botón junto al título. */
+export function Tile({ icon: Icon, label, value, hint, warn, action }: { icon: LucideIcon; label: string; value: string; hint?: string; warn?: boolean; action?: React.ReactNode }) {
   return (
     <div className={cn("rounded-xl border bg-card p-4", warn && "border-warning/40 bg-warning/5")}>
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Icon className={cn("size-4", warn && "text-warning")} /> {label}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Icon className={cn("size-4", warn && "text-warning")} /> {label}
+        </div>
+        {action}
       </div>
       <p className={cn("mt-1 font-mono text-xl font-semibold tabular-nums", warn && "text-warning")}>{value}</p>
       {hint && <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>}

@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { EmptyState, TableCard } from "@/components/common";
 import { DestinationDialog, type BackupTargets } from "@/components/system/DestinationDialog";
 import { ReauthDialog, type Confirm } from "@/components/system/ReauthDialog";
-import { PassphraseCard, type PassphraseSource } from "@/components/system/PassphraseCard";
+import { PassphraseTile, type PassphraseSource } from "@/components/system/PassphraseTile";
 import { RestoreDialog, type RestoreCopy } from "@/components/system/RestoreDialog";
 import { SettingsGroups, useReauthTotp } from "@/components/system/SettingsForm";
 import { OpenAlerts, Tag, Tile, type OpenAlert } from "@/components/system/shared";
@@ -182,7 +182,7 @@ export function BackupsTab() {
         </span>
         <span className="font-mono text-xs text-muted-foreground">Destino: {destination || "carpeta clásica (./offsite)"}</span>
       </div>
-      <div className="mb-4 grid shrink-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mb-4 grid shrink-0 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <Tile icon={DatabaseBackup} label="Última copia" value={last ? timeAgo(last.at) : "Ninguna"} hint={last ? `${formatDate(last.at)} · ${formatBytes(last.dbBytes + (last.uploadsBytes ?? 0))}` : undefined} />
         <Tile
           icon={ShieldCheck}
@@ -196,8 +196,24 @@ export function BackupsTab() {
           label="Fuera del servidor"
           value={offsite}
           warn={onlyHere}
-          hint={onlyHere ? "Si se pierde el disco, se pierden también las copias. Activa la copia externa o Backblaze B2 en «Ajustes»." : `${info.copies.length} copia(s) · ${formatBytes(info.totalBytes)} en ./backups`}
+          hint={onlyHere ? "Si se pierde el disco, se pierden también las copias. Actívala en «Ajustes»." : `${info.copies.length} copia(s) · ${formatBytes(info.totalBytes)} en ./backups`}
         />
+        <Tile
+          icon={CloudUpload}
+          label="Backblaze B2"
+          value={!info.b2Configured ? "No configurado" : !b2 ? "Esperando" : b2.ok ? "Funciona" : "Falla"}
+          warn={info.b2Configured && b2 !== null && !b2.ok}
+          hint={
+            !info.b2Configured
+              ? "Opcional: copia cifrada en la nube. Se activa en «Ajustes»."
+              : !b2
+                ? "backup-b2 aún no anotó ningún intento."
+                : !b2.ok
+                  ? b2.error
+                  : `Última: ${b2.lastOkAt ? formatDate(b2.lastOkAt) : "ninguna"}${b2.nextAt ? ` · próxima: ${formatDate(b2.nextAt)}` : ""} · ${b2.keepDays} días`
+          }
+        />
+        <PassphraseTile source={data.passphrase} totp={totp} />
       </div>
 
       {info.copies.length === 0 ? (
@@ -253,40 +269,6 @@ export function BackupsTab() {
         </TableCard>
       )}
       {info.failed > 0 && <p className="mb-4 shrink-0 text-xs text-muted-foreground">{info.failed} copia(s) fallida(s) apartada(s) como «.dump.fallida»; se borran a los {local?.keepDays ?? 7} días.</p>}
-
-      <div className="mb-4 flex shrink-0 flex-wrap items-center gap-x-5 gap-y-1 rounded-xl border bg-card p-4 text-sm">
-        <span className="flex items-center gap-2 font-medium">
-          <CloudUpload className="size-4 text-muted-foreground" /> Backblaze B2
-        </span>
-        {!info.b2Configured ? (
-          <>
-            <Tag tone="muted">No configurado</Tag>
-            <span className="text-muted-foreground">
-              Opcional, pero recomendado: guarda una copia cifrada fuera del servidor por si se pierde el disco. Se configura en «Ajustes de copias y Backblaze B2», más abajo, y necesita la copia externa activa (sube las copias cifradas con la frase de abajo).
-            </span>
-          </>
-        ) : b2 ? (
-          <>
-            <Tag tone={b2.ok ? "ok" : "bad"}>{b2.ok ? "Funciona" : "Falla"}</Tag>
-            {!b2.ok && <span className="text-destructive">{b2.error}</span>}
-            <span className="text-muted-foreground">
-              Última subida: <span className="font-mono text-xs">{b2.lastOkAt ? formatDate(b2.lastOkAt) : "ninguna"}</span>
-            </span>
-            {b2.nextAt && (
-              <span className="text-muted-foreground">
-                Próxima: <span className="font-mono text-xs">{formatDate(b2.nextAt)}</span>
-              </span>
-            )}
-            <span className="text-muted-foreground">
-              {schedule(b2.at, b2.intervalHours)} · {b2.syncUploads ? "base y archivos subidos" : "solo la base"} · se guardan {b2.keepDays} días
-            </span>
-          </>
-        ) : (
-          <span className="text-muted-foreground">Configurado. El servicio backup-b2 aún no anotó ningún intento; si no cambia en unos minutos, revisa «docker compose logs backup-b2».</span>
-        )}
-      </div>
-
-      <PassphraseCard source={data.passphrase} totp={totp} />
 
       {requests.data && requests.data.requests.length > 0 && <RequestsTable requests={requests.data.requests} />}
 
