@@ -25,7 +25,7 @@ pnpm -r test           # pruebas (las de integración necesitan PostgreSQL con p
 
 ## Estilo de la interfaz
 
-Los criterios de interfaz de [AGENTS.md](AGENTS.md) están fijados (shadcn/ui, Tailwind, Lucide, tabla compartida, etc.). Un cambio de estilo ya definido solo se acepta si lo pide el mantenedor.
+Los criterios de interfaz de [CLAUDE.md](CLAUDE.md) están fijados (shadcn/ui, Tailwind, Lucide, tabla compartida, etc.). Un cambio de estilo ya definido solo se acepta si lo pide el mantenedor.
 
 ## Idioma
 
