@@ -224,9 +224,16 @@ function load(): Config {
   const data = parsed.data;
   data.DATABASE_URL = normalizeDbUrl(data.DATABASE_URL, "DATABASE_URL");
   data.APP_DATABASE_URL = normalizeDbUrl(data.APP_DATABASE_URL, "APP_DATABASE_URL");
-  const weak = weakSecrets({ domain: data.DOMAIN, jwtSecret: data.JWT_SECRET, appDbPassword: data.APP_DB_PASSWORD, databaseUrl: data.DATABASE_URL });
+  const weak = weakSecrets({
+    domain: data.DOMAIN,
+    jwtSecret: data.JWT_SECRET,
+    appDbPassword: data.APP_DB_PASSWORD,
+    databaseUrl: data.DATABASE_URL,
+    production: process.env.NODE_ENV === "production",
+  });
   if (weak.length > 0) {
-    throw new Error(`Secretos inseguros para un despliegue con dominio (${data.DOMAIN}):\n${weak.map((w) => `  - ${w}`).join("\n")}\nGenera claves con: openssl rand -base64 48`);
+    const where = data.DOMAIN && data.DOMAIN !== "localhost" ? `un despliegue con dominio (${data.DOMAIN})` : "el servidor";
+    throw new Error(`Secretos inseguros para ${where}:\n${weak.map((w) => `  - ${w}`).join("\n")}\nGenera claves con: openssl rand -base64 48 (o deja la variable vacía en el .env y se genera sola en ./data/secretos)`);
   }
   if (!data.APP_PUBLIC_URL) {
     data.APP_PUBLIC_URL = data.DOMAIN && data.DOMAIN !== "localhost" ? `https://${data.DOMAIN}` : "http://localhost:8000";

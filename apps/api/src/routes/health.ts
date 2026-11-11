@@ -1,4 +1,5 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
+import { authenticate, sessionToken } from "../auth/middleware.js";
 import { config } from "../config.js";
 import { webSearchEnabled } from "../lib/webSearch.js";
 import { sqlOwner } from "../db/client.js";
@@ -43,5 +44,32 @@ healthRoutes.get("/", async (c) => {
     webSearch: webSearchEnabled() ? setting("WEB_SEARCH_PROVIDER") : "desactivado",
   };
   const ok = database === "ok";
-  return c.json({ ok, services }, ok ? 200 : 503);
+  const status = ok ? 200 : 503;
+  // Sin sesión de superadministrador (monitores externos, healthchecks): solo ok / error / desactivado, sin mensajes de
+  // error (nombres internos, puertos) ni qué proveedores hay configurados.
+  if (!(await isSuperadmin(c))) {
+    const brief = (v: string) => (v === "ok" || v === "desactivado" ? v : "error");
+    return c.json({
+      ok,
+      services: {
+        database: brief(database),
+        embeddings: brief(embeddings),
+        reranker: brief(reranker),
+        antivirus: brief(services.antivirus),
+        llm: services.llm.length > 0,
+        webSearch: services.webSearch !== "desactivado",
+      },
+    }, status);
+  }
+  return c.json({ ok, services }, status);
 });
+
+/** ¿La petición trae una sesión válida de superadministrador (no de soporte)? Nunca falla: sin sesión, false. */
+async function isSuperadmin(c: Context): Promise<boolean> {
+  try {
+    const u = await authenticate(sessionToken(c), c.req.path);
+    return u.isSuperadmin && !u.support;
+  } catch {
+    return false;
+  }
+}

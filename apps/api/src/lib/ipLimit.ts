@@ -4,7 +4,7 @@ import { verifySession } from "../auth/jwt.js";
 import { SESSION_COOKIE } from "../auth/middleware.js";
 import { HttpError } from "./errors.js";
 import { RateLimiter } from "./rateLimit.js";
-import { clientIp } from "./request.js";
+import { clientIp, ipLimitKey } from "./request.js";
 import { setting } from "./settings.js";
 
 /**
@@ -27,7 +27,7 @@ export function ipRateLimit(fixedMax?: number): MiddlewareHandler {
       limiter = new RateLimiter(max, 60_000);
       limiterMax = max;
     }
-    if (!limiter.hit(clientIp(c))) {
+    if (!limiter.hit(ipLimitKey(clientIp(c)))) {
       c.header("retry-after", "60");
       throw new HttpError(429, "Demasiadas peticiones desde tu red. Espera un minuto e inténtalo de nuevo.");
     }

@@ -18,6 +18,12 @@ describe("secretos de producción", () => {
     expect(weakSecrets({ ...strong, domain: "", jwtSecret: "cambia-esto", appDbPassword: "x" })).toEqual([]);
     expect(weakSecrets({ ...strong, domain: "localhost", jwtSecret: "cambia-esto" })).toEqual([]);
   });
+  it("en la imagen de producción sin dominio rechaza los valores de ejemplo, pero no las claves cortas propias", () => {
+    const problems = weakSecrets({ ...strong, domain: "", production: true, jwtSecret: "cambia-esto-por-un-secreto-de-al-menos-32-caracteres" });
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toMatch(/JWT_SECRET.*ejemplo/);
+    expect(weakSecrets({ ...strong, domain: "", production: true, appDbPassword: "corta-pero-mia" })).toEqual([]);
+  });
   it("con dominio acepta claves largas y aleatorias", () => {
     expect(weakSecrets({ ...strong, domain: "rag.ejemplo.com" })).toEqual([]);
   });

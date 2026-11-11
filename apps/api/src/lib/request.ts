@@ -11,6 +11,20 @@ export function clientIp(c: Context): string {
   return c.req.header("x-real-ip")?.trim() || "local";
 }
 
+/**
+ * Clave de IP para los limitadores de intentos: IPv4 tal cual; IPv6 agrupada por su /64 (una conexión doméstica o un
+ * servidor reciben un /64 entero, así que cada dirección suelta no es «otro cliente»). Solo para limitar: los registros
+ * guardan la IP completa.
+ */
+export function ipLimitKey(ip: string): string {
+  if (!ip.includes(":")) return ip;
+  const [head, tail = ""] = ip.toLowerCase().split("::");
+  const h = head ? head.split(":") : [];
+  const t = tail ? tail.split(":") : [];
+  const full = ip.includes("::") ? [...h, ...Array(Math.max(0, 8 - h.length - t.length)).fill("0"), ...t] : h;
+  return `${full.slice(0, 4).map((g) => g.replace(/^0+(?=.)/, "")).join(":")}::/64`;
+}
+
 /** ¿La petición llegó por HTTPS? (directamente o a través del proxy). */
 export function isHttps(c: Context): boolean {
   const proto = c.req.header("x-forwarded-proto")?.split(",")[0]?.trim();

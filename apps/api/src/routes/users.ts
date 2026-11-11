@@ -6,6 +6,7 @@ import { hashPassword, passwordProblem } from "../auth/password.js";
 import { audit } from "../lib/audit.js";
 import { badRequest, HttpError, notFound } from "../lib/errors.js";
 import { revokeSessions } from "../auth/session.js";
+import { clearMfaAttempts } from "../lib/mfaLimit.js";
 import { assertUserSlot } from "../lib/plans.js";
 import { createUserLink, emailLink } from "../lib/tokens.js";
 import { OptionalEmailSchema, parse, UsernameSchema, UUID_RE } from "../lib/validate.js";
@@ -166,7 +167,10 @@ userRoutes.patch("/:id", async (c) => {
     throw err;
   });
   if (!updated) throw notFound("Usuario no encontrado");
-  if (body.password !== undefined) await revokeSessions(id);
+  if (body.password !== undefined) {
+    await revokeSessions(id);
+    clearMfaAttempts(id);
+  }
   await audit(c, "user.updated", {
     targetType: "user",
     targetId: id,

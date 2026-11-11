@@ -16,7 +16,7 @@ import { contentMatchesFormat, formatFor, SUPPORTED_EXTENSIONS } from "../ingest
 import { enqueueIngest } from "../queue.js";
 import { invalidateCollections } from "../rag/cache.js";
 import { readStoredFile, removeStored, safeFilename, saveFile, titleFromFilename } from "../storage/local.js";
-import { badRequest, HttpError, notFound } from "../lib/errors.js";
+import { badRequest, forbidden, HttpError, notFound } from "../lib/errors.js";
 import { userRateLimit } from "../lib/limits.js";
 import { notifyQuota } from "../lib/quotaNotice.js";
 import { documentSlots } from "../lib/plans.js";
@@ -494,9 +494,13 @@ interface Removed {
 
 /**
  * Manda documentos a la papelera: dejan de verse y de contar para el plan, pero se conservan (archivo, fragmentos y
- * vectores) para poder restaurarlos. Con TRASH_RETENTION_DAYS=0 no hay papelera y se borran del todo.
+ * vectores) para poder restaurarlos. Con TRASH_RETENTION_DAYS=0 no hay papelera y se borran del todo: eso es eliminar
+ * definitivamente, solo de administradores (la base también lo exige: política documents_delete).
  */
 async function trashDocuments(ctx: ReturnType<typeof tenantCtx>, ids: string[]): Promise<Removed[]> {
+  if (setting("TRASH_RETENTION_DAYS") === 0 && ctx.role !== "admin") {
+    throw forbidden("Sin papelera (retención 0 días), solo un administrador puede eliminar documentos.");
+  }
   const rows = await withTenant(ctx, async (tx) => {
     const removed =
       setting("TRASH_RETENTION_DAYS") === 0

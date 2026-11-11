@@ -1,17 +1,19 @@
 import { Hono, type Context } from "hono";
-import { deleteCookie, getCookie } from "hono/cookie";
+import { deleteCookie } from "hono/cookie";
 import { z } from "zod";
 import { sqlOwner, type Role } from "../db/client.js";
 import { signMfaToken, verifyMfaToken, verifySession } from "../auth/jwt.js";
 import { issueSession, revokeSession, revokeSessions } from "../auth/session.js";
-import { requireAuth, SESSION_COOKIE, type AppEnv } from "../auth/middleware.js";
+import { requireAuth, SESSION_COOKIE, sessionToken, type AppEnv } from "../auth/middleware.js";
 import { hashPassword, passwordProblem, verifyPassword } from "../auth/password.js";
 import { audit, auditLog } from "../lib/audit.js";
 import { badRequest, HttpError, notFound, unauthorized } from "../lib/errors.js";
 import { emailEnabled } from "../lib/mailer.js";
+import { clearMfaAttempts, mfaLimiter } from "../lib/mfaLimit.js";
 import { RateLimiter } from "../lib/rateLimit.js";
 import { twoFactorRequired } from "../lib/limits.js";
-import { clientIp } from "../lib/request.js";
+import { logEvent } from "../lib/logger.js";
+import { clientIp, ipLimitKey } from "../lib/request.js";
 import { consumeSecondFactor, TOTP_COLS, type TotpRow } from "../lib/secondFactor.js";
 import {
   decryptSecret,
@@ -32,8 +34,7 @@ const loginLimiter = new RateLimiter(10, 15 * 60 * 1000);
 const loginEmailLimiter = new RateLimiter(30, 15 * 60 * 1000);
 const forgotLimiter = new RateLimiter(5, 60 * 60 * 1000);
 const tokenLimiter = new RateLimiter(30, 15 * 60 * 1000);
-// Segundo paso del login: pocos intentos por usuario (un código son solo 6 dígitos).
-const mfaLimiter = new RateLimiter(5, 15 * 60 * 1000);
+// Segundo paso del login: `mfaLimiter` (lib/mfaLimit.ts), con espera creciente hasta 2 h.
 
 // Hash de relleno para que el tiempo de respuesta no revele si el usuario existe.
 const dummyHash = hashPassword("contraseña-de-relleno");
@@ -77,7 +78,7 @@ authRoutes.post("/login", async (c) => {
   const body = parse(LoginBody, await c.req.json().catch(() => ({})));
   const login = (body.login ?? body.email)!.toLowerCase();
   const ip = clientIp(c);
-  if (!loginLimiter.hit(`${ip}|${login}`) || !loginEmailLimiter.hit(login)) {
+  if (!loginLimiter.hit(`${ipLimitKey(ip)}|${login}`) || !loginEmailLimiter.hit(login)) {
     throw new HttpError(429, "Demasiados intentos. Espera unos minutos.");
   }
 
@@ -97,7 +98,7 @@ authRoutes.post("/login", async (c) => {
     throw unauthorized("Usuario o contraseña incorrectos");
   }
 
-  loginLimiter.reset(`${ip}|${login}`);
+  loginLimiter.reset(`${ipLimitKey(ip)}|${login}`);
   // Con verificación en dos pasos, la contraseña sola no abre sesión: falta el código.
   if (user.totp) return c.json({ mfaRequired: true, mfaToken: await signMfaToken(user.id) });
   const session = await startSession(c, user);
@@ -132,7 +133,8 @@ authRoutes.post("/login/totp", async (c) => {
 
 authRoutes.post("/logout", async (c) => {
   // Además de borrar la cookie, se cierra la sesión en el servidor: el token ya no sirve aunque alguien lo conserve.
-  const token = getCookie(c, SESSION_COOKIE);
+  // Cookie (navegador) o Bearer (scripts), igual que requireAuth.
+  const token = sessionToken(c);
   const claims = token ? await verifySession(token) : null;
   if (claims?.sessionId) await revokeSession(claims.userId, claims.sessionId);
   // Las de soporte no se registran en user_sessions: se invalidan todas las de esa cuenta de soporte.
@@ -212,6 +214,7 @@ authRoutes.post("/change-password", requireAuth, async (c) => {
     mfaLimiter.reset(u.id);
   }
   await sqlOwner`UPDATE users SET password_hash = ${await hashPassword(body.newPassword)} WHERE id = ${u.id}`;
+  clearMfaAttempts(u.id);
   // Las sesiones abiertas en otros dispositivos dejan de valer; esta se renueva para no sacar al usuario.
   await revokeSessions(u.id);
   await issueSession(c, { userId: u.id, tenantId: u.tenantId, role: u.role });
@@ -311,17 +314,23 @@ authRoutes.post("/forgot", async (c) => {
       ? "Si la cuenta existe y tiene un email registrado, recibirás un enlace para elegir una nueva contraseña. Si no lo recibes, pide a un administrador que la restablezca."
       : "El envío de correos no está configurado. Pide a un administrador que restablezca tu contraseña.",
   };
-  if (!emailEnabled() || !forgotLimiter.hit(`${ip}|${login}`)) return c.json(generic);
+  if (!emailEnabled() || !forgotLimiter.hit(`${ipLimitKey(ip)}|${login}`)) return c.json(generic);
 
   const [user] = await sqlOwner<{ id: string; tenant_id: string; name: string; username: string; email: string; tenant_name: string }[]>`
     SELECT u.id, u.tenant_id, u.name, u.username, u.email, t.name AS tenant_name
       FROM users u JOIN tenants t ON t.id = u.tenant_id
      WHERE ${byLogin(login)}
-       AND u.email IS NOT NULL AND u.is_active AND t.is_active AND u.password_hash IS NOT NULL`;
+       AND u.email IS NOT NULL AND u.is_active AND t.is_active AND u.password_hash IS NOT NULL
+       -- El superadministrador no se restablece por correo (quien controle su buzón tomaría la plataforma): usa
+       -- reset-password en el servidor. La respuesta es la misma, así que no se revela que la cuenta existe.
+       AND NOT u.is_superadmin`;
   if (user) {
-    const url = await createUserLink({ tenantId: user.tenant_id, userId: user.id, kind: "reset", createdBy: null });
-    await emailLink("reset", user, url, user.tenant_name);
-    await auditLog({ tenantId: user.tenant_id, userId: user.id, username: user.username, ip }, "auth.reset_requested");
+    // En segundo plano: esperar al servidor de correo haría que la respuesta tardara más si la cuenta existe.
+    void (async () => {
+      const url = await createUserLink({ tenantId: user.tenant_id, userId: user.id, kind: "reset", createdBy: null });
+      await emailLink("reset", user, url, user.tenant_name);
+      await auditLog({ tenantId: user.tenant_id, userId: user.id, username: user.username, ip }, "auth.reset_requested");
+    })().catch((err) => logEvent("error", "forgot: no se pudo enviar el enlace", { error: String(err) }));
   }
   return c.json(generic);
 });
@@ -329,7 +338,7 @@ authRoutes.post("/forgot", async (c) => {
 /** Comprueba un enlace antes de mostrar el formulario. */
 authRoutes.get("/link", async (c) => {
   const token = c.req.query("token") ?? "";
-  if (!tokenLimiter.hit(clientIp(c))) throw new HttpError(429, "Demasiados intentos. Espera unos minutos.");
+  if (!tokenLimiter.hit(ipLimitKey(clientIp(c)))) throw new HttpError(429, "Demasiados intentos. Espera unos minutos.");
   const valid = await findValidToken(token);
   if (!valid) throw notFound("El enlace no es válido o ha caducado. Pide uno nuevo.");
   return c.json({ kind: valid.kind, username: valid.username, email: valid.email, name: valid.name });
@@ -344,7 +353,7 @@ const AcceptBody = z.object({
 /** Usa el enlace: fija la contraseña (y el nombre, si es una invitación) e inicia sesión. */
 authRoutes.post("/link", async (c) => {
   const body = parse(AcceptBody, await c.req.json().catch(() => ({})));
-  if (!tokenLimiter.hit(clientIp(c))) throw new HttpError(429, "Demasiados intentos. Espera unos minutos.");
+  if (!tokenLimiter.hit(ipLimitKey(clientIp(c)))) throw new HttpError(429, "Demasiados intentos. Espera unos minutos.");
   const general = passwordProblem(body.password);
   if (general) throw badRequest(general);
   const valid = await findValidToken(body.token);
@@ -366,6 +375,7 @@ authRoutes.post("/link", async (c) => {
     await tx`UPDATE user_tokens SET used_at = now() WHERE user_id = ${valid.userId} AND used_at IS NULL`;
     return u! as SessionUser & { totp: boolean };
   });
+  clearMfaAttempts(user.id); // contraseña nueva: los intentos fallidos del 2FA de antes ya no cuentan
 
   await auditLog(
     { tenantId: user.tenant_id, userId: user.id, username: user.username, ip: clientIp(c) },

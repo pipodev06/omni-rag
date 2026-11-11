@@ -23,7 +23,7 @@ describe.skipIf(!enabled)("Row Level Security", async () => {
     for (const t of ["a", "b"]) {
       const [tenant] = await sqlOwner`INSERT INTO tenants (name, slug) VALUES (${t}, ${`rls-${t}-${tag}`}) RETURNING id`;
       ids[`tenant_${t}`] = tenant!.id;
-      for (const role of ["admin", "viewer"]) {
+      for (const role of ["admin", "editor", "viewer"]) {
         const [u] = await sqlOwner`
           INSERT INTO users (tenant_id, username, email, name, password_hash, role)
           VALUES (${tenant!.id}, ${`${role}-${t}-${tag}`}, ${`${role}-${t}-${tag}@rls.test`}, ${role}, 'x', ${role}) RETURNING id`;
@@ -47,7 +47,7 @@ describe.skipIf(!enabled)("Row Level Security", async () => {
     await closeDb();
   });
 
-  const as = (t: "a" | "b", role: "admin" | "viewer") => ({
+  const as = (t: "a" | "b", role: "admin" | "editor" | "viewer") => ({
     tenantId: ids[`tenant_${t}`]!,
     userId: ids[`${role}_${t}`]!,
     role,
@@ -71,6 +71,16 @@ describe.skipIf(!enabled)("Row Level Security", async () => {
   it("un lector no puede borrar documentos aunque tenga acceso", async () => {
     const deleted = await withTenant(as("a", "viewer"), (tx) => tx`DELETE FROM documents RETURNING id`);
     expect(deleted).toHaveLength(0);
+  });
+
+  it("un editor manda a la papelera y restaura, pero no elimina definitivamente", async () => {
+    await sqlOwner`INSERT INTO collection_members (tenant_id, collection_id, user_id) VALUES (${ids.tenant_a!}, ${ids.col_a!}, ${ids.editor_a!})`;
+    const trashed = await withTenant(as("a", "editor"), (tx) => tx`UPDATE documents SET deleted_at = now() WHERE id = ${ids.doc_a!} RETURNING id`);
+    expect(trashed).toHaveLength(1);
+    const deleted = await withTenant(as("a", "editor"), (tx) => tx`DELETE FROM documents WHERE id = ${ids.doc_a!} RETURNING id`);
+    expect(deleted).toHaveLength(0);
+    const restored = await withTenant(as("a", "editor"), (tx) => tx`UPDATE documents SET deleted_at = NULL WHERE id = ${ids.doc_a!} RETURNING id`);
+    expect(restored).toHaveLength(1);
   });
 
   it("no se puede insertar un documento en la colección de otra organización", async () => {
