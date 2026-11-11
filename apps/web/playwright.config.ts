@@ -1,7 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
 /**
- * Pruebas de extremo a extremo contra un sistema en marcha (docs/desarrollo.md → «Pruebas de extremo a extremo»).
+ * Pruebas de extremo a extremo contra un sistema en marcha (guia/desarrollo.md → «Pruebas de extremo a extremo»).
  *
  *   E2E_USER=<superadmin> E2E_PASSWORD=<su contraseña> pnpm --filter @rag/web e2e
  *

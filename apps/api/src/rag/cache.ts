@@ -6,7 +6,7 @@ import { setting } from "../lib/settings.js";
 /**
  * Caché de respuestas en PostgreSQL.
  *
- * Reglas (conservadoras a propósito, ver docs/decisiones.md §13):
+ * Reglas (conservadoras a propósito):
  *  - Solo se cachean primeras preguntas de una conversación (sin historial).
  *  - Una entrada solo sirve para el MISMO conjunto de colecciones consultables
  *    (scope) dentro de la misma organización → respeta los permisos.

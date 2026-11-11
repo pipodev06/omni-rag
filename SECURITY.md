@@ -26,4 +26,4 @@ Solo la última versión de la rama `main`.
 
 ## Si instalas Omni RAG
 
-Sigue [docs/produccion.md](docs/produccion.md): cambia todas las contraseñas de `.env.example`, usa HTTPS con `WEB_BIND=127.0.0.1` y activa el 2FA del superadministrador.
+Sigue [guia/produccion.md](guia/produccion.md): cambia todas las contraseñas de `.env.example`, usa HTTPS con `WEB_BIND=127.0.0.1` y activa el 2FA del superadministrador.

@@ -18,7 +18,7 @@
 # Restaurar archivos: docker compose run --rm -v "$PWD/restore:/restore" backup-b2 --restore /restore [origen]
 #   origen: «current» (por defecto, todo), «current/<carpeta>/<carpeta>» (una parte) o «archive/AAAA-MM-DD» (lo borrado ese día).
 # Ver lo borrado:    docker compose run --rm backup-b2 --archive
-# Siempre en marcha: sin bucket ni claves espera sin hacer nada (ver docs/produccion.md → «Copias de seguridad»).
+# Siempre en marcha: sin bucket ni claves espera sin hacer nada (ver guia/produccion.md → «Copias de seguridad»).
 # =====================================================================
 set -eu
 

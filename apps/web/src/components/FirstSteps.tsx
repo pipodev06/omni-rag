@@ -57,7 +57,7 @@ export function FirstSteps({ onCreateOrg, onOpenPlans }: { onCreateOrg: () => vo
       <div className="rounded-xl border bg-card px-5">
         <div className="border-b py-4">
           <h2 className="font-semibold">Primeros pasos</h2>
-          <p className="text-sm text-muted-foreground">Omni RAG ya funciona con valores por defecto. Completa esto antes de dar acceso a nadie (detalle en docs/configuracion-inicial.md).</p>
+          <p className="text-sm text-muted-foreground">Omni RAG ya funciona con valores por defecto. Completa esto antes de dar acceso a nadie (detalle en guia/configuracion-inicial.md).</p>
         </div>
         <ol>
           <Step done title="Cuenta de superadministrador">

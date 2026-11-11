@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-// Regla del proyecto: toda variable de configuración nueva se documenta en docs/variables.md y en .env.example.
+// Regla del proyecto: toda variable de configuración nueva se documenta en guia/variables.md y en .env.example.
 const root = resolve(__dirname, "../../..");
 const read = (p: string) => readFileSync(resolve(root, p), "utf8");
 
@@ -13,8 +13,8 @@ describe("documentación de variables de entorno", () => {
     expect(keys.length).toBeGreaterThan(50);
   });
 
-  it("todas aparecen en docs/variables.md", () => {
-    const doc = read("docs/variables.md");
+  it("todas aparecen en guia/variables.md", () => {
+    const doc = read("guia/variables.md");
     expect(keys.filter((k) => !new RegExp(String.raw`\b${k}\b`).test(doc))).toEqual([]);
   });
 

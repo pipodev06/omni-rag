@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 
 export type RestoreCopy = { stamp: string; at: string; hasUploads: boolean };
 
-/** Los mismos pasos de docs/operacion.md («Restaurar una copia»), con la fecha de esta copia. */
+/** Los mismos pasos de guia/operacion.md («Restaurar una copia»), con la fecha de esta copia. */
 function commands({ stamp, hasUploads }: RestoreCopy): string {
   return [
     "docker compose stop api worker web backup backup-b2",

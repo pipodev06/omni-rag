@@ -19,3 +19,7 @@ docker-compose.override.yml
 apps/web/e2e/.state.json
 apps/web/test-results/
 apps/web/playwright-report/
+
+# Interno: solo local (repo público)
+CLAUDE.md
+deuda-fix-bugs-fix-mejoras.md

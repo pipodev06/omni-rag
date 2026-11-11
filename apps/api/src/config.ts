@@ -145,7 +145,7 @@ const schema = z.object({
     .transform((v) => v === "true"),
   CACHE_TTL_HOURS: z.coerce.number().positive().default(168),
   // Distancia máxima entre preguntas para considerarlas iguales. Muy baja a propósito:
-  // preguntas distintas pueden estar a 0.03 (ver docs/operacion.md).
+  // preguntas distintas pueden estar a 0.03 (ver guia/operacion.md).
   CACHE_MAX_DISTANCE: z.coerce.number().min(0).max(1).default(0.015),
 
   // Antivirus (ClamAV, opcional): vacío = desactivado. Con el perfil «antivirus» de docker compose, el host es «clamav».

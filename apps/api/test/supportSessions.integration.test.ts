@@ -1,6 +1,6 @@
 /**
  * Sesiones de soporte contra PostgreSQL real y la aplicación completa (rutas, middleware, cookies).
- * Se ejecuta solo con base de datos de prueba (ver docs/desarrollo.md):
+ * Se ejecuta solo con base de datos de prueba (ver guia/desarrollo.md):
  *   RUN_DB_TESTS=1 DATABASE_URL=... APP_DATABASE_URL=... APP_DB_PASSWORD=... pnpm test
  * Comportamiento esperado: al entrar como soporte la sesión normal del superadministrador se cierra; al salir o cerrar
  * sesión, el token de soporte deja de valer; salir devuelve una sesión normal nueva.

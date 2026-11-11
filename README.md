@@ -2,7 +2,7 @@
 
 **Omni RAG** es un sistema **RAG (Retrieval-Augmented Generation)** multi-cliente para hacer preguntas en lenguaje natural sobre tus documentos y obtener respuestas **con las fuentes citadas**. Software libre bajo [AGPL-3.0](LICENSE).
 
-> *English:* Omni RAG is a self-hosted, multi-tenant RAG platform (Hono API + worker + React/Vite, PostgreSQL + pgvector, Docling, local embeddings and re-ranking, pluggable LLM providers). The interface and documentation are in Spanish. Quick start below; sizing profiles in [docs/requisitos.md](docs/requisitos.md).
+> *English:* Omni RAG is a self-hosted, multi-tenant RAG platform (Hono API + worker + React/Vite, PostgreSQL + pgvector, Docling, local embeddings and re-ranking, pluggable LLM providers). The interface and documentation are in Spanish. Quick start below; sizing profiles in [guia/requisitos.md](guia/requisitos.md).
 
 - 📄 **Todo tipo de documentos:** PDF (también escaneados, con OCR), Word, PowerPoint, Excel, CSV, HTML, Markdown, texto e imágenes.
 - 🏢 **Multi-cliente con permisos:** cada organización está aislada a nivel de base de datos (Row Level Security de PostgreSQL), con roles *administrador / editor / lector* y colecciones con acceso por usuario.
@@ -37,16 +37,16 @@ docker compose up -d
 docker compose logs api | grep -A2 "CONFIGURACIÓN INICIAL"   # código de un solo uso
 ```
 
-No hace falta `.env`: las contraseñas internas se generan solas. Abre **http://localhost:8000**, escribe el código y crea tu superadministrador; después, en *Organizaciones → Primeros pasos*, pon la clave del proveedor de modelos y crea la primera organización. Qué valores importan y por qué: **[docs/configuracion-inicial.md](docs/configuracion-inicial.md)**.
+No hace falta `.env`: las contraseñas internas se generan solas. Abre **http://localhost:8000**, escribe el código y crea tu superadministrador; después, en *Organizaciones → Primeros pasos*, pon la clave del proveedor de modelos y crea la primera organización. Qué valores importan y por qué: **[guia/configuracion-inicial.md](guia/configuracion-inicial.md)**.
 
 Opcional: aplica un perfil de tamaño con `bash deploy/perfil.sh mediano` (ver abajo).
 
 > El primer arranque tarda unos minutos: se descargan las imágenes (~3 GB, sobre todo Docling) y el modelo de embeddings (~1 GB).
 > Comprueba el estado con `curl http://localhost:8000/api/health`.
 
-Guía completa paso a paso: **[docs/instalacion.md](docs/instalacion.md)**.
+Guía completa paso a paso: **[guia/instalacion.md](guia/instalacion.md)**.
 
-**¿Publicarlo con tu dominio?** No hay que tocar código: pon `DOMAIN=rag.tuempresa.com`, `COMPOSE_PROFILES=https` y `WEB_BIND=127.0.0.1` en `.env` y vuelve a arrancar. Caddy obtiene el certificado HTTPS solo. Ver **[docs/produccion.md](docs/produccion.md)**.
+**¿Publicarlo con tu dominio?** No hay que tocar código: pon `DOMAIN=rag.tuempresa.com`, `COMPOSE_PROFILES=https` y `WEB_BIND=127.0.0.1` en `.env` y vuelve a arrancar. Caddy obtiene el certificado HTTPS solo. Ver **[guia/produccion.md](guia/produccion.md)**.
 
 ---
 
@@ -60,7 +60,7 @@ Tres perfiles ya calculados. Se aplican con un comando y se pueden cambiar cuand
 | **Mediano** (recomendado) | 4 | 8 GB | 2–4 organizaciones, decenas de usuarios | `bash deploy/perfil.sh mediano` |
 | **Grande** | 6 | 16 GB | ~4 organizaciones, ~20 usuarios activos a la vez, ingesta más rápida | `bash deploy/perfil.sh grande` |
 
-Después, `docker compose up -d`. Detalle por servicio, qué cambia cada perfil, disco y VPS recomendados: **[docs/requisitos.md](docs/requisitos.md)**. Si compartes el servidor con otros servicios, [`deploy/autotune.sh`](docs/operacion.md#autoajuste-de-recursos) calcula los límites descontando lo que ellos usan.
+Después, `docker compose up -d`. Detalle por servicio, qué cambia cada perfil, disco y VPS recomendados: **[guia/requisitos.md](guia/requisitos.md)**. Si compartes el servidor con otros servicios, [`deploy/autotune.sh`](guia/operacion.md#autoajuste-de-recursos) calcula los límites descontando lo que ellos usan.
 
 ---
 
@@ -76,7 +76,7 @@ Después, `docker compose up -d`. Detalle por servicio, qué cambia cada perfil,
 
 ## Cambiar la configuración (`.env`)
 
-Toda la configuración de infraestructura (claves, dominio, correo, copias de seguridad…) vive en el archivo `.env`. La lista completa, con valores por defecto y cuándo se aplica cada una, está en [docs/variables.md](docs/variables.md). Tres reglas para no tropezar:
+Toda la configuración de infraestructura (claves, dominio, correo, copias de seguridad…) vive en el archivo `.env`. La lista completa, con valores por defecto y cuándo se aplica cada una, está en [guia/variables.md](guia/variables.md). Tres reglas para no tropezar:
 
 ### 1. Aplica los cambios con `docker compose up -d`, no con `restart`
 
@@ -94,7 +94,7 @@ Un `#` al inicio de una línea la anula: esa variable usa su valor por defecto (
 |---|---|
 | `SEED_ADMIN_*` | **Nada.** Solo se usan con la base de datos vacía (primer arranque). La contraseña, en *Mi cuenta*, o con `docker compose exec api node dist/scripts/reset-password.js admin` si no puedes entrar. |
 | `LLM_MODELS`, `TENANT_DAILY_QUESTION_LIMIT` | **Nada.** Solo siembran el plan «Estándar». Después se editan en *Organizaciones → Planes*. |
-| `EMBEDDING_MODEL`, `EMBEDDING_DIM` | Hay que recrear los fragmentos y reprocesar todos los documentos (ver [operacion.md](docs/operacion.md#cambiar-el-modelo-de-embeddings)). |
+| `EMBEDDING_MODEL`, `EMBEDDING_DIM` | Hay que recrear los fragmentos y reprocesar todos los documentos (ver [operacion.md](guia/operacion.md#cambiar-el-modelo-de-embeddings)). |
 | `JWT_SECRET` | Se aplica, pero **todos cierran sesión y el 2FA de todos deja de funcionar**. Cámbialo solo si hace falta. |
 | El resto (`OPENROUTER_API_KEY`, `SMTP_*`, `BACKUP_*`, límites, `DOMAIN`…) | Se aplican con `docker compose up -d`. |
 
@@ -118,7 +118,7 @@ Las contraseñas pueden llevar cualquier carácter, incluidos `/`, `+` y `=` (lo
 
 ## Papelera de documentos
 
-Borrar un documento lo manda a la **Papelera** (botón en *Documentos*): deja de verse y de contar para el plan, pero se conserva `TRASH_RETENTION_DAYS` días (30 por defecto, `0` = sin papelera) y se **restaura con un clic**, sin reprocesarlo. Eliminar definitivamente o vaciar la papelera es solo del administrador. Detalle en [docs/operacion.md](docs/operacion.md#papelera-de-documentos).
+Borrar un documento lo manda a la **Papelera** (botón en *Documentos*): deja de verse y de contar para el plan, pero se conserva `TRASH_RETENTION_DAYS` días (30 por defecto, `0` = sin papelera) y se **restaura con un clic**, sin reprocesarlo. Eliminar definitivamente o vaciar la papelera es solo del administrador. Detalle en [guia/operacion.md](guia/operacion.md#papelera-de-documentos).
 
 ---
 
@@ -133,7 +133,7 @@ Funcionan solas, sin configurar nada: cada 24 h (o a la hora que elijas) se guar
 | **Subirla a Backblaze B2** | `B2_KEY_ID`, `B2_APPLICATION_KEY`, `B2_BUCKET` (en el `.env` o en *Sistema → Copias*) (clave limitada al bucket, con permiso de lectura y escritura) |
 | **Archivos subidos incrementales** (recomendado con muchos GB): solo sube lo nuevo, cifrado, y guarda 30 días lo que se borra | `BACKUP_UPLOADS_TGZ=false` y `B2_SYNC_UPLOADS=true` |
 
-Las copias **no incluyen el `.env`**: guarda aparte `JWT_SECRET` (sin él el 2FA deja de funcionar), la frase de cifrado, las claves de los proveedores de LLM y las `B2_*`. Pasos completos y restauración en un servidor limpio: [docs/produccion.md](docs/produccion.md#6-copias-de-seguridad-fuera-del-servidor) y [docs/operacion.md](docs/operacion.md#restaurar-en-un-servidor-limpio-desde-backblaze).
+Las copias **no incluyen el `.env`**: guarda aparte `JWT_SECRET` (sin él el 2FA deja de funcionar), la frase de cifrado, las claves de los proveedores de LLM y las `B2_*`. Pasos completos y restauración en un servidor limpio: [guia/produccion.md](guia/produccion.md#6-copias-de-seguridad-fuera-del-servidor) y [guia/operacion.md](guia/operacion.md#restaurar-en-un-servidor-limpio-desde-backblaze).
 
 ---
 
@@ -141,20 +141,18 @@ Las copias **no incluyen el `.env`**: guarda aparte `JWT_SECRET` (sin él el 2FA
 
 | Documento | Contenido |
 |---|---|
-| [docs/investigacion-rag.md](docs/investigacion-rag.md) | Qué es un RAG, cómo funciona, técnicas y la investigación previa a este proyecto |
-| [docs/arquitectura.md](docs/arquitectura.md) | Componentes, flujos de ingesta y consulta, modelo de datos |
-| [docs/permisos.md](docs/permisos.md) | Organizaciones, roles, colecciones y cómo garantiza el aislamiento la base de datos |
-| [docs/requisitos.md](docs/requisitos.md) | RAM, CPU y disco medidos; perfiles para 6/8/16 GB y qué VPS contratar |
-| [docs/instalacion.md](docs/instalacion.md) | Instalación paso a paso y configuración de OpenRouter |
-| [docs/configuracion-inicial.md](docs/configuracion-inicial.md) | Primer arranque, qué es imprescindible, qué se recomienda y por qué cada valor por defecto |
-| [docs/docker-compose.md](docs/docker-compose.md) | Cada servicio, volumen, red y medida de seguridad del `docker-compose.yml` |
-| [docs/variables.md](docs/variables.md) | Referencia de todas las variables del `.env`: qué hace cada una, su valor por defecto y cuándo se aplica |
-| [docs/produccion.md](docs/produccion.md) | Publicar con dominio y HTTPS, correo SMTP y copias fuera del servidor |
-| [docs/operacion.md](docs/operacion.md) | Copias de seguridad, usuarios e invitaciones, auditoría, cambio de modelos, calibración y problemas frecuentes |
-| [docs/api.md](docs/api.md) | Referencia de la API HTTP |
-| [docs/desarrollo.md](docs/desarrollo.md) | Desarrollo local, pruebas y estructura del código |
-| [docs/decisiones.md](docs/decisiones.md) | Decisiones técnicas y por qué (TypeScript vs Python, pgvector, etc.) |
-| [docs/criterios.md](docs/criterios.md) | Detalle de las reglas de interfaz, producto, despliegue y acceso que resume `CLAUDE.md` |
+| [guia/investigacion-rag.md](guia/investigacion-rag.md) | Qué es un RAG, cómo funciona, técnicas y la investigación previa a este proyecto |
+| [guia/arquitectura.md](guia/arquitectura.md) | Componentes, flujos de ingesta y consulta, modelo de datos |
+| [guia/permisos.md](guia/permisos.md) | Organizaciones, roles, colecciones y cómo garantiza el aislamiento la base de datos |
+| [guia/requisitos.md](guia/requisitos.md) | RAM, CPU y disco medidos; perfiles para 6/8/16 GB y qué VPS contratar |
+| [guia/instalacion.md](guia/instalacion.md) | Instalación paso a paso y configuración de OpenRouter |
+| [guia/configuracion-inicial.md](guia/configuracion-inicial.md) | Primer arranque, qué es imprescindible, qué se recomienda y por qué cada valor por defecto |
+| [guia/docker-compose.md](guia/docker-compose.md) | Cada servicio, volumen, red y medida de seguridad del `docker-compose.yml` |
+| [guia/variables.md](guia/variables.md) | Referencia de todas las variables del `.env`: qué hace cada una, su valor por defecto y cuándo se aplica |
+| [guia/produccion.md](guia/produccion.md) | Publicar con dominio y HTTPS, correo SMTP y copias fuera del servidor |
+| [guia/operacion.md](guia/operacion.md) | Copias de seguridad, usuarios e invitaciones, auditoría, cambio de modelos, calibración y problemas frecuentes |
+| [guia/api.md](guia/api.md) | Referencia de la API HTTP |
+| [guia/desarrollo.md](guia/desarrollo.md) | Desarrollo local, pruebas y estructura del código |
 | [ROADMAP.md](ROADMAP.md) | Ideas que pueden o no agregarse, agrupadas por tema |
 
 ---
@@ -195,13 +193,13 @@ omni-rag/
 │   └── web/                  # interfaz React (shadcn/ui + Tailwind)
 ├── deploy/                   # scripts de copias y secretos (van en la imagen omni-rag-ops), autotune y perfiles
 ├── scripts/smoke-test.mjs    # prueba de punta a punta contra un sistema en marcha
-└── docs/                     # documentación
+└── guia/                     # documentación
 ```
 
 ## ⚠️ Importante sobre los modelos gratuitos
 
 - **Límites:** OpenRouter permite **50 peticiones/día** con modelos gratuitos, o **1.000/día** si alguna vez compraste ≥ 10 USD de créditos (los créditos no se gastan con modelos gratis). El sistema también limita las preguntas por organización (`TENANT_DAILY_QUESTION_LIMIT`).
-- **Privacidad:** algunos proveedores gratuitos pueden registrar o usar los textos enviados. En cada pregunta se envían **fragmentos de los documentos** al LLM. Revisa la configuración de privacidad de tu cuenta de OpenRouter antes de usar documentos confidenciales ([docs/instalacion.md](docs/instalacion.md#3-clave-y-privacidad-en-openrouter)).
+- **Privacidad:** algunos proveedores gratuitos pueden registrar o usar los textos enviados. En cada pregunta se envían **fragmentos de los documentos** al LLM. Revisa la configuración de privacidad de tu cuenta de OpenRouter antes de usar documentos confidenciales ([guia/instalacion.md](guia/instalacion.md#3-clave-y-privacidad-en-openrouter)).
 - Los **embeddings** y la **lectura de documentos** son 100 % locales: esos datos nunca salen de tu servidor.
 
 ## Contribuir y seguridad

@@ -53,7 +53,7 @@ export function applyRerank<T>(items: T[], scores: number[], topK: number, minSc
 /**
  * Texto de un candidato para el re-ranker: título, sección y contenido, recortado a `maxChars` (0 = completo).
  * Recortar acelera el re-ranking (cuesta CPU en proporción al texto) pero cambia qué fragmentos salen primero:
- * ver la tabla de mediciones en docs/operacion.md.
+ * ver la tabla de mediciones en guia/operacion.md.
  */
 export function rerankText(h: { documentTitle: string; heading: string; content: string }, maxChars = config.RERANK_MAX_CHARS): string {
   const text = `${[h.documentTitle, h.heading].filter(Boolean).join(" — ")}\n${h.content}`;

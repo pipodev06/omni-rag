@@ -24,7 +24,7 @@ PNPM_FETCH_RETRIES="${PNPM_FETCH_RETRIES:-8}"
 # Aviso temprano: sin DNS el build se queda minutos reintentando antes de fallar.
 if command -v getent >/dev/null 2>&1 && ! getent hosts registry.npmjs.org >/dev/null 2>&1; then
   echo "AVISO: este servidor no resuelve registry.npmjs.org; el build fallará con EAI_AGAIN." >&2
-  echo "       Fija un DNS por IPv4 en el servidor (docs/instalacion.md → «Si el build falla con EAI_AGAIN»)." >&2
+  echo "       Fija un DNS por IPv4 en el servidor (guia/instalacion.md → «Si el build falla con EAI_AGAIN»)." >&2
 fi
 
 ARGS="--build-arg PNPM_NETWORK_CONCURRENCY=$PNPM_NETWORK_CONCURRENCY --build-arg PNPM_FETCH_RETRIES=$PNPM_FETCH_RETRIES"

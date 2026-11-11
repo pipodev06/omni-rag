@@ -2,7 +2,7 @@
  * Prueba de integración de Row Level Security contra PostgreSQL real.
  * Se ejecuta solo si hay base de datos de prueba:
  *   RUN_DB_TESTS=1 DATABASE_URL=... APP_DATABASE_URL=... APP_DB_PASSWORD=... pnpm test
- * (ver docs/desarrollo.md). Simula "bugs" en el código: consultas sin filtro
+ * (ver guia/desarrollo.md). Simula "bugs" en el código: consultas sin filtro
  * de organización, inserciones en colecciones ajenas, etc.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";

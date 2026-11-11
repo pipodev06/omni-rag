@@ -1,0 +1,718 @@
+# Operación y mantenimiento
+
+## Comandos habituales
+
+```bash
+docker compose ps                    # estado de los servicios
+docker compose logs -f api worker    # registros en vivo
+docker compose restart api worker    # reiniciar tras cambiar .env
+docker compose stop                  # parar sin borrar los contenedores
+docker compose down                  # parar y borrar los contenedores (los datos de ./data se conservan)
+git pull && docker compose pull && docker compose up -d   # actualizar (imágenes ya hechas, sin compilar)
+curl localhost:8000/api/health       # estado de dependencias
+```
+
+### Imágenes
+
+Las imágenes propias (`ghcr.io/pipodev06/omni-rag-api`, que usan la API y el worker, `omni-rag-web` y `omni-rag-ops`, la de `init`, `backup` y `backup-b2`) las construye y publica el CI de GitHub al subir cambios a `main` (`:latest`) o una etiqueta `v1.2.3` (`:1.2.3`). El servidor las descarga como cualquier otra imagen (beszel, Immich…): si un `docker image prune -a` las borra, `docker compose pull` las vuelve a bajar. Para fijar una versión, `OMNI_RAG_VERSION=1.2.3` en el `.env`.
+
+`docker compose up -d --build` sigue construyéndolas en la propia máquina (desarrollo, o un servidor que no llega a GHCR; ver también `deploy/build.sh`). El servidor no necesita el repositorio: los scripts de secretos y copias van dentro de `omni-rag-ops` y la configuración de Caddy, dentro del propio `docker-compose.yml`. Basta la carpeta con `docker-compose.yml` y los datos ([produccion.md](produccion.md#3-carpeta-del-servicio-y-configuración)).
+
+Cada servicio, volumen y red del compose se explica en [docker-compose.md](docker-compose.md).
+
+### Dónde viven los datos
+
+Todo en carpetas junto al `docker-compose.yml`, como en cualquier otro servicio (Immich, Nextcloud, Jellyfin): ningún `docker prune` las toca, se pare como se pare, y para mover Omni RAG de servidor basta con copiar la carpeta.
+
+| Carpeta | Contenido | ¿Copia de seguridad? |
+|---|---|---|
+| `./data/postgres` | Base de datos (usuarios, documentos, vectores, conversaciones) | **Sí** |
+| `./data/uploads` | Archivos originales subidos | **Sí** |
+| `./data/secretos` | Contraseñas internas, `JWT_SECRET` y la frase de cifrado de las copias, generados en el primer arranque | **No van en las copias: guárdala aparte** |
+| `./data/modelos` | Modelos de embeddings y re-ranker | No (se vuelven a descargar) |
+| `./data/copias-config`, `./data/copias-estado` | Ajustes y estado de las copias externas | No (se regeneran) |
+| `./data/clamav`, `./data/caddy` | Firmas del antivirus, certificados de Caddy (solo con esos perfiles) | No |
+| `./backups` | Copias de seguridad | Es la copia |
+
+Al arrancar, el servicio `db` deja `./data/uploads` y `./data/copias-config` con el dueño que necesitan la API y el worker (usuario 1000): no hay que crear carpetas ni cambiar permisos a mano.
+
+**Desarrollo en Windows:** PostgreSQL no arranca sobre una carpeta de un disco de Windows. Ahí se usan volúmenes de Docker: `cp docker-compose.volumenes.example.yml docker-compose.override.yml`. Con volúmenes, un `docker volume prune` con Omni RAG sin contenedores (tras un `down`) borra la base de datos.
+
+### Actualizar desde una versión con volúmenes de Docker
+
+Las versiones anteriores guardaban los datos en volúmenes (`rag_pgdata`, `rag_uploads`…). **Antes de actualizar el `docker-compose.yml`**, pásalos a `./data`; si no, la nueva versión arranca con carpetas vacías (los volúmenes siguen intactos, pero no se ven). Otra opción es seguir con volúmenes usando `docker-compose.volumenes.example.yml` como override.
+
+```bash
+cd ~/docker/rag                                     # la carpeta del proyecto
+docker compose exec backup sh /backup.sh --once     # copia de seguridad antes de nada (con todo en marcha)
+docker compose stop
+
+# Copia cada volumen a su carpeta conservando dueños y permisos (también los de la carpeta raíz).
+mkdir -p data
+for par in pgdata:postgres uploads:uploads hf-cache:modelos backup-config:copias-config backup-status:copias-estado clamav-db:clamav secrets:secretos; do
+  vol="rag_${par%%:*}"; dir="data/${par##*:}"
+  docker volume inspect "$vol" >/dev/null 2>&1 || { echo "sin $vol, se salta"; continue; }
+  [ -e "$dir" ] && { echo "ya existe $dir: revísalo antes de seguir"; break; }
+  docker run --rm -v "$vol":/de:ro -v "$PWD/$dir":/a alpine     sh -c 'cp -a /de/. /a/ && chown "$(stat -c %u:%g /de)" /a && chmod "$(stat -c %a /de)" /a' && echo "ok $vol → $dir"
+done
+```
+
+Después descarga el `docker-compose.yml` nuevo y arranca:
+
+```bash
+docker compose config | grep -E "source: .*/data/"  # deben salir las carpetas de ./data
+docker compose up -d
+curl localhost:8000/api/health
+```
+
+Entra y comprueba que están tus documentos y conversaciones. Si algo falla, vuelve al compose anterior: los volúmenes no se tocaron. Cuando lleves unos días sin problemas, bórralos: `docker volume rm rag_pgdata rag_uploads rag_hf-cache rag_backup-config rag_backup-status rag_secrets` (y `rag_clamav-db` si lo tenías).
+
+### Omni RAG apagado en un servidor compartido
+
+Con los datos en carpetas e imágenes descargadas, Omni RAG se para como cualquier otro servicio (Stop en Dockge, `docker compose stop` o `down`) y ningún `prune` le hace daño: como mucho, `image prune -a` borra imágenes que `docker compose pull` vuelve a bajar. Los contenedores parados no arrancan solos al reiniciar el servidor.
+
+## Copias de seguridad
+
+El servicio `backup` hace una copia automática **cada día a las `BACKUP_AT`** (03:00, hora de Perú por defecto) en la carpeta **`./backups`** del proyecto y conserva `BACKUP_KEEP_DAYS` días (7). Si el servidor estaba apagado a esa hora, la copia se hace al encenderlo. Con `BACKUP_INTERVAL_HOURS` distinto de 24 se copia cada N horas contadas desde la última copia (reiniciar el contenedor no adelanta la siguiente). La casilla *Copias automáticas* (`BACKUP_ENABLED`) las apaga: entonces solo se copia con «Hacer copia ahora» y el monitor deja de vigilar la antigüedad de la última. En *Sistema → Copias*, las tarjetas de la copia externa, Backblaze B2 y la frase de cifrado solo aparecen con la copia externa activa:
+
+```
+backups/db_2026-10-21_0300.dump       # base de datos (pg_dump)
+backups/uploads_2026-10-21_0300.tgz   # archivos originales
+```
+
+Copia inmediata (por ejemplo, antes de actualizar):
+
+```bash
+docker compose exec backup sh /backup.sh --once
+docker compose logs backup          # ver el resultado de las copias
+```
+
+**Cada copia se verifica sola:** nada más hacerla, el servicio la restaura en una base temporal (`rag_restore_test`), cuenta usuarios, documentos y fragmentos, comprueba que el archivo de subidas se puede leer y borra la base temporal. En `docker compose logs backup` debe aparecer `VERIFICADA`; si aparece `ERROR`, la copia no sirve y hay que investigarlo antes de fiarse de ella.
+
+**Segunda copia fuera del servidor:** con `BACKUP_OFFSITE=true` (y `BACKUP_OFFSITE_DIR`) cada copia verificada se copia además a una carpeta externa, cifrada con la frase generada en el primer arranque (o la de `BACKUP_ENCRYPTION_PASSPHRASE`; se ve en *Sistema → Copias → Ver frase*) (ver [produccion.md](produccion.md#6-copias-de-seguridad-fuera-del-servidor)). Por defecto está desactivada.
+
+> La carpeta `./backups` está en el mismo disco: cópiala también **fuera del servidor** (ver [produccion.md](produccion.md#6-copias-de-seguridad-fuera-del-servidor)).
+
+### Restaurar una copia
+
+Los comandos de esta sección suponen los datos en `./data` (lo normal). Con volúmenes de Docker (desarrollo en Windows), cambia `-v "$PWD/data/uploads":/data` por `-v rag_uploads:/data`.
+
+Con el sistema parado salvo `db` (sustituye la fecha):
+
+```bash
+docker compose stop api worker web backup backup-b2
+docker compose exec -T db pg_restore -U rag_owner -d rag --clean --if-exists < backups/db_AAAA-MM-DD_HHMM.dump
+docker run --rm -v "$PWD/data/uploads":/data -v "$PWD/backups":/backup alpine sh -c "rm -rf /data/* && tar xzf /backup/uploads_AAAA-MM-DD_HHMM.tgz -C /data"
+docker compose up -d
+```
+
+> En un servidor nuevo, `pg_restore` mostrará avisos `role "rag_app" does not exist`. Son normales: al arrancar, la API crea el usuario `rag_app` con `APP_DB_PASSWORD` y vuelve a aplicar sus permisos.
+
+### Restaurar en un servidor limpio (desde Backblaze)
+
+Para cuando se pierde el servidor. **Las copias no incluyen el `.env`**: guarda aparte (gestor de contraseñas) al menos `JWT_SECRET` (con otro, los 2FA guardados dejan de funcionar y todas las sesiones caducan), `BACKUP_ENCRYPTION_PASSPHRASE` (sin ella no se abren las copias), las claves de los proveedores de LLM, las `B2_*` y los ajustes de embeddings (`EMBEDDING_*`: los vectores guardados deben coincidir con el modelo).
+
+1. **Instala** Docker y git, clona el repositorio y crea el `.env` con los mismos `JWT_SECRET`, `DOMAIN`, claves y ajustes de embeddings. `POSTGRES_PASSWORD` y `APP_DB_PASSWORD` pueden ser nuevas.
+2. **Baja las copias** más recientes (un `db_…dump.enc` y el `uploads_…tgz.enc` de la misma fecha) desde la web de Backblaze a una carpeta `restore/`, o con rclone:
+   ```bash
+   mkdir restore
+   docker compose run --rm --no-deps -v "$PWD/restore:/restore" --entrypoint sh backup-b2 -c 'rclone lsl "b2:$B2_BUCKET/$B2_PATH"'   # ver qué hay
+   docker compose run --rm --no-deps -v "$PWD/restore:/restore" --entrypoint sh backup-b2 -c 'rclone copy "b2:$B2_BUCKET/$B2_PATH" /restore --include "*_AAAA-MM-DD_HHMM.*"'
+   ```
+   (Requiere las `B2_*` en el `.env`: en un servidor limpio aún no hay base de la que leerlas.)
+3. **Descifra** (pide la frase) y comprueba que los archivos sirven:
+   ```bash
+   cd restore
+   openssl enc -d -aes-256-cbc -pbkdf2 -in db_AAAA-MM-DD_HHMM.dump.enc -out db.dump
+   openssl enc -d -aes-256-cbc -pbkdf2 -in uploads_AAAA-MM-DD_HHMM.tgz.enc -out uploads.tgz
+   pg_restore -l db.dump | head -5 ; tar tzf uploads.tgz | head -5 ; cd ..
+   ```
+4. **Levanta todo vacío** (`sh deploy/build.sh`, o `docker compose up -d --build`) y para lo que escribe datos:
+   ```bash
+   docker compose stop api worker web backup backup-b2
+   ```
+5. **Restaura la base y los archivos**:
+   ```bash
+   docker compose exec -T db pg_restore -U rag_owner -d rag --clean --if-exists --no-owner < restore/db.dump
+   docker run --rm -v "$PWD/data/uploads":/data -v "$PWD/restore":/restore alpine sh -c "rm -rf /data/* && tar xzf /restore/uploads.tgz -C /data"
+   ```
+6. **Arranca** con `docker compose up -d` (la API aplica las migraciones que falten) y **comprueba**: `curl http://localhost:8000/api/health`; entra con tu usuario de siempre (la contraseña del `SEED_ADMIN_*` ya no vale: se restauró la base real); confirma que el 2FA acepta tu código; abre un documento y haz una pregunta.
+7. **Borra `restore/`** (`rm -rf restore`): contiene todos los datos sin cifrar.
+8. Si el dominio es nuevo, actualiza el DNS o el túnel antes de dar el servicio por recuperado.
+
+**Si los archivos se copian de forma incremental (`B2_SYNC_UPLOADS=true`)** no hay `uploads_….tgz.enc`: salta la parte de archivos de los pasos 2 y 3 y sustituye el `tar` del paso 5 por esto (rclone los baja ya descifrados):
+
+```bash
+mkdir restore-archivos
+docker compose run --rm -v "$PWD/restore-archivos:/restore" backup-b2 --restore /restore
+docker run --rm -v "$PWD/data/uploads":/data -v "$PWD/restore-archivos":/restore alpine sh -c "rm -rf /data/* && cp -a /restore/. /data/"
+rm -rf restore-archivos
+```
+
+Haz este ensayo una vez con una copia real, en otra máquina o en otra carpeta, antes de necesitarlo.
+
+## Reprocesar varios documentos a la vez
+
+Con las casillas de **Documentos**, elige los documentos y pulsa **Reprocesar** en la barra de selección (hasta 200). Útil con los que fallaron o tras cambiar el modelo de embeddings. Los que ya están en cola o procesándose se omiten para no duplicar trabajo.
+
+## Subir carpetas o archivos ZIP
+
+En **Documentos** puedes arrastrar archivos sueltos, **carpetas enteras** o **archivos ZIP**, o usar «elegir una carpeta» debajo del recuadro. Los ZIP se abren en el navegador (el servidor nunca recibe un ZIP, así que no corre riesgos con archivos comprimidos maliciosos) y se descartan las carpetas `__MACOSX`, los archivos ocultos y los temporales de Office. No se abren ZIP dentro de otro ZIP.
+
+- Topes por operación: 500 archivos, 500 por ZIP y 1 GB descomprimido entre todos los ZIP.
+- Se sube en tandas de hasta 20 archivos y 90 MB (Cloudflare corta las peticiones de más de 100 MB). Un archivo de más de 90 MB va solo, y si pasa de 100 MB y entras por Cloudflare, no se podrá subir.
+- Al terminar sale **un solo aviso** con cuántos quedaron en cola y, si alguno no se subió, el motivo de los primeros (formato no admitido, duplicado, tope del plan…).
+
+## Descargar varios documentos en un ZIP
+
+Marca los documentos y pulsa **Descargar** en la barra de selección. Se descargan los originales en un ZIP (`documentos-AAAA-MM-DD.zip`); si son de varias colecciones, cada una va en su carpeta. Hasta 100 documentos y 1 GB por descarga; el ZIP se arma sobre la marcha, así que no pesa en el servidor. Queda en la auditoría («Descargó varios documentos»). Los que están en la papelera no se incluyen.
+
+## Exportar todos los datos de un cliente
+
+Para entregar sus datos a un cliente (portabilidad) o guardarlos antes de borrar su organización: **Organizaciones → ⋮ → Exportar datos**. Descarga `<identificador>-exportacion-AAAA-MM-DD.zip` con:
+
+- `organizacion.json`, `usuarios.json`, `colecciones.json` (con sus miembros), `documentos.json` (también los de la papelera, marcados), `conversaciones.json` (con mensajes y fuentes), `valoraciones.json`, `uso.json` (llamadas y tokens por día y modelo) y `auditoria.json`.
+- `archivos/<colección>/…`: los documentos originales.
+- `LEEME.txt` con la explicación del contenido.
+
+**No incluye** contraseñas, secretos ni códigos de la verificación en dos pasos, sesiones ni enlaces de acceso. Solo el superadministrador puede exportar, y queda registrado en tu auditoría y en la del cliente. La organización Plataforma no se exporta. El ZIP se arma sobre la marcha (un archivo a la vez), así que una organización grande no satura la memoria del servidor, aunque la descarga tarde.
+
+## Papelera de documentos
+
+Borrar un documento (uno o varios, desde **Documentos**) **no lo elimina**: lo manda a la **Papelera** (botón arriba a la derecha de Documentos, para administradores y editores). Mientras está allí no aparece en las colecciones, no sale en las respuestas del chat ni cuenta para el límite de documentos del plan, pero su archivo, sus fragmentos y sus vectores se conservan, así que **restaurarlo es inmediato** y no hay que procesarlo de nuevo.
+
+- **Restaurar:** botón *Restaurar* en la fila, o varias casillas y *Restaurar*. Si el plan ya está lleno de documentos, los que no caben se quedan en la papelera y el aviso lo explica.
+- **Eliminar definitivamente / Vaciar papelera:** solo administradores. Borra también el archivo y no se puede deshacer.
+- **Caducidad:** a los `TRASH_RETENTION_DAYS` días (30 por defecto) la limpieza diaria lo elimina del todo. Con `TRASH_RETENTION_DAYS=0` no hay papelera y borrar elimina al instante, como antes.
+- Subir el mismo archivo que está en la papelera de esa colección avisa de que hay que restaurarlo desde allí; mover documentos tampoco admite un archivo que ya esté en el destino, ni siquiera en su papelera.
+- Queda en la auditoría: *Envió a la papelera*, *Restauró* y *Eliminó definitivamente*.
+- Borrar una **colección** o una **organización** sí elimina todo, papelera incluida.
+- Las copias de seguridad contienen también los documentos de la papelera hasta que se eliminan del todo; la papelera cubre los errores del día a día y las copias, los desastres.
+
+### Cuánto tiempo se puede recuperar algo
+
+Con la copia incremental a Backblaze (`B2_SYNC_UPLOADS=true`) cada cosa caduca por una razón distinta. **Ningún archivo caduca por ser antiguo**: un documento subido hace un año que sigue en la aplicación sigue en Backblaze.
+
+| Qué | Dónde | Cuánto se conserva |
+|---|---|---|
+| Documento borrado en la aplicación | Papelera (se restaura con un clic) | `TRASH_RETENTION_DAYS` días (30) |
+| Archivo que ya salió de la papelera, o que se reemplazó | `archive/AAAA-MM-DD` en Backblaze (se recupera con `--restore`) | `B2_KEEP_DAYS` días (30) **desde que se borró**, no desde que se subió |
+| Archivos que existen hoy | `current` en Backblaze | Mientras existan |
+| Base de datos | Una copia por día, en el servidor y en Backblaze | 7 días en el servidor (`BACKUP_KEEP_DAYS`) y 30 en Backblaze (`B2_KEEP_DAYS`) |
+
+Un documento borrado queda recuperable unos **60 días** en total: 30 en la papelera y, cuando sale de ella y su archivo se borra del disco, otros 30 en `archive`. Pasado ese plazo no hay forma de recuperarlo. Para ampliar el margen sube `TRASH_RETENTION_DAYS` y `B2_KEEP_DAYS`; solo ocupa el espacio de lo que se haya borrado. Para volver a un estado anterior de la **base de datos** (documentos, usuarios, conversaciones) hay que restaurar una de sus copias diarias: se puede elegir cualquiera de los últimos 30 días.
+
+## Borrar varios documentos a la vez
+
+En **Documentos**, marca las casillas de la primera columna (la casilla de la cabecera selecciona todos los que ves, también tras buscar). Aparece una barra con **Enviar a la papelera** y **Quitar selección**; al pulsarlo se pide confirmación con los nombres. Se envían hasta 200 de una vez a la [papelera](#papelera-de-documentos), la caché de respuestas de las colecciones afectadas se vacía y queda **una sola entrada** en la auditoría («Envió varios documentos a la papelera», con la cantidad y los primeros nombres). La selección se vacía al cambiar de colección. Se pueden recuperar desde la papelera mientras no caduquen.
+
+## Ordenar y filtrar la lista de documentos
+
+En **Documentos**, pulsa el título de una columna (Documento, Estado, Tamaño, Páginas, Fragmentos, Subido) para ordenar; vuelve a pulsarlo para invertir el orden. Con *Estado* los que tienen error quedan arriba. Junto al buscador hay dos filtros: por **estado** (Listos, En proceso, Con error) y por **tipo** de archivo (solo los que existen en la colección); el icono del embudo los quita. Todo se hace en el navegador sobre los documentos de la colección y se reinicia al cambiar de colección.
+
+## Mover documentos a otra colección
+
+En **Documentos**, menú ⋮ del documento → **Mover a otra colección**; o marca varios con las casillas y pulsa **Mover** en la barra de selección. Conserva el título, el resumen y los fragmentos ya calculados (no se vuelve a procesar), y deja de verlo quien solo tenía acceso a la colección de origen. Reglas:
+
+- Hay que ser administrador o editor **con acceso a las dos colecciones**; un editor no puede mover a una colección que no ve.
+- El documento debe estar en estado *Listo*: mientras se procesa, el menú aparece desactivado.
+- Si el mismo archivo ya está en la colección de destino, no se mueve (evita duplicados).
+- Los que no se pueden mover (en proceso, ya en el destino, archivo duplicado allí) se omiten y el aviso dice cuáles y por qué; los demás se mueven.
+- Queda en la auditoría («Movió documentos a otra colección», con cantidad y destino) y vacía la caché de respuestas de ambas colecciones.
+
+No existe «copiar»: un documento pertenece a una sola colección. Para tenerlo en dos, hay que subirlo en la segunda.
+
+## Reprocesar documentos
+
+Hace falta después de cambiar `CHUNK_SIZE_CHARS`, `CHUNK_OVERLAP_CHARS` o el modelo de embeddings, o para reintentar documentos fallidos:
+
+```bash
+docker compose exec api node dist/scripts/reindex.js            # todos
+docker compose exec api node dist/scripts/reindex.js mi-cliente # una organización (slug)
+docker compose exec api node dist/scripts/reindex.js --failed   # solo los fallidos
+```
+
+Un documento concreto también se puede reprocesar desde la interfaz (botón ↻).
+
+## Cambiar el modelo de embeddings
+
+Los vectores de un modelo **no son compatibles** con los de otro, así que hay que regenerarlos todos.
+
+**Mismo número de dimensiones** (p. ej. otro modelo de 768):
+1. Cambia `EMBEDDING_MODEL` (y los prefijos si el modelo no es de la familia E5).
+2. `docker compose up -d embeddings api worker`
+3. Reprocesa todo (ver arriba).
+
+**Distinto número de dimensiones** (p. ej. `BAAI/bge-m3`, 1024, que admite fragmentos más largos):
+1. En `.env`:
+   ```
+   EMBEDDING_MODEL=BAAI/bge-m3
+   EMBEDDING_DIM=1024
+   EMBEDDING_QUERY_PREFIX=
+   EMBEDDING_PASSAGE_PREFIX=
+   ```
+2. Cambia la columna (se borran los vectores actuales):
+   ```bash
+   docker compose exec -T db psql -U rag_owner -d rag <<'SQL'
+   BEGIN;
+   DELETE FROM chunks;
+   DROP INDEX chunks_embedding_hnsw;
+   ALTER TABLE chunks ALTER COLUMN embedding TYPE vector(1024);
+   CREATE INDEX chunks_embedding_hnsw ON chunks USING hnsw (embedding vector_cosine_ops);
+   COMMIT;
+   SQL
+   ```
+3. `docker compose up -d embeddings api worker` y reprocesa todo.
+
+Modelos multilingües recomendados:
+
+| Modelo | Dim. | Máx. tokens | Prefijos | Notas |
+|---|---|---|---|---|
+| `intfloat/multilingual-e5-small` | 384 | 512 | `query: ` / `passage: ` | El más rápido en CPU |
+| `intfloat/multilingual-e5-base` | 768 | 512 | `query: ` / `passage: ` | **Por defecto**: buen equilibrio |
+| `intfloat/multilingual-e5-large` | 1024 | 512 | `query: ` / `passage: ` | Mejor calidad, ~3 veces más lento |
+| `BAAI/bge-m3` | 1024 | 8192 | ninguno | Fragmentos largos; más pesado |
+
+## Calibrar la búsqueda
+
+`POST /api/search` devuelve los resultados **sin llamar al LLM** (no gasta cupo), con:
+- `vectorRank` / `keywordRank`: posición en cada lista (`null` = no apareció);
+- `distance`: distancia coseno (0 = idéntico).
+
+```bash
+TOKEN=$(curl -s localhost:8000/api/auth/login -H 'content-type: application/json' \
+  -d '{"login":"admin","password":"..."}' | jq -r .token)
+curl -s localhost:8000/api/search -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"query":"¿plazo de preaviso?"}' | jq '.results[] | {distance, vectorRank, keywordRank, documentTitle, heading}'
+```
+
+| Parámetro | Por defecto | Efecto |
+|---|---|---|
+| `RETRIEVAL_MAX_DISTANCE` | `0.25` | Por encima de esta distancia un fragmento no cuenta como resultado semántico. Con `multilingual-e5-base`, los fragmentos relevantes suelen estar entre 0,10 y 0,18 y los que no tienen relación por encima de 0,22. **Cada modelo tiene su escala**: mide preguntas relevantes e irrelevantes antes de ajustarlo. Si es muy bajo, el sistema dirá "no encontré información" demasiado a menudo. |
+| `RETRIEVAL_TOP_K` | `6` | Fragmentos que se envían al LLM. Más da más contexto pero más tokens. |
+| `RETRIEVAL_CANDIDATES` | `40` | Candidatos de cada lista antes de la fusión. |
+| `CHUNK_SIZE_CHARS` | `1200` | Tamaño de los fragmentos. El modelo E5 lee como máximo 512 tokens (unos 1.800 caracteres en español), así que no conviene superar ~1.500. |
+| `FTS_LANGUAGE` | `spanish` | Idioma de la búsqueda por palabras (raíces, palabras vacías). Cambiarlo requiere una migración nueva. |
+
+## Búsqueda en internet (modo híbrido)
+
+Además de los documentos, el chat puede consultar internet. Está **desactivada por defecto** y hacen falta tres cosas:
+
+1. **Un buscador en el servidor:** en el `.env`, `WEB_SEARCH_PROVIDER=tavily` o `brave` con su `WEB_SEARCH_API_KEY`, o `searxng` con `WEB_SEARCH_URL` (tu propio SearXNG, con el formato `json` activado en su `settings.yml`). Aplica con `docker compose up -d`; `GET /api/health` muestra el buscador en `webSearch`.
+2. **Que el plan lo permita:** *Organizaciones → Planes → editar → «Permitir la búsqueda en internet en el chat»*. Los planes que lo permiten llevan la etiqueta «Internet».
+3. **Que el usuario lo active:** en el chat aparece el botón **Internet** junto al filtro de colecciones; se activa pregunta a pregunta y vuelve a apagarse al recargar.
+
+Cómo funciona:
+- **Solo se envía la pregunta** al buscador (con la anterior si es una pregunta de seguimiento corta), **nunca fragmentos de los documentos**.
+- El modelo recibe los resultados en un bloque aparte, numerados después de los documentos, con reglas propias: prioriza los documentos, usa internet solo para completar, dice qué viene de internet y avisa si contradice a los documentos. El texto de las páginas se trata como datos no confiables (no puede dar órdenes) y se neutralizan las etiquetas con las que intentara salirse de su bloque.
+- Las fuentes de internet se ven con un globo, su dominio y «Abrir página» (en otra pestaña), separadas de las de los documentos. En la exportación a Markdown salen como «Internet: título — enlace».
+- Si no hay fragmentos relevantes pero sí resultados de internet, responde con internet; si no hay ni lo uno ni lo otro, no llama al modelo.
+- Las respuestas con internet **no usan ni llenan la caché** (los resultados cambian con el tiempo). Cuentan como una pregunta más para el límite diario.
+- Si el buscador falla, la respuesta usa solo los documentos y el usuario ve el aviso «No se pudo buscar en internet».
+- Cada búsqueda gasta cupo del servicio de búsqueda (aparte de los modelos): revisa sus límites y precios.
+
+## Mayúsculas y minúsculas
+
+Iniciar sesión, la caché de respuestas, la búsqueda por palabras y la búsqueda de conversaciones ignoran las mayúsculas. La búsqueda **semántica** (embeddings y re-ranker) sí las distingue: una pregunta en MAYÚSCULAS encontraba otros fragmentos que la misma en minúsculas (medido: en una prueba solo coincidían 3 de 6, y a veces aparecía uno sin relación). Por eso una pregunta escrita casi toda en mayúsculas (70 % de sus letras o más) se busca en minúsculas. Un texto normal, con siglas o nombres propios («¿Qué dice el contrato con la SUNAT?»), no se toca, y el modelo de lenguaje siempre recibe la pregunta tal como se escribió.
+
+## Tablas en las respuestas
+
+Cuando la respuesta compara elementos o lista datos con varios atributos (fechas, montos, requisitos, responsables), el modelo la escribe como tabla. La pantalla la dibuja con desplazamiento horizontal (en el móvil no se corta) y, debajo, dos botones:
+
+- **Copiar tabla:** copia el contenido separado por tabuladores; al pegarlo en Excel o Google Sheets cada dato cae en su celda, sea cual sea el idioma de la hoja.
+- **Descargar CSV:** archivo `tabla-AAAA-MM-DD.csv` con comas y codificación para que Excel lea bien los acentos. (Si tu Excel está configurado con punto y coma como separador, usa «Copiar tabla» o importa el CSV desde *Datos → Desde texto*.)
+
+Al exportar se quitan los números de cita y los dominios que se muestran junto a los enlaces. Como el contenido de una tabla puede venir de un documento ajeno, las celdas que Excel interpretaría como fórmula (empiezan por `=`, `+`, `-` o `@`, y no son un número) llevan una comilla simple delante. Si un modelo pequeño no usa tablas cuando convendría, se nota en la calidad del modelo, no es un ajuste de la pantalla; un plan con un modelo mejor lo corrige.
+
+## Gráficos y diagramas en las respuestas
+
+- **Gráficos:** si se pide un gráfico, o la respuesta compara cifras de varios periodos o categorías, el modelo añade un bloque ` ```chart ` con los datos en JSON (`type` bar/line/pie, `labels`, `series`). La pantalla lo dibuja en SVG propio (sin librería de gráficos), con tooltip al pasar el ratón, leyenda si hay varias series y los botones «Ver datos» (tabla) y «Descargar CSV». El bloque se valida a fondo (`apps/web/src/lib/chartSpec.ts`): hasta 8 series y 40 etiquetas, un valor por etiqueta, solo números (un «1,200» se rechaza por ambiguo) y, en los circulares, una serie de hasta 8 partes positivas. Si no pasa, se muestra el texto con el motivo en vez del gráfico.
+- **Diagramas:** para procesos con pasos o decisiones el modelo puede escribir un bloque ` ```mermaid ` (`flowchart TD`, hasta 15 nodos). Mermaid se descarga solo al mostrar el primer diagrama y se ejecuta en modo `strict` (sin scripts, enlaces ni clics), porque el texto puede venir de un documento ajeno. Botones «Ver código» y «Descargar SVG». Un diagrama inválido muestra el código.
+- Mientras llega la respuesta se ve «Preparando el gráfico…» o «Preparando el diagrama…»; se dibuja al terminar. Las citas van en el texto, no dentro del bloque. La regla de no inventar datos sigue valiendo: sin cifras en los fragmentos no hay gráfico. Los modelos pequeños a veces no los generan o los escriben mal; ahí se ve el texto.
+
+## Re-ranking
+
+El servicio `reranker` reordena los candidatos de la búsqueda con un modelo *cross-encoder* (lee pregunta y fragmento juntos). Es la mejora de calidad más importante, pero usa ~1,9 GB de RAM y ~0,6 s por pregunta en CPU.
+
+| Parámetro | Por defecto | Efecto |
+|---|---|---|
+| `RERANKER_MODEL` | `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1` | Con GPU, `BAAI/bge-reranker-v2-m3` es más preciso (en CPU tarda ~14 s) |
+| `RERANK_CANDIDATES` | `20` | Candidatos de la búsqueda híbrida que se reordenan. Más = mejor recall, más lento. |
+| `RERANK_MIN_SCORE` | `0.02` | Puntuación mínima (0–1). Lo irrelevante puntúa ≈ 0,003 y lo relevante ≥ 0,1. Si ningún fragmento la alcanza, se responde "no encontré información" sin llamar al LLM. |
+
+`POST /api/search` muestra `rerankScore` para cada resultado: úsalo para calibrar.
+
+**Desactivarlo** (equipos con poca RAM), en `.env`:
+
+```
+RERANKER_URL=
+RERANKER_REPLICAS=0
+```
+
+y `docker compose up -d`. Sin re-ranker se usa el orden de la búsqueda híbrida, y si el servicio falla temporalmente, la API sigue funcionando con ese orden.
+
+## Caché de respuestas
+
+Las primeras preguntas de cada conversación se guardan con su respuesta. Si alguien vuelve a preguntar lo mismo sobre los mismos documentos, se responde al instante y **sin gastar cupo** del LLM; la interfaz lo indica con "Respuesta guardada".
+
+| Parámetro | Por defecto | Efecto |
+|---|---|---|
+| `CACHE_ENABLED` | `true` | Activa o desactiva la caché |
+| `CACHE_TTL_HOURS` | `168` | Antigüedad máxima de una respuesta reutilizable (7 días) |
+| `CACHE_MAX_DISTANCE` | `0.015` | Cuánto puede diferir una pregunta para considerarla igual. **No lo subas mucho:** con `multilingual-e5-base`, "factura 2026-0457" y "factura 2026-0458" están a 0,026. Por eso, además, los números y códigos deben coincidir. |
+
+La caché se vacía sola en estos casos:
+- al terminar de procesar, reprocesar o borrar un documento de la colección;
+- al borrar la colección;
+- cuando alguien marca la respuesta con 👎.
+
+Para vaciarla a mano (por ejemplo, tras cambiar de modelo LLM o el prompt), usa **Calidad → Vaciar caché**.
+
+## Valoraciones y página Calidad
+
+Los usuarios valoran cada respuesta con 👍/👎 (el 👎 admite motivos y un comentario). En **Calidad**, los administradores ven:
+- satisfacción, respuestas pendientes de revisar y porcentaje respondido desde caché (30 días);
+- cada valoración con su pregunta, respuesta, fuentes y comentario, y la opción "Marcar revisada".
+
+Un 👎 suele significar que falta un documento, que está desactualizado o que la información está dispersa. Revisa las fuentes citadas y, si hace falta, sube o actualiza el documento: la caché de esa colección se invalida sola.
+
+## Resúmenes y preguntas sugeridas
+
+Se generan **bajo demanda** (Documentos → abrir → Resumen → *Generar resumen*) porque cada uno es una llamada al LLM y **cuenta para el límite diario** de la organización. Cualquier usuario con acceso al documento puede generarlo; el resultado lo ven todos. Las preguntas sugeridas aparecen en la pantalla inicial del chat.
+
+## Avisos en tiempo real
+
+La interfaz recibe los cambios de estado de los documentos por `GET /api/documents/events` (Server-Sent Events). Si pones otro proxy delante (Caddy, Traefik, Cloudflare…), desactiva el *buffering* para `/api/` y permite conexiones largas; si no, los avisos llegarán tarde (la lista se refresca igualmente cada 20 s mientras haya documentos procesándose).
+
+## Proveedores de LLM (OpenRouter, Groq, Google, OpenAI, DeepSeek, servidor propio)
+
+El sistema habla con cualquier proveedor que ofrezca el formato «compatible con OpenAI». Configura **al menos uno** en el `.env` (`OPENROUTER_API_KEY`, `GROQ_API_KEY`, `GOOGLE_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, o `LLM_CUSTOM_BASE_URL` para Ollama/vLLM) y aplica con `docker compose up -d`. Puedes tener **varios a la vez**.
+
+**Qué proveedor usa cada modelo:** cada modelo de un plan se escribe con un prefijo de proveedor o sin él:
+
+| Se escribe | Proveedor |
+|---|---|
+| `google/gemma-4-31b-it:free` (sin prefijo) | OpenRouter (o `LLM_DEFAULT_PROVIDER`) |
+| `groq:openai/gpt-oss-120b` | Groq |
+| `google:gemini-3.5-flash` | Google (Gemini) |
+| `openai:gpt-4o-mini` | OpenAI |
+| `deepseek:deepseek-chat` | DeepSeek |
+| `custom:llama3.1:8b` | Servidor propio |
+
+Los planes que ya tenías siguen funcionando sin cambios: sin prefijo es OpenRouter. En *Organizaciones → Planes* puedes mezclar, por ejemplo: primero un modelo de Groq y, **si falla o está saturado, uno de Google o de OpenRouter**. El respaldo cruza proveedores, así que ya no dependes de uno solo.
+
+**Detalles que conviene saber**
+- Al guardar un plan se comprueba que el proveedor tenga clave en el `.env` y que el modelo exista en su catálogo (si el catálogo no responde, no se bloquea).
+- En *Consumo → Modelos usados* los modelos de OpenRouter salen como siempre y los demás con su prefijo (`groq:…`).
+- Los tokens se leen de la respuesta del proveedor, así que valen para cualquiera. Si un servidor no los informa, quedan en blanco (no afecta a las respuestas).
+- Una clave rechazada en un proveedor (401/403) hace pasar al siguiente modelo de otro proveedor; si era la única, el chat responde que la clave no es válida.
+- **Claude directo (Anthropic) todavía no**: usa otro formato. Mientras tanto está disponible a través de OpenRouter (`anthropic/claude-…`).
+- Con un servidor propio en Docker, `localhost` es el propio contenedor: usa `http://host.docker.internal:11434/v1` (Ollama en tu equipo) o el nombre de un servicio del compose.
+- `GET /api/health` sin sesión responde solo `ok` / `error` / `desactivado` por servicio y `llm: true|false` (¿hay algún proveedor?). Con la sesión del superadministrador (cookie del navegador o `Authorization: Bearer`) muestra el detalle: `llm: [...]` con los proveedores configurados (vacío = el chat no puede responder), el buscador y el motivo de cada error.
+- **Ver qué modelos puedes usar:** `docker compose exec -T api node dist/scripts/models.js groq google` lista el catálogo de cada proveedor con tus claves (sin argumentos, todos menos OpenRouter). Con `--probar` envía un mensaje mínimo a cada modelo y dice cuáles responden de verdad: aparecer en el catálogo no garantiza que sirva (Google lista modelos que dan 404 y los planes gratuitos tienen topes de tokens por minuto; en Groq gratuito puede hacer falta bajar `LLM_MAX_TOKENS`; DeepSeek exige saldo). Evita los modelos Gemma de Google para el chat: devuelven su razonamiento (`<thought>`) en la respuesta.
+  Opciones para acotar la prueba (se combinan): `--ok` muestra solo los que responden, del más rápido al más lento; `--max-ms=1000` solo los que responden en menos de ese tiempo; `--filtro=gemini` solo los modelos con ese texto en el nombre (se aplica antes de probar, así ahorra tiempo y cuota); `--gratis` en OpenRouter, solo los gratuitos; `--forzar` permite probar más de 60 de una vez. Ejemplo: `… models.js google groq --max-ms=1500`. Con OpenRouter hay que acotar siempre (`openrouter --gratis --max-ms=3000`): tiene cientos de modelos.
+
+## Modelos gratuitos de OpenRouter
+
+Al guardar un plan (*Organizaciones → Planes*) se comprueba que cada modelo exista en el catálogo público de OpenRouter, y se rechazan los nombres mal escritos con su lista (p. ej. falta el `:free`). El catálogo se guarda una hora en memoria; si OpenRouter no responde, no se bloquea el guardado.
+
+- Si las respuestas fallan con *"Los modelos gratuitos están saturados…"*, espera unos minutos, añade más modelos de respaldo al plan o pasa la organización a un plan con modelo de pago.
+- Si un modelo deja de existir, se salta automáticamente (aparece `[llm] … falló (404)` en los registros). Actualiza la lista con los disponibles en <https://openrouter.ai/models?max_price=0>.
+- El modelo usado en cada respuesta aparece bajo la respuesta y en **Consumo → Modelos usados**.
+
+## Verificación en dos pasos (opcional)
+
+Cada usuario puede activarla en **Mi cuenta → Verificación en dos pasos**. Para el superadministrador está recomendada.
+
+- **Funciona en local, sin dominio, HTTPS ni correo.** El código lo calcula la app autenticadora (Google Authenticator, Aegis, 1Password…) a partir de un secreto compartido. Solo hace falta que el **reloj del servidor** sea correcto; con un desfase de más de ~30 s los códigos fallan.
+- **Activar:** escanea el QR (o escribe la clave), confirma con el primer código y guarda los **8 códigos de recuperación** (se muestran una vez).
+- **Entrar:** usuario y contraseña, y después el código de 6 dígitos. Un código no se puede reutilizar; con 5 fallos en 15 minutos se bloquea el intento.
+- **Perdí el teléfono:** entra con un código de recuperación (cada uno sirve una vez) y vuelve a configurarlo. Si un usuario normal lo perdió todo, su administrador lo quita en **Usuarios → Quitar verificación en dos pasos**.
+- **Superadministrador sin teléfono ni códigos:** nadie puede quitárselo desde la aplicación. Se hace en la base de datos: `UPDATE users SET totp_secret = NULL, totp_enabled_at = NULL, totp_last_step = NULL, totp_recovery_hashes = '{}' WHERE username = '<tu usuario>';`
+- **Cuidado con `JWT_SECRET`:** el secreto TOTP se guarda cifrado con una clave derivada de él. Si lo cambias, el 2FA de todos queda inservible y hay que quitarlo y volver a activarlo.
+- No aplica a las cuentas de soporte (entras con tu sesión de superadministrador).
+
+## Límite de preguntas por organización
+
+- Cada organización tiene un **plan** (**Organizaciones → Planes**) que fija el límite diario, los modelos y los topes de usuarios y documentos. `TENANT_DAILY_QUESTION_LIMIT` solo da el valor inicial del plan «Estándar» la primera vez que se crea.
+- Excepción puntual: **Organizaciones → Límite diario** (vacío = el del plan; 0 = sin límite).
+- Los administradores de cada organización ven su uso frente a los topes del plan en **Consumo**.
+- **Tope por usuario (opcional):** un plan puede limitar las preguntas por día de **cada usuario** (*Organizaciones → Planes → Preguntas por día por usuario*), para que una sola persona no agote el cupo de todos. Al alcanzarlo, esa persona no puede preguntar más hoy aunque a la organización le queden. Cuenta preguntas y resúmenes (no las respuestas servidas desde la caché) y se reinicia a las 00:00 UTC.
+- **Aviso en el chat:** cuando la organización llega al `QUOTA_WARN_PERCENT` % (80 por defecto) de su límite diario, todos sus usuarios ven sobre el cuadro de escritura «ha usado X de N preguntas de hoy»; al llegar al tope, el aviso pasa a rojo. Si el plan tiene tope por usuario, cada persona ve además su propio aviso. Se actualiza tras cada pregunta y no aparece en planes sin límite (0).
+- **Aviso por correo:** además, con SMTP configurado, los administradores de la organización que tengan email reciben un correo **una sola vez al día** al llegar al `QUOTA_WARN_PERCENT` % y otro al agotar el límite (tabla `quota_notices`). Sin SMTP solo funciona el aviso del chat. Es el límite de la organización; la cuota personal solo avisa en el chat.
+- Solo cuentan las preguntas que llegan al LLM. Las respuestas "no encontré información" no cuentan. El día se cuenta en UTC.
+
+Reparte el cupo de OpenRouter (1.000 al día con créditos) entre tus clientes con este límite.
+
+## Cambiar contraseñas de la base de datos
+
+**Rotación automática (recomendada):** un solo comando cambia `POSTGRES_PASSWORD` y `APP_DB_PASSWORD` por contraseñas nuevas al azar, sin pasos manuales ni mostrarlas:
+
+```bash
+sh deploy/rotate-db-password.sh --dry-run   # solo muestra lo que haría
+sh deploy/rotate-db-password.sh             # la rotación real
+```
+
+Guarda una copia del `.env` (`.env.bak-FECHA`), cambia la contraseña dentro de la base, escribe las nuevas en el `.env`, recrea los servicios y espera a que la API responda. **Si la API no responde, vuelve atrás sola** (restaura el `.env` y la contraseña anterior). Los servicios se reinician unos segundos. Cuando compruebes que todo va bien, borra el respaldo: `rm .env.bak-*` (contiene las contraseñas anteriores). Conviene rotarlas cada cierto tiempo y siempre que alguien con acceso al servidor deje el equipo. Las contraseñas nuevas solo viven en el `.env`: no hace falta que las veas.
+
+**A mano**, si prefieres elegirlas tú:
+
+- `APP_DB_PASSWORD`: cámbiala en `.env` y ejecuta `docker compose up -d api worker` (la API la aplica al arrancar).
+- `POSTGRES_PASSWORD` (después del primer arranque): la base conserva la contraseña con la que se creó, así que hay que igualarla. Cambia el valor en `.env` y ejecuta:
+  ```bash
+  docker compose up -d db
+  docker compose exec -T db sh < deploy/sync-db-password.sh
+  docker compose up -d api worker backup
+  ```
+  El script usa la variable del propio contenedor: no muestra ni te pide la contraseña. Si la API ya está en bucle con `password authentication failed`, es exactamente esto.
+
+## Problemas frecuentes
+
+| Síntoma | Causa probable | Solución |
+|---|---|---|
+| `health` → `embeddings: fetch failed` | El modelo aún se está descargando o cargando | `docker compose logs -f embeddings`; espera a `Ready` |
+| `docker compose ps` → `docling` en `starting` o `unhealthy` | Docling arrancando (tarda 20–60 s) o caído | Espera; revisa `docker compose logs docling`. Los documentos subidos se procesan cuando esté `healthy` |
+| La API no arranca y el log dice `no es una URL de PostgreSQL válida` | Falta o está mal `POSTGRES_PASSWORD` / `APP_DB_PASSWORD` | Revisa el `.env`. Las contraseñas con `/`, `+` o `=` (de `openssl rand -base64`) son válidas: la API las codifica sola |
+| La API no arranca: «La base de datos rechazó la contraseña de POSTGRES_PASSWORD» (o `password authentication failed`) | La base conserva la contraseña con la que se creó el volumen y el `.env` ya no coincide | `docker compose exec -T db sh < deploy/sync-db-password.sh` y luego `docker compose up -d api worker backup` (ver «Cambiar contraseñas de la base de datos») |
+| Documento en *Error*: "Docling no extrajo texto" | Archivo protegido con contraseña, dañado o vacío | Ábrelo y guárdalo de nuevo / quita la protección |
+| Documento en *Error*: "dimensiones" | `EMBEDDING_DIM` no coincide con el modelo | Ver "Cambiar el modelo de embeddings" |
+| Documentos atascados en *En cola* | El worker no está en marcha | `docker compose ps worker`; `docker compose logs worker` |
+| Un documento vuelve a *En cola* un par de minutos y luego pasa a *Error* | Falló y el worker lo reintenta (3 intentos, con espera entre ellos) | Mira el motivo en *Error* cuando termine; `docker compose logs worker` |
+| CSV con varias tablas, separado por `;` o guardado desde Excel | — | Se leen sin Docling (`ingest/csv.ts`): cada bloque de filas con el mismo número de columnas es una tabla; detecta `,` `;` tabulador y `\|`, quita el BOM y acepta Windows-1252. Un CSV que falló antes del cambio se arregla con «Reprocesar» |
+| Chat: "La clave de OpenRouter no es válida" | `OPENROUTER_API_KEY` vacía o incorrecta | Corrígela en `.env` y ejecuta `docker compose up -d api` |
+| Chat: "No endpoints found matching your data policy" (en registros) | La privacidad de OpenRouter bloquea los proveedores gratuitos | [instalacion.md §3](instalacion.md#3-clave-y-privacidad-en-openrouter) |
+| Chat: "límite de N preguntas por día" | Límite de la organización | Ajusta el límite (ver arriba) |
+| Siempre "No encontré información" | `RERANK_MIN_SCORE` demasiado alto, `RETRIEVAL_MAX_DISTANCE` demasiado bajo o documentos sin procesar | Revisa `rerankScore` y `distance` con `/api/search` |
+| `health` → `reranker: fetch failed` | El modelo se está descargando o no hay RAM suficiente | `docker compose logs reranker`; si sale `Killed`/`137`, falta memoria: desactívalo (ver "Re-ranking") |
+| El visor muestra "No se pudo mostrar el PDF" | PDF protegido con contraseña o dañado | Descarga el original; reprocesa el documento si lo sustituyes |
+| "El texto citado no está en esta página" | El fragmento empieza en una página y sigue en la siguiente, o es una tabla | Usa las flechas de página; el resaltado se calcula en cada página |
+| Los documentos no cambian de estado solos | Un proxy acumula la conexión en vivo | Ver "Avisos en tiempo real" |
+| Respuesta "guardada" desactualizada | Se cambió el documento fuera del sistema o el prompt/modelo | Márcala con 👎 o usa Calidad → Vaciar caché |
+| Las respuestas no llegan en streaming detrás de otro proxy | El proxy acumula la respuesta | Desactiva el *buffering* para `/api/chat` |
+| PDF escaneado con texto incorrecto | OCR con idioma equivocado | Ajusta `DOCLING_OCR_LANGS` y reprocesa |
+| `ports are not available … bind: Intento de acceso a un socket no permitido` (Windows) o `address already in use` | El puerto está ocupado (p. ej. un PostgreSQL instalado) o reservado por Windows/Hyper-V | Cambia `WEB_PORT`, `DB_PORT`, o `EMBEDDINGS_PORT` en `.env`. En Windows, los rangos reservados se ven con `netsh interface ipv4 show excludedportrange protocol=tcp` |
+| El invitado dice que el enlace "no es válido o ha caducado" | Caducó, ya se usó o se generó uno más nuevo | Usuarios → ⋮ → *Reenviar invitación* |
+| No llegan los correos | SMTP mal configurado o bloqueado por spam | `docker compose logs api \| grep correo`; revisa `SMTP_*`, SPF/DKIM; prueba con Mailpit |
+| Caddy no obtiene el certificado | DNS aún sin propagar o puertos 80/443 cerrados | `docker compose logs caddy`; comprueba el registro A y el cortafuegos |
+| Tras actualizar, una página muestra "Hay una versión nueva de la aplicación" | La pestaña tenía abierta la versión anterior | Pulsa **Recargar** (la app intenta recargarse sola una vez) |
+| `password authentication failed for user "rag_owner"` | Se cambió `POSTGRES_PASSWORD` después del primer arranque | Ver "Cambiar contraseñas de la base de datos" |
+
+## Restablecer la contraseña del superadministrador
+
+Si no puedes entrar (olvidaste la contraseña, o cambiaste `SEED_ADMIN_PASSWORD` en el `.env` después del primer arranque: ese valor solo se usa con la base vacía), restablécela **desde el servidor**:
+
+```bash
+docker compose exec api node dist/scripts/reset-password.js admin
+```
+
+Te pide la nueva contraseña dos veces, sin mostrarla. Variantes:
+
+| Comando | Qué hace |
+|---|---|
+| `... reset-password.js admin --generar` | Crea una contraseña aleatoria y la muestra una sola vez (no hace falta terminal). |
+| `... reset-password.js admin --quitar-2fa` | Además quita su verificación en dos pasos (perdió el teléfono y los códigos). |
+| `sh deploy/reset-password.sh admin` | Atajo equivalente desde la carpeta del proyecto. |
+
+Cierra todas las sesiones abiertas de ese usuario y deja constancia en su auditoría («Consola del servidor»). Vale para cualquier usuario, no solo el superadmin. En Windows, si Git Bash dice *«the input device is not a TTY»*, ejecútalo desde PowerShell o con `winpty` delante. No existe forma de hacerlo desde la web: hace falta acceso al servidor.
+
+## Usuarios: invitaciones y contraseñas
+
+- **Invitar** (Usuarios → Nuevo usuario → *Enviar invitación*): se crea el usuario sin contraseña y se genera un enlace de un solo uso (caduca en `INVITE_EXPIRES_HOURS`, 72 h). Si hay SMTP se envía por correo; siempre se muestra al administrador para que pueda copiarlo.
+- **Reenviar invitación / enlace para restablecer**: menú ⋮ del usuario. Cada enlace nuevo anula el anterior.
+- **¿Olvidaste la contraseña?** (pantalla de login): requiere SMTP y que la cuenta tenga email. Se puede pedir con el usuario o con el email. Responde lo mismo exista o no la cuenta, para no revelar quién la tiene. Los usuarios sin email (o si no hay SMTP) piden a un administrador que restablezca su contraseña desde *Usuarios → Definir contraseña*. El superadministrador no recibe enlace por correo (la respuesta es la misma): restablece la suya desde el servidor (ver arriba). El enlace caduca en `RESET_EXPIRES_MINUTES` (60 min).
+- Los enlaces solo se guardan como hash SHA-256 en la base de datos.
+
+## Borrar una organización
+
+**Organizaciones → ⋮ → Borrar definitivamente.** Solo aparece en organizaciones ya **desactivadas** (primero se desactiva) y pide escribir su identificador. Borra usuarios, documentos, fragmentos, conversaciones, caché, auditoría y los archivos subidos. No se puede deshacer, y queda constancia (`tenant.deleted`, con nombre, usuarios y documentos) en la auditoría de tu organización.
+
+> Las **copias de seguridad** conservan sus datos hasta que caducan (`BACKUP_KEEP_DAYS`, 7 por defecto). Si un cliente exige el borrado total, elimina también las copias anteriores de `./backups`.
+
+## Cambiar el nombre o el identificador de una organización
+
+**Organizaciones → ⋮ → Renombrar** (cambia el nombre y el identificador). El identificador (`slug`) es el nombre técnico: minúsculas, números y guiones, único. Solo se muestra y se pide para confirmar un borrado; no aparece en URLs ni en rutas de archivos, así que cambiarlo no afecta a usuarios ni documentos.
+
+## Entrar en una organización como soporte
+
+El superadministrador puede ver y gestionar cualquier organización con su propio usuario: **Organizaciones → ⋮ → Entrar como soporte**. Arriba aparece un aviso con **Volver a Plataforma**. Se entra con permisos de administrador y queda registrado en la auditoría del cliente (categoría *Soporte*). Detalles en [permisos.md](permisos.md#acceso-de-soporte-del-superadministrador).
+
+## La organización «Plataforma» (dónde vive el superadministrador)
+
+El superadministrador es el dueño de la plataforma, no parte de un cliente. Por eso su cuenta vive en una organización **interna** llamada «Plataforma» (`tenants.is_platform`): no aparece en la lista de Organizaciones, no cuenta en los totales ni en la facturación y **no se puede desactivar ni borrar**. Todas las organizaciones de clientes, incluida la primera, se pueden borrar (desactivada y escribiendo su identificador). Desde Plataforma solo se ven **Organizaciones** y **Mi cuenta**; para trabajar dentro de un cliente se usa «Entrar como soporte».
+
+En una instalación nueva, el primer arranque crea solo el superadministrador en Plataforma: **ninguna organización de cliente se crea sola**. La primera la creas tú en *Organizaciones → Nueva organización*, con el nombre que quieras.
+
+**Si tu superadministrador ya vivía en una organización** (instalaciones anteriores), esa organización no se podrá borrar mientras tu cuenta esté dentro. Para moverla a Plataforma:
+
+```bash
+docker compose exec api node dist/scripts/move-superadmin.js [usuario]               # muestra qué pasaría; no cambia nada
+docker compose exec api node dist/scripts/move-superadmin.js [usuario] --confirmar   # lo hace
+```
+
+Conserva usuario, correo, nombre, contraseña y verificación en dos pasos. **Se pierden** el historial de chat y las valoraciones de esa cuenta en su organización de origen, y las cuentas de soporte en otras organizaciones (se recrean solas al entrar como soporte). Hay que iniciar sesión de nuevo. No se hace solo al actualizar: si no lo ejecutas, nada cambia. Después, la organización de origen es una más: la puedes desactivar y borrar.
+
+## Auditoría
+
+Página **Auditoría** (administradores): inicios de sesión (también los fallidos), invitaciones, cambios de rol y de acceso, documentos subidos/borrados, resúmenes, vaciados de caché, organizaciones… con fecha, usuario, detalles e IP. Se conserva `AUDIT_RETENTION_DAYS` días (365).
+
+## Autoajuste de recursos
+
+`deploy/autotune.sh` detecta el hardware (RAM, hilos, núcleos, swap) y los **demás contenedores del servidor**, y calcula cuánta CPU y memoria puede usar Omni RAG sin ahogarlos. **Es opcional:** está pensado para servidores compartidos con otros servicios. Si Omni RAG va solo en su máquina, basta con un perfil fijo (`bash deploy/perfil.sh mediano`, ver [requisitos.md](requisitos.md#perfiles-de-tamaño)). Úsalo al instalar en un servidor compartido, al cambiar de máquina o cuando añadas o quites otros servicios.
+
+```bash
+bash deploy/autotune.sh                            # solo muestra la propuesta; no cambia nada
+bash deploy/autotune.sh --aplicar                  # la escribe en el .env (copia en .env.bak-autotune)
+docker compose up -d                               # aplica el bloque
+bash deploy/autotune.sh --simular=ram=8,hilos=4    # qué haría con otro hardware, sin tenerlo (más opciones: nucleos, swap, otros)
+bash deploy/autotune.sh --quitar                   # vuelve a «sin límites»
+```
+
+**Cómo decide**
+- **Modo compartido** (hay otros contenedores): descuenta lo que usan, con un 25 % de holgura, y deja libres parte de los núcleos (el re-ranker y los embeddings usan unos dos tercios de los núcleos reales, Docling la mitad). **Modo dedicado** (nada más corre ahí): usa los núcleos reales, hasta 6 por servicio.
+- Reparte la memoria **por prioridad**: primero los modelos de búsqueda y la base de datos, que es lo que el usuario nota al preguntar; a Docling, lo que sobre (entre 1,5 y 3,8 GB). Si falta, baja primero la CPU de los embeddings (solo importa al ingerir) y después la del re-ranker. **El re-ranker se mantiene**: solo se desactiva con `--sin-reranker`, y nunca solo.
+- Da menos peso de CPU a la ingesta de documentos (Docling y el worker) que a las búsquedas, y menos a Omni RAG que a los demás servicios cuando hay competencia. Si el servidor está libre, usan todo lo que necesiten.
+- Marca a Docling para que, si el sistema se queda sin memoria, se cierre **él** antes que los modelos o que otros contenedores.
+
+**Por qué limitar la CPU casi no cuesta velocidad.** Medido con el re-ranker de 20 fragmentos (equipo de 8 hilos): 2 CPU, 2,4 s y 1,3 GiB · 4 CPU, 2,0 s y 1,7 GiB · 6 CPU, 1,85 s y 2,05 GiB · sin límite (8 hilos), 2,15 s y 2,5 GiB. Pasados los núcleos reales no se gana velocidad, solo memoria: cada hilo extra cuesta unos 0,2 GiB. Por eso el autoajuste fija CPU y no deja que los modelos tomen todos los hilos de la máquina.
+
+**Qué no hace.** No lee ni muestra el contenido del `.env` (solo escribe su bloque entre las marcas `# >>> autotune` y `# <<< autotune`; las variables del bloque ganan sobre las mismas escritas antes). No cambia el sistema: si hace falta swap o bajar el `swappiness`, solo te dice los comandos. La memoria de los demás contenedores es una medida del momento: ejecútalo cuando estén en su uso normal.
+
+Ejemplos de lo que propone (verifícalo con `--simular`):
+
+| Máquina | Modo | Re-ranker | Embeddings | Docling |
+|---|---|---|---|---|
+| 14 GB, 6 núcleos / 12 hilos, con otros 2,3 GB de servicios | compartido | 4 CPU | 4 CPU | hasta 3,8 GB y 3 CPU |
+| 16 GB, 6 núcleos / 12 hilos, sin otros servicios | dedicado | 6 CPU | 6 CPU | hasta 3,8 GB |
+| 8 GB, 4 vCPU, sin otros servicios | dedicado | 2 CPU | 1 CPU | hasta 2,5 GB (avisa de que un PDF muy grande puede fallar) |
+| 4 GB, 2 vCPU | dedicado | avisa de que **no cabe** | | |
+
+## Prueba de carga
+
+`deploy/loadtest.mjs` (Node 18+, sin dependencias) mide cuántas peticiones por segundo aguanta la aplicación y cuánto tarda el 50 %, el 95 % y el 99 % de ellas, con varios usuarios a la vez. Escenarios: `web` (archivos estáticos, sin sesión), `lectura` (lo que hace la interfaz al navegar) y `busqueda` (búsqueda híbrida con embeddings y re-ranking; no llama al modelo de lenguaje, así que no gasta cupo).
+
+```bash
+# 1. Crea varios usuarios de prueba (la API limita cada usuario a 60 búsquedas por minuto) y bórralos al terminar.
+# 2. La contraseña va en una variable, nunca en la línea de comandos:
+export LOADTEST_PASSWORD='...'
+node deploy/loadtest.mjs --scenario lectura  --users prueba1,prueba2,prueba3,prueba4 --concurrency 20 --duration 15
+node deploy/loadtest.mjs --scenario busqueda --users prueba1,prueba2,prueba3,prueba4 --concurrency 2  --duration 20
+node deploy/loadtest.mjs --scenario web --concurrency 50 --duration 10
+```
+
+Ejecuta **un escenario a la vez** y no lo apuntes a producción en horas de uso: la búsqueda consume mucha CPU. **No levantes contenedores extra para comparar configuraciones** en una máquina con poca memoria (los dos modelos de embeddings y re-ranking ya ocupan unos 4 GB; un tercero puede dejar Docker sin responder). Mientras corre, `docker stats --no-stream` muestra el consumo de cada servicio.
+
+**Qué se midió** (portátil con 8 CPU y 7,6 GB para Docker, base con 15 documentos y 222 fragmentos; en un servidor real los números cambian, pero las proporciones sirven):
+
+- La navegación (sesión, colecciones, documentos, conversaciones, cuota) rinde unas **590 peticiones por segundo** con la mediana en 18 ms con 10 usuarios y p95 de 110 ms con 50 a la vez, sin errores.
+- Los archivos estáticos rinden unas **800 por segundo** (p95 94 ms con 50 a la vez).
+- **El cuello de botella es la búsqueda**, y dentro de ella el re-ranking (el modelo que reordena los 20 candidatos): con fragmentos reales tarda unos **3 s**, frente a 0,1 s del embedding de la pregunta y 0,02 s de la consulta a la base. Como usa la CPU, varias búsquedas a la vez se encolan casi en fila: con 4 simultáneas la última termina a los 9-12 s. Se nota sobre todo en el tiempo hasta la primera palabra de la respuesta; en un servidor con más núcleos o más rápido baja en proporción.
+- **Lo que se probó para acelerarlo:**
+
+  | Cambio | Tiempo del re-ranking | Resultados | Conclusión |
+  |---|---|---|---|
+  | `--max-batch-tokens` de 4096 a 8192 en el servicio de re-ranking | 3,6-4,2 s (peor) | iguales | No ayuda: se dejó en 4096 |
+  | Re-rankear 12 candidatos en vez de 20 | ≈ -40 % | solo 56 % de los 6 resultados coincide | **No es seguro**: el re-ranking sube fragmentos que la búsqueda dejaba abajo |
+  | Recortar cada candidato a 900 caracteres | 2,1 s (-33 %) | 81 % coincide | Opcional: `RERANK_MAX_CHARS=900` |
+  | Recortar a 600 caracteres | 1,5 s (-54 %) | 77 % coincide | Opcional |
+  | Recortar a 400 caracteres | 1,0 s (-67 %) | 60 % coincide | No recomendado |
+
+  «Coincide» es el porcentaje de los 6 fragmentos finales que son los mismos que con el texto completo: no mide si son mejores o peores, solo cuánto cambian. Sin preguntas con respuesta conocida no se puede afirmar que el recorte empeore la calidad, por eso **queda desactivado** (`RERANK_MAX_CHARS=0`). Si tu servidor es lento y prefieres rapidez, prueba 900 y revisa las respuestas.
+- **Varias búsquedas a la vez:** el re-ranking se atiende ahora **en fila** (`RERANK_PARALLEL=1`) en vez de todas a la vez. Con 6 preguntas simultáneas: antes la media era 13,2 s y **4 de las 6 agotaban el tiempo de espera** (15 s) y se quedaban sin re-ranking, es decir, con peores resultados sin que nadie lo notara; ahora la media es 8,3 s, la primera termina a los 2,5 s en vez de a los 8 s y ninguna se pierde. Con 4 simultáneas, la media pasa de 7,6 a 6,1 s.
+- **Memoria:** en la prueba, los modelos de embeddings (2,9 GB) y de re-ranking (2,5 GB) ocupaban 5,4 de los 7,6 GB disponibles, y Docling puede necesitar otros 3 GB al convertir un PDF grande. Con menos de 8 GB de RAM para Docker conviene desactivar el re-ranking o procesar documentos de uno en uno (ver [requisitos.md](requisitos.md)).
+
+### Medición en un servidor compartido, antes y después del autoajuste
+
+Servidor compartido: CPU de 6 núcleos y 12 hilos, 14 GB de RAM, NVMe, con otros 16 contenedores de otras aplicaciones. Escenario `busqueda`, 4 usuarios, 20 s por prueba, 0 errores en todas.
+
+| Búsquedas a la vez | Sin límites (12 hilos por modelo) | Con `deploy/autotune.sh` (4 CPU por modelo) | Cambio |
+|---|---|---|---|
+| 1 | 1.142 ms | **728 ms** | −36 % |
+| 4 | 4.870 ms | **2.707 ms** | −44 % |
+| 8 | 7.836 ms | **5.358 ms** | −32 % |
+| Búsquedas por segundo | 0,8 a 1,0 | **1,4 a 1,5** | +50 a 70 % |
+
+- **Memoria:** el re-ranker y los embeddings pasaron de 3,5 + 4,1 GB a 1,6 + 2,3 GB; la memoria disponible subió de 5,2 a 6,2 GB y el swap en uso bajó de 2,8 GB a 0,13 GB. Ninguno superó el 70 % de su límite ni se reinició.
+- **Por qué mejora:** sin límite, cada modelo abre un hilo por CPU lógica (12) sobre 6 núcleos reales: los hilos compiten entre sí y con los demás contenedores, y cada hilo reserva ~0,2 GB. Con los límites, trabajan sin estorbarse. Además, con `swappiness=10` los modelos dejan de pasar al swap.
+- **Capacidad estimada:** unas 1,5 búsquedas por segundo (~90 al minuto). Como la respuesta del modelo de lenguaje tarda varios segundos más y el servidor no gasta CPU mientras espera, equivale a unos 60 a 80 usuarios conversando de forma activa. Es una estimación, no una medición con usuarios reales.
+- **Matiz:** las dos series se midieron con unos minutos de diferencia y con la carga de los demás servicios en su estado habitual; sirven como orden de magnitud, no como cifras exactas.
+
+## Registros estructurados
+
+Los registros de la API y del worker son **una línea JSON por evento** (`LOG_FORMAT=json`, por defecto): hora, nivel (`info`/`warn`/`error`), mensaje, `component` (`api`, `llm`, `ingest`, `monitor`…) y, si procede, el error con su traza. Cada petición HTTP deja una línea `http` con método, ruta, estado, duración en milisegundos, IP y, con sesión, `userId` y `tenantId`; no se guarda la query ni el cuerpo. Todas las líneas generadas durante una petición llevan su `requestId`, que el cliente también recibe en la cabecera `X-Request-Id` (y en el cuerpo de los errores 500): si alguien reporta un fallo, con ese código se encuentra todo lo que pasó.
+
+Para leerlos sin el prefijo de Docker y filtrarlos con `jq`:
+
+```bash
+docker compose logs --no-log-prefix api | jq -c 'select(.level=="error")'              # solo errores
+docker compose logs --no-log-prefix api | jq -c 'select(.requestId=="a1b2c3d4")'       # una petición concreta
+docker compose logs --no-log-prefix api | jq -c 'select(.msg=="http" and .status>=500)' # respuestas 5xx
+docker compose logs --no-log-prefix api | jq -c 'select(.msg=="http" and .ms>2000)'     # peticiones lentas
+docker compose logs --no-log-prefix api | jq -c 'select(.component=="llm")'             # fallos de los modelos
+```
+
+Con `LOG_FORMAT=text` vuelve el formato anterior, legible a simple vista.
+
+## Límite por IP y 2FA de administradores
+
+- **Límite por IP:** a las peticiones que **no traen una sesión válida** se les aplica un tope por IP (`IP_RATE_LIMIT_PER_MIN`, 120 por minuto; `0` lo desactiva). Frena escaneos, intentos de adivinar enlaces de invitación o restablecimiento e inundación de la API. Quien ya inició sesión no cuenta (tiene límites por usuario) y `/api/health` queda fuera. Pasado el tope, esa IP recibe `429` con `Retry-After: 60`. Tras un proxy se usa la IP real que pone nginx o el túnel en `X-Forwarded-For`.
+- **2FA de administradores:** es **opcional por usuario**. Con `REQUIRE_ADMIN_2FA=true` pasa a ser obligatorio para todos los administradores de organización (hasta activarlo solo pueden entrar a *Mi cuenta*). El superadministrador se rige por `REQUIRE_SUPERADMIN_2FA` (obligatorio con dominio real). Por defecto, a nadie más se le obliga.
+
+## Monitorización y alertas
+
+El worker revisa **cada 5 minutos**:
+
+| Comprobación | Se considera un problema cuando… |
+|---|---|
+| Disco de archivos | queda menos del `ALERT_DISK_FREE_PERCENT` % libre (15) |
+| Cola de documentos | hay documentos en cola o procesándose desde hace más de `ALERT_QUEUE_MINUTES` minutos (30): worker caído o Docling atascado |
+| Copias de seguridad | la copia más reciente en `./backups` tiene más de `ALERT_BACKUP_HOURS` horas (36), o no hay ninguna |
+| Modelo de lenguaje | en los últimos 15 minutos fallaron 3 o más preguntas y ninguna se contestó (claves vencidas, cuota agotada) |
+| RAM de un contenedor | usa más del `ALERT_CONTAINER_MEM_PERCENT` % (90) de su tope: si llega al tope, Docker lo reinicia |
+| CPU de un contenedor | lleva 10 minutos usando el 95 % o más de su tope de núcleos: responde lento |
+| RAM del servidor | Omni RAG lleva 5 minutos usando más del `ALERT_HOST_MEM_PERCENT` % (90) de la RAM que ve Docker (suma de sus contenedores; los demás servicios del servidor no cuentan): si se agota, el sistema cierra algún contenedor. Vale aunque ningún contenedor tenga tope |
+| Reinicios | un contenedor se reinició en los últimos 15 minutos, murió por falta de memoria (OOM) o está en «restarting» |
+| Contenedor parado | un contenedor del stack está «exited» (también si se paró a propósito con `docker compose stop`) |
+| Frase de cifrado | con la copia externa activa, nadie ha visto aún la frase en *Sistema → Copias → Ver frase* (o cambió de origen desde entonces), o el archivo generado no se puede leer |
+| Salud | un contenedor con comprobación de salud está «unhealthy» |
+| Métricas | no llegan muestras de los contenedores desde hace 3 minutos (proxy de Docker caído) |
+
+Cada problema avisa **una vez al empezar**, recuerda **cada 24 horas** mientras siga y avisa de nuevo **al resolverse**. Con `ALERT_EMAIL=tu@correo.com` (varios, separados por comas) y SMTP configurado llega por correo; sin eso solo queda en los registros (`docker compose logs worker | grep monitor`). La comprobación de copias necesita que el worker vea `./backups` (ya está montada en solo lectura).
+
+Las alertas de contenedores llevan su nombre (`container:docling:mem`) para saber cuál falla. Tras cada revisión el worker guarda el estado de cada comprobación en `monitor_snapshot` (panel «Qué se vigila»).
+
+### Pantalla Sistema
+
+El superadministrador tiene **Sistema** en el menú:
+
+- **Recursos** (`/sistema/recursos`): cuatro tarjetas (RAM y CPU que usa Omni RAG **de** lo que tiene el servidor, contenedores en marcha y alertas abiertas) y una fila por contenedor con su consumo actual frente a su tope, o «sin tope». La barra muestra el p95 de CPU de 24 h y el pico de RAM de 7 días (al pasar el ratón): frente al tope si lo tiene o, si no, frente al total del servidor (en verde). Por defecto ningún contenedor tiene tope, salvo `docker-proxy` (32 MB); los topes solo existen si se fijan `*_CPUS` / `*_MEM_LIMIT` en el `.env` (a mano o con `deploy/autotune.sh`, que no se ejecuta solo). El total del servidor es lo que ve Docker: en Docker Desktop, la máquina virtual de WSL (`.wslconfig`). El **Diagnóstico** marca «RAM justa» o «CPU justa» (por encima del 85 % del tope) y «Le sobra RAM» (el pico de 7 días no llega al 35 % del tope); con menos de 24 horas de datos lo indica.
+- **Métricas** (`/sistema/metricas`): gráficos de RAM y CPU de un contenedor de Omni RAG (1 hora, 24 horas, 7 o 14 días) frente a su tope, con el consumo de ahora, la media y el pico del periodo (sobre las muestras de cada minuto). Sin tabla de datos ni CSV (esos botones quedan para las respuestas del chat). Se guardan `METRICS_RETENTION_DAYS` días (14): si el rango es mayor, el principio del gráfico queda vacío. Los demás servicios del servidor no se miden.
+- **Alertas** (`/sistema/alertas`): panel **Qué se vigila** (cada comprobación en verde, rojo, ámbar o «sin configurar», con la hora de la última revisión; avisa si el monitor lleva 15 minutos sin revisar y si no hay correo de alertas), las alertas abiertas y el historial con **un problema por fila** (estado, desde cuándo, cuánto duró y el detalle; los recordatorios diarios no se listan). Últimos 200 problemas; el historial se guarda `AUDIT_RETENTION_DAYS` días (365).
+
+El worker toma una muestra por contenedor cada minuto a través de `docker-filter`, que solo responde por los contenedores de este proyecto (consumo, topes, reinicios y salud; nunca sus variables de entorno) y pregunta a `docker-proxy`, un proxy del socket de Docker con lista blanca (ninguna otra ruta ni método). Los dos viven en redes internas sin salida a internet; `docker-proxy` solo atiende a `docker-filter`. Las muestras se guardan `METRICS_RETENTION_DAYS` días (14). Para desactivarlo, deja `DOCKER_PROXY_URL=` vacío en el `.env`.
+
+Esto no sustituye a un monitor externo: si se cae todo el servidor no puede avisarte. Para eso añade un servicio gratuito (UptimeRobot, Better Stack…) que consulte `https://tu-dominio/api/health` cada minuto.
+
+## Mantenimiento automático
+
+El worker ejecuta cada día a las 03:15 (UTC) una limpieza: auditoría más antigua que la retención, enlaces usados o caducados, respuestas en caché vencidas y documentos que llevan más de `TRASH_RETENTION_DAYS` días en la papelera. No requiere intervención.
+
+## Seguridad del despliegue
+
+- **Secretos:** si `DOMAIN` es un dominio real, la API no arranca con `JWT_SECRET`, `APP_DB_PASSWORD` o `POSTGRES_PASSWORD` iguales a los del `.env.example` o demasiado cortos (mínimo 32, 16 y 16), ni crea el primer administrador con la contraseña de ejemplo. En local (sin dominio) no se exige. Genera claves con `openssl rand -base64 48`.
+- **Archivos subidos:** además de la extensión y el tamaño, se comprueba que el contenido corresponda al formato (firma de PDF, Office e imágenes; sin bytes nulos en los de texto). Un ejecutable renombrado a `.pdf` se rechaza con el motivo en el resultado de la subida.
+- **Antivirus (opcional, ClamAV):** analiza cada archivo en el momento de subirlo y rechaza los infectados («Contiene un virus (firma)»), dejando constancia en la auditoría (`document.infected`). Para activarlo, en el `.env` añade `antivirus` a `COMPOSE_PROFILES` (p. ej. `COMPOSE_PROFILES=https,antivirus`) y pon `CLAMAV_HOST=clamav`; luego `docker compose up -d`. La primera vez descarga la imagen y las firmas (~300 MB; las actualiza solo cada día). **Falla cerrado:** si el antivirus está activado y no responde, las subidas se rechazan en vez de aceptarse sin analizar; `/api/health` muestra su estado. Consume ~1-2 GB de RAM (ver [requisitos](requisitos.md)). Los archivos que ya estaban subidos no se vuelven a analizar. Para probarlo sin riesgo, usa el archivo de prueba estándar EICAR (inofensivo; tu antivirus del equipo puede avisar al guardarlo en disco).
+- **Docling aislado:** el conversor procesa archivos de usuarios, así que vive en una red interna (`ingest`) sin salida a internet ni acceso a la base de datos; solo el worker llega a él. No publica ningún puerto en tu máquina. Para depurarlo: `docker compose exec worker wget -qO- http://docling:5001/health`.
+- **Contenedores de la API y el worker:** sin privilegios nuevos y sin capacidades de Linux (`no-new-privileges`, `cap_drop: ALL`).
+- **Prompt injection:** los fragmentos de los documentos van entre `<documentos>` como datos y, después de ellos, el prompt recuerda que no son instrucciones. Antes de entrar en el prompt, todo texto ajeno (contenido, títulos, secciones y la pregunta) se limpia: se neutralizan las etiquetas de cierre y apertura en todas sus variantes (mayúsculas, espacios, atributos, signos de ancho completo, entidades HTML y caracteres invisibles), las marcas de plantillas de chat (`<|im_start|>`, `[INST]`, `<<SYS>>`, `<start_of_turn>`…), las cabeceras falsas `[n] Documento:` y los separadores `---` que imitarían otro fragmento, y se eliminan los controles bidireccionales («Trojan Source»). Una batería de pruebas con documentos hostiles (`apps/api/test/injection.test.ts`) lo comprueba. No es infalible (ningún modelo lo es): una orden en lenguaje natural dentro de un documento sigue llegando al modelo como dato y depende de que la obedezca o no; por eso las respuestas muestran siempre las fuentes citadas. En la pantalla, las imágenes de las respuestas no se cargan y cada enlace muestra su dominio, para que una respuesta manipulada no pueda filtrar datos por la dirección.
+- **Sesiones revocables:** cambiar la contraseña, restablecerla (enlace o administrador), quitar el 2FA a un usuario o pulsar **Mi cuenta → Cerrar todas las sesiones** invalida todas las sesiones anteriores de ese usuario al instante. Al cambiar tu propia contraseña, la sesión actual se renueva y las demás se cierran.
+- **Límites por usuario** (no por IP, que se puede falsear): 20 preguntas, 60 búsquedas, 30 subidas y 10 resúmenes por minuto. Se suman al límite diario de cada plan. Al pasarlos, la API responde `429`.
+- **2FA del superadministrador:** `REQUIRE_SUPERADMIN_2FA` = `auto` (por defecto: **se exige solo cuando `DOMAIN` es un dominio real**; en local nunca se te pide), `true` (siempre) o `false` (nunca; se puede, pero no se recomienda en producción). Si está activo y la cuenta aún no tiene 2FA, la plataforma solo la deja ir a **Mi cuenta** hasta activarlo (la API responde `403` con `code: mfa_setup_required` al resto de rutas). Para un administrador normal sigue siendo opcional.
+- **Aviso de modo soporte:** cada entrada y salida queda en la auditoría del cliente (`support.entered`); no hay aviso aparte porque el único que puede entrar eres tú.
+- **Cabeceras de seguridad** (nginx, `apps/web/security-headers.conf`): `Content-Security-Policy` estricta (solo recursos del propio sitio; el visor de PDF usa un worker propio), `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy: same-origin` y `Permissions-Policy` sin cámara, micrófono ni geolocalización. `Strict-Transport-Security` la añade Caddy con HTTPS. Si añades un recurso externo (fuentes, analítica), hay que permitirlo en esa CSP.
+- **Dependencias:** el CI ejecuta `pnpm audit --audit-level=high` y falla con vulnerabilidades altas o críticas; Dependabot abre un PR semanal agrupado (npm, GitHub Actions y las imágenes Docker). Para revisarlo a mano: `pnpm audit`.
+- **Aislamiento entre organizaciones:** las pruebas de Row Level Security corren siempre en el CI (`RUN_DB_TESTS=1` con PostgreSQL). Si algún cambio rompe el aislamiento, no se puede fusionar.
+- **nginx y la API:** nginx vuelve a resolver el nombre `api` cada 5 s; si recreas la API ya no hace falta reiniciar `web` (antes daba `502 Bad Gateway`).
+
+## Lista para producción
+
+Ver la lista completa en [produccion.md](produccion.md#lista-de-comprobación).

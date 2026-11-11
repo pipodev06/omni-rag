@@ -25,7 +25,7 @@ async function embedBatch(inputs: string[], signal?: AbortSignal): Promise<numbe
           if (v.length !== config.EMBEDDING_DIM) {
             throw new Error(
               `El modelo devolvió vectores de ${v.length} dimensiones pero EMBEDDING_DIM=${config.EMBEDDING_DIM}. ` +
-                "Revisa EMBEDDING_MODEL / EMBEDDING_DIM (ver docs/operacion.md).",
+                "Revisa EMBEDDING_MODEL / EMBEDDING_DIM (ver guia/operacion.md).",
             );
           }
         }
