@@ -1,8 +1,10 @@
 node_modules/
 dist/
 .env
-.env.bak-*
+.env.*
+!.env.example
 *.log
+.check/
 coverage/
 data/
 .DS_Store
