@@ -10,7 +10,7 @@ import { subscribeDocumentEvents } from "../lib/documentEvents.js";
 import { completeChat } from "../rag/llm.js";
 import { buildSummaryMessages, parseSummary } from "../rag/summary.js";
 import { checkDailyLimit } from "./chat.js";
-import { requireAuth, requireRole, tenantCtx, type AppEnv } from "../auth/middleware.js";
+import { authenticate, requireAuth, requireRole, sessionToken, tenantCtx, type AppEnv } from "../auth/middleware.js";
 import { antivirusEnabled, scanBuffer } from "../lib/antivirus.js";
 import { contentMatchesFormat, formatFor, SUPPORTED_EXTENSIONS } from "../ingest/formats.js";
 import { enqueueIngest } from "../queue.js";
@@ -33,15 +33,33 @@ documentRoutes.use("*", requireAuth);
  * sin consultar periódicamente y para avisar cuando un documento está listo.
  */
 documentRoutes.get("/events", (c) => {
-  const user = c.get("user");
-  const ctx = tenantCtx(c);
+  const token = sessionToken(c);
+  const path = c.req.path;
+  let user = c.get("user");
+  let ctx = tenantCtx(c);
   return streamSSE(c, async (stream) => {
-    let accessible = new Set<string>();
-    const refreshAccess = async () => {
-      const rows = await withTenant(ctx, (tx) => tx<{ id: string }[]>`SELECT id FROM collections`);
-      accessible = new Set(rows.map((r) => r.id));
+    const collectionsOf = async (tc: typeof ctx) =>
+      new Set((await withTenant(tc, (tx) => tx<{ id: string }[]>`SELECT id FROM collections`)).map((r) => r.id));
+    let accessible = await collectionsOf(ctx);
+    // La conexión dura horas: la sesión se revalida en cada refresco (cerrada, revocada, usuario u organización
+    // desactivados, soporte terminado) y se toma el rol vigente. Si ya no vale, se corta; el EventSource del navegador
+    // reintenta, recibe 401 y se detiene. Un fallo pasajero de la base no corta la conexión.
+    const revalidate = async (): Promise<boolean> => {
+      let fresh: typeof user;
+      try {
+        fresh = await authenticate(token, path);
+      } catch (err) {
+        return !(err instanceof HttpError && (err.status === 401 || err.status === 403));
+      }
+      if (fresh.id !== user.id || fresh.tenantId !== user.tenantId) return false;
+      const freshCtx = { tenantId: fresh.tenantId, userId: fresh.id, role: fresh.role };
+      // Colecciones calculadas con el rol nuevo ANTES de aplicarlo; si la consulta falla, ninguna (cerrado por defecto).
+      const freshAccess = await collectionsOf(freshCtx).catch(() => new Set<string>());
+      user = fresh;
+      ctx = freshCtx;
+      accessible = freshAccess;
+      return true;
     };
-    await refreshAccess();
 
     const unsubscribe = await subscribeDocumentEvents((e) => {
       if (e.tenantId !== user.tenantId) return;
@@ -62,12 +80,12 @@ documentRoutes.get("/events", (c) => {
     stream.onAbort(unsubscribe);
 
     await stream.writeSSE({ event: "ready", data: "{}" });
-    // Mantener viva la conexión (proxies) y refrescar los permisos cada minuto.
+    // Mantener viva la conexión (proxies) y, cada ~50 s, revalidar la sesión y refrescar los permisos.
     let ticks = 0;
     while (!stream.aborted && !stream.closed) {
       await stream.sleep(25_000);
+      if (++ticks % 2 === 0 && !(await revalidate())) break;
       await stream.writeSSE({ event: "ping", data: "{}" }).catch(() => {});
-      if (++ticks % 2 === 0) await refreshAccess().catch(() => {});
     }
     unsubscribe();
   });

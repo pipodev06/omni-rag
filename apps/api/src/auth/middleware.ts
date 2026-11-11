@@ -23,16 +23,27 @@ export interface AuthUser {
 
 export type AppEnv = { Variables: { user: AuthUser } };
 
+/** Token de la petición: cookie httpOnly (navegador) o `Authorization: Bearer <token>` (scripts / integraciones). */
+export const sessionToken = (c: Context): string | undefined => {
+  const header = c.req.header("authorization");
+  return header?.startsWith("Bearer ") ? header.slice(7) : getCookie(c, SESSION_COOKIE);
+};
+
 /**
- * Exige sesión válida. Acepta la cookie httpOnly (navegador) o
- * `Authorization: Bearer <token>` (scripts / integraciones).
- *
- * Además del JWT, consulta la base de datos en cada petición: así, desactivar
- * un usuario o cambiar su rol tiene efecto inmediato.
+ * Exige sesión válida (ver `authenticate`). Además del JWT, consulta la base de datos en cada petición:
+ * así, desactivar un usuario o cambiar su rol tiene efecto inmediato.
  */
 export const requireAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
-  const header = c.req.header("authorization");
-  const token = header?.startsWith("Bearer ") ? header.slice(7) : getCookie(c, SESSION_COOKIE);
+  c.set("user", await authenticate(sessionToken(c), c.req.path));
+  await next();
+};
+
+/**
+ * Valida un token contra la base (usuario y organización activos, sesión no revocada, soporte vigente, 2FA exigido)
+ * y devuelve el usuario. Lanza 401/403 si ya no vale. Lo usa `requireAuth` en cada petición y las conexiones
+ * largas (SSE) para revalidar mientras siguen abiertas.
+ */
+export async function authenticate(token: string | undefined, path: string): Promise<AuthUser> {
   if (!token) throw unauthorized();
 
   const claims = await verifySession(token);
@@ -72,11 +83,11 @@ export const requireAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
 
   // Quien debe tener verificación en dos pasos (el superadministrador, y los administradores si REQUIRE_ADMIN_2FA) y aún
   // no la tiene solo puede configurarla (rutas /api/auth).
-  if (!row.totp && !support && twoFactorRequired({ isSuperadmin: row.is_superadmin, role: row.role }) && !c.req.path.startsWith("/api/auth/")) {
+  if (!row.totp && !support && twoFactorRequired({ isSuperadmin: row.is_superadmin, role: row.role }) && !path.startsWith("/api/auth/")) {
     throw new HttpError(403, "Activa la verificación en dos pasos en Mi cuenta para continuar.", "mfa_setup_required");
   }
 
-  c.set("user", {
+  return {
     id: row.id,
     tenantId: row.tenant_id,
     username: row.username,
@@ -86,9 +97,8 @@ export const requireAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
     isSuperadmin: row.is_superadmin,
     support,
     sessionId: claims.sessionId ?? null,
-  });
-  await next();
-};
+  };
+}
 
 /** Restringe una ruta a ciertos roles (se usa después de requireAuth). */
 export const requireRole =

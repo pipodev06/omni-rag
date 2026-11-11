@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
  * rebote, de documentos ajenos. Si el diagrama no es válido se muestra el código, sin romper la respuesta.
  */
 const MAX_SOURCE = 4000;
+// Solo diagramas de flujo: es lo único que pide el prompt (`rag/prompt.ts`) y cada tipo extra de mermaid suma superficie de ataque.
+const FLOWCHART = new Set(["flowchart", "flowchart-v2"]);
 
 type State = { status: "loading" } | { status: "ok"; svg: string } | { status: "error" };
 
@@ -29,7 +31,8 @@ export function DiagramBlock({ source, streaming }: { source: string; streaming?
       try {
         const { default: mermaid } = await import("mermaid");
         mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: isDark(theme) ?"dark" : "neutral", maxTextSize: MAX_SOURCE, fontFamily: "inherit" });
-        if (!(await mermaid.parse(source, { suppressErrors: true }))) throw new Error("diagrama no válido");
+        const parsed = await mermaid.parse(source, { suppressErrors: true });
+        if (!parsed || !FLOWCHART.has(parsed.diagramType)) throw new Error("diagrama no válido");
         const { svg } = await mermaid.render(id, source);
         if (!cancelled) setState({ status: "ok", svg });
       } catch {
