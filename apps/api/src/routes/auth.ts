@@ -135,6 +135,8 @@ authRoutes.post("/logout", async (c) => {
   const token = getCookie(c, SESSION_COOKIE);
   const claims = token ? await verifySession(token) : null;
   if (claims?.sessionId) await revokeSession(claims.userId, claims.sessionId);
+  // Las de soporte no se registran en user_sessions: se invalidan todas las de esa cuenta de soporte.
+  else if (claims?.actorId) await revokeSessions(claims.userId);
   deleteCookie(c, SESSION_COOKIE, { path: "/" });
   return c.json({ ok: true });
 });
@@ -183,6 +185,9 @@ authRoutes.post("/exit-support", requireAuth, async (c) => {
     SELECT id, tenant_id, name, username, email, role, is_superadmin FROM users WHERE id = ${u.support.id}`;
   if (!actor) throw unauthorized();
   await audit(c, "support.exited");
+  // El token de soporte deja de valer en el servidor al salir (no tiene sessionId que cerrar): se invalidan las
+  // sesiones de la cuenta de soporte, no las del superadministrador.
+  await revokeSessions(u.id);
   return c.json(await startSession(c, actor));
 });
 

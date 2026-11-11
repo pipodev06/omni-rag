@@ -3,7 +3,7 @@ import { z } from "zod";
 import { sqlOwner, withTenant } from "../db/client.js";
 import { requireAuth, requireRole, requireSuperadmin, tenantCtx, type AppEnv } from "../auth/middleware.js";
 import { hashPassword, passwordProblem } from "../auth/password.js";
-import { issueSession } from "../auth/session.js";
+import { issueSession, revokeSession } from "../auth/session.js";
 import { audit, auditLog } from "../lib/audit.js";
 import { clientIp } from "../lib/request.js";
 import { checkModels } from "../lib/modelCatalog.js";
@@ -376,6 +376,9 @@ platformRoutes.post("/tenants/:id/enter", async (c) => {
     RETURNING id`;
 
   await issueSession(c, { userId: support!.id, tenantId: id, role: "admin", actorId: me.id });
+  // La cookie pasa a ser la de soporte: la sesión normal del superadministrador se cierra (al salir de soporte se abre
+  // una nueva), así no queda viva ni se acumula una por cada entrada en Mi cuenta.
+  if (me.sessionId) await revokeSession(me.id, me.sessionId);
   await auditLog({ tenantId: id, userId: support!.id, username: `${me.username} (soporte)`, ip: clientIp(c) }, "support.entered");
   await audit(c, "support.entered", { targetType: "tenant", targetId: id, details: { name: tenant.name } });
   return c.json({ ok: true });
