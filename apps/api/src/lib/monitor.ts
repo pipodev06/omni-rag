@@ -193,7 +193,7 @@ export async function checkContainers(): Promise<Problem[]> {
       FROM last l LEFT JOIN recent r USING (name)`;
   if (rows.length === 0) {
     const hold = process.uptime() < METRICS_GRACE_SECONDS;
-    return [{ key: "metrics", message: "No llegan métricas de los contenedores desde hace más de 3 minutos. Revisa «docker compose logs docker-proxy worker».", hold }];
+    return [{ key: "metrics", message: "No llegan métricas de los contenedores desde hace más de 3 minutos. Revisa «docker compose logs docker-filter docker-proxy worker».", hold }];
   }
   return containerProblems(rows);
 }

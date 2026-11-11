@@ -113,7 +113,7 @@ services:
       STORAGE_DIR: /data/uploads
       CLAMAV_HOST: ${CLAMAV_HOST:-}
       REQUIRE_SUPERADMIN_2FA: ${REQUIRE_SUPERADMIN_2FA:-auto}
-      DOCKER_PROXY_URL: ${DOCKER_PROXY_URL-http://docker-proxy:2375}
+      DOCKER_PROXY_URL: ${DOCKER_PROXY_URL-http://docker-filter:2375}
     volumes:
       - ./data/uploads:/data/uploads
       - ./data/secretos:/secrets:ro
@@ -162,20 +162,37 @@ services:
     depends_on:
       - api
 
+  docker-filter:
+    image: ghcr.io/pipodev06/omni-rag-api:${OMNI_RAG_VERSION:-latest}
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    command: ["node", "dist/dockerFilter.js"]
+    environment:
+      DOCKER_UPSTREAM_URL: http://docker-proxy:2375
+    networks: [docker, docker-socket]
+    mem_limit: 64m
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      - docker-proxy
+
   docker-proxy:
     image: wollomatic/socket-proxy:1.13.1
     restart: unless-stopped
     user: ${DOCKER_PROXY_USER:-0:0}
     command:
       - "-listenip=0.0.0.0"
-      - "-allowfrom=worker"
+      - "-allowfrom=docker-filter"
       - "-allowGET=(/v[0-9.]+)?/(info|containers/json|containers/[0-9a-f]{64}/(stats|json))"
       - "-watchdoginterval=600"
       - "-stoponwatchdog"
       - "-shutdowngracetime=5"
     volumes:
       - ${DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock:ro
-    networks: [docker]
+    networks: [docker-socket]
     mem_limit: 32m
     read_only: true
     cap_drop: [ALL]
@@ -269,6 +286,8 @@ networks:
   ingest:
     internal: true
   docker:
+    internal: true
+  docker-socket:
     internal: true
 
 configs:

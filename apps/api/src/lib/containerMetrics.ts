@@ -4,11 +4,10 @@ import { sqlOwner } from "../db/client.js";
 
 /**
  * Consumo de los contenedores para la pantalla Sistema. El worker llama a `collectContainerMetrics()` cada minuto: lee
- * Docker a través del proxy con lista blanca (servicio docker-proxy: solo GET a /info, /containers/json y
- * /containers/<id>/stats|json) y
- * guarda una muestra por contenedor de este proyecto en `container_samples` (consumo, topes y reinicios). Los demás
- * contenedores del servidor no se miden ni se inspeccionan: Omni RAG solo vigila lo suyo. Del servidor solo lee el total
- * de RAM y núcleos (/info).
+ * Docker a través de docker-filter (`dockerFilter.ts`: solo contenedores de este proyecto y solo los campos de abajo),
+ * que a su vez pasa por docker-proxy (lista blanca de GET a /info, /containers/json y /containers/<id>/stats|json), y
+ * guarda una muestra por contenedor en `container_samples` (consumo, topes y reinicios). Los demás contenedores del
+ * servidor no se miden ni se ven: Omni RAG solo vigila lo suyo. Del servidor solo lee el total de RAM y núcleos (/info).
  */
 
 interface ListedContainer {

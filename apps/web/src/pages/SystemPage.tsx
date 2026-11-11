@@ -96,8 +96,8 @@ function NotCollecting({ collecting }: { collecting: boolean }) {
       title={collecting ? "Aún no hay muestras" : "Las métricas están desactivadas"}
       description={
         collecting
-          ? "El worker toma una muestra por minuto. Si no aparece nada en unos minutos, revisa «docker compose logs docker-proxy worker»."
-          : "Falta DOCKER_PROXY_URL o el servicio docker-proxy. Con la configuración por defecto se activan solos al recrear los contenedores («docker compose up -d»)."
+          ? "El worker toma una muestra por minuto. Si no aparece nada en unos minutos, revisa «docker compose logs docker-filter docker-proxy worker»."
+          : "Falta DOCKER_PROXY_URL o los servicios docker-filter y docker-proxy. Con la configuración por defecto se activan solos al recrear los contenedores («docker compose up -d»)."
       }
     />
   );
